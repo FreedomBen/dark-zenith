@@ -28,3 +28,14 @@
   - web app renders the needed responses and metadata for the repos, basically everything except the rpm files itself
 
 - In this repo, we want to create an app called Dark Zenith.  This should be an Elixir/Phoenix app that that can effectively serve as an rpm repo for use with any RPM-based distro. It would serve the repo metadata and the rpm files, and also provide an admin interface and API for managing it.   It would also serve a user-facing webpage that provides users instructions for adding the repo to their local distro, as well as show a list of available packages and provide links to download them.  Let's begin by writing up a detailed application description in PRODUCT_DESIGN.md
+
+# Direction Responses
+
+- Go with recommendation 
+- Go with recommendation 
+- Go with recommendation 
+- Go with recommendation 
+- Go with recommendation 
+- Go with recommendation 
+- Go with recommendation 
+- Go with recommendation 
