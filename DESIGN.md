@@ -82,9 +82,9 @@ A Dark Zenith instance can host multiple named repositories. Each repository is 
 | `slug` | string | URL-safe identifier (e.g., `stable`, `nightly`) |
 | `name` | string | Display name |
 | `description` | text | Optional description |
-| `gpg_key_fingerprint` | string | Optional full uppercase hex fingerprint of the GPG key used to sign metadata for this repo. Must match `gpg_key_fingerprint` on the owner's user record at the time the field is set. |
+| `gpg_key_fingerprint` | string | Optional 40-character uppercase hex OpenPGP V4 fingerprint of the GPG key used to sign metadata for this repo. Must match `gpg_key_fingerprint` on the owner's user record at the time the field is set. |
 | `sign_rpms` | boolean | Whether uploaded RPMs are automatically signed with the repo owner's GPG key (default `false`; requires `gpg_key_fingerprint` to be set) |
-| `is_public` | boolean | Whether unauthenticated users can list, browse, and download from the repo |
+| `is_public` | boolean | Whether unauthenticated users can list, browse, and download from the repo (default `false`) |
 | `metadata_revision` | integer | Monotonic revision incremented whenever package membership, package metadata used in repodata, or metadata signing settings change (default `0`) |
 | `inserted_at` | timestamp | Creation time |
 | `updated_at` | timestamp | Last modification time |
@@ -158,7 +158,7 @@ Users can create multiple API keys with different scopes and names (e.g., a `rep
 
 ### Repository Collaborators
 
-Repo owners can grant other users read access to their private repositories. When the invited user is already registered, a collaborator record is created immediately. When the email does not match a registered user, a pending invitation is created instead and converts to a collaborator record when the user registers.
+Repo owners can grant other users read access to their private repositories. When the invited user is already registered, a collaborator record is created immediately. When the email does not match a registered user, a pending invitation is created instead and converts to a collaborator record when the user registers. The invited user receives an email notification: registered users get a direct link to the repository, and unregistered invitees get a registration link that converts the pending invitation on signup.
 
 | Field | Type | Description |
 |---|---|---|
@@ -232,7 +232,7 @@ Built on `phx.gen.auth` (bcrypt-based session authentication).
 | `is_admin` | boolean | Admin flag — admins can manage all repos and users (default `false`) |
 | `gpg_key_private` | binary | Optional GPG private key, encrypted at rest using the versioned GPG private key encryption envelope |
 | `gpg_key_public` | text | ASCII-armored GPG public key (served at `/repos/:slug/RPM-GPG-KEY`) |
-| `gpg_key_fingerprint` | string | Full uppercase hex fingerprint of the stored GPG key (for display/identification) |
+| `gpg_key_fingerprint` | string | 40-character uppercase hex OpenPGP V4 fingerprint of the stored GPG key (for display/identification) |
 | `confirmed_at` | timestamp | Email confirmation time |
 | `inserted_at` | timestamp | Creation time |
 | `updated_at` | timestamp | Last modification time |
@@ -250,7 +250,7 @@ Built on `phx.gen.auth` (bcrypt-based session authentication).
 - User accounts are created via web registration (when `REGISTRATION_ENABLED = true`) or by an admin in the admin web UI. There is no REST API for user creation or deletion; admin user management is web-only.
 - An admin can delete a user account from the admin UI, but the deletion is rejected with `409 conflict_user_owns_repositories` if that user still owns any repositories. The admin must first reassign or delete those repositories.
 - Users cannot delete their own accounts; account deletion is admin-only.
-- When a user is deleted, the database cascades remove their API keys, session tokens, GPG key, and pending collaborator invitations they sent, and removes any collaborator membership rows where they are the collaborator. Repositories owned by other users on which the deleted user was a collaborator are otherwise unaffected.
+- When a user is deleted, the database cascades remove their API keys, session tokens, GPG key, and pending collaborator invitations they sent, removes any collaborator membership rows where they are the collaborator, and deletes any pending collaborator invitations addressed to the deleted user's email so a later re-registration with the same email does not silently re-attach to old invites. Repositories owned by other users on which the deleted user was a collaborator are otherwise unaffected.
 
 ---
 
@@ -280,7 +280,7 @@ Dark Zenith generates standard `repodata/` metadata as defined by the RPM reposi
 
 - **`repomd.xml`**: Root metadata index. Lists the location, checksum, size, and timestamp of each metadata file (`primary`, `filelists`, `other`). This is the entry point that `dnf`/`yum` fetches first.
 
-- **`primary.xml.gz`**: Contains package names, versions, architectures, summaries, sizes, checksums, and dependency information (requires, provides, conflicts, obsoletes). This is the main metadata file used for dependency resolution. Each package's `<location>` element uses the relative path `packages/:id/:filename.rpm`, so RPM clients resolve downloads against the repository base URL.
+- **`primary.xml.gz`**: Contains package names, versions, architectures, summaries, sizes, checksums, and dependency information (requires, provides, conflicts, obsoletes). This is the main metadata file used for dependency resolution. Each package's `<location>` element uses the relative path `packages/:id/:name-:version-:release.:arch.rpm` (the standard RPM filename, with no epoch component), so RPM clients resolve downloads against the repository base URL.
 
 - **`filelists.xml.gz`**: Lists all files contained in each package. Used when a user runs commands like `dnf provides /usr/bin/something`.
 
@@ -290,7 +290,7 @@ Dark Zenith generates standard `repodata/` metadata as defined by the RPM reposi
 
 All repodata XML is generated by the app and served directly from the app (not from B2). The metadata is stored in PostgreSQL as cached blobs so it can be served without regeneration on every request.
 
-Metadata is regenerated as a background job (via Oban) whenever packages are added or removed from a repository, or whenever repository settings that affect generated metadata change. The process:
+Metadata is regenerated as a background job (via Oban) when a repository is created, when packages are added to or removed from a repository, or when repository settings that affect generated metadata change. The process:
 
 1. Package upload/deletion increments the repository's `metadata_revision` inside the same database transaction that changes package membership.
 2. The transaction enqueues a unique Oban regeneration job for the affected repository. On deletion, a separate idempotent Oban job removes the RPM file from B2 after the package row is removed.
@@ -301,7 +301,7 @@ Metadata is regenerated as a background job (via Oban) whenever packages are add
 7. Before completing, the job reloads the repository. If `metadata_revision` is greater than the cached `source_revision`, the job enqueues another unique regeneration job so the final cache reflects the latest package set.
 8. The repo endpoint serves metadata directly from the cache.
 
-Repository setting changes that affect generated metadata, such as enabling/disabling metadata signing or changing `gpg_key_fingerprint`, use the same `metadata_revision` increment and regeneration enqueue path.
+Repository creation enqueues an initial regeneration job in the same transaction as the repo row insert (with `metadata_revision = 0`), so newly created empty repos immediately serve valid `repomd.xml` and metadata XML files from the cache. Repository setting changes that affect generated metadata, such as enabling/disabling metadata signing or changing `gpg_key_fingerprint`, use the same `metadata_revision` increment and regeneration enqueue path.
 
 Multiple rapid changes are debounced with an Oban unique job keyed by `repository_id` while the job is available or scheduled. Running jobs are allowed to be followed by a newly queued job, and the `metadata_revision`/`source_revision` check guarantees another job runs until the cache reaches the latest revision. Metadata regeneration and B2 cleanup jobs retry up to 20 attempts with exponential backoff; exhausted jobs remain visible in Oban for admin intervention.
 
@@ -374,6 +374,8 @@ GET /repos/:slug/repodata/repomd.xml.asc
 GET /repos/:slug/RPM-GPG-KEY
 ```
 
+Both endpoints return `404 not_found` when the repository has no `gpg_key_fingerprint` configured.
+
 #### RPM signing (`sign_rpms = true`, requires `gpg_key_fingerprint`)
 
 When enabled, Dark Zenith automatically signs uploaded RPMs during the upload processing pipeline:
@@ -390,13 +392,15 @@ RPMs that are already signed are re-signed (the existing signature is replaced).
 
 If `sign_rpms` is enabled but the owner has no GPG key configured, the upload is rejected with `422 validation_failed`.
 
+When `sign_rpms` is enabled on a repository that already has packages, the owner must explicitly choose between re-signing existing packages retroactively (using the same per-package job flow described under "Key replacement and revocation") or signing only future uploads. The REST API exposes this choice via the `existing_package_strategy` field on `PATCH /api/v1/repos/:slug`, and the web UI prompts the owner to pick a strategy. Disabling `sign_rpms` does not strip signatures from already-signed packages.
+
 #### Key replacement and revocation
 
 Users can replace their GPG key by uploading a new pair (public + private). Replacement is allowed even when repositories have signing enabled. When replacement happens:
 
 1. The user's `gpg_key_private`, `gpg_key_public`, and `gpg_key_fingerprint` are updated to the new pair in a single transaction.
 2. Every repository owned by the user that has `gpg_key_fingerprint` set has its `gpg_key_fingerprint` updated to the new fingerprint, its `metadata_revision` incremented, and a metadata regeneration job enqueued so `repomd.xml.asc` is re-signed with the new key.
-3. For each affected repository where `sign_rpms = true`, a re-sign job is enqueued per existing package. Each re-sign job decrypts the new private key, re-signs the RPM with `rpmsign --resign`, verifies the result with `rpm --checksig`, recomputes the SHA-256, and uploads the re-signed RPM to `repos/:slug/packages/:resign_id/:name-:epoch-:version-:release.:arch.rpm`, where `:resign_id` is a newly generated UUID for that re-sign attempt. The job then updates the package row's `sha256` and `storage_path` in a single transaction. The same transaction increments the repository's `metadata_revision` and enqueues metadata regeneration so repodata reflects the new package checksum. The previous B2 object is deleted asynchronously by an idempotent cleanup job. If the upload succeeds but the package-row update fails, Dark Zenith immediately attempts to delete the newly uploaded object; if that cleanup fails, it enqueues an idempotent B2 cleanup job and returns the original database error to Oban for retry. Re-sign jobs retry up to 20 attempts with exponential backoff; exhausted jobs remain visible in Oban for admin intervention.
+3. For each affected repository where `sign_rpms = true`, a re-sign job is enqueued per existing package. Each re-sign job decrypts the new private key, downloads the existing RPM from B2, re-signs it with `rpmsign --resign`, verifies the result with `rpm --checksig`, recomputes the SHA-256, and uploads the re-signed RPM to `repos/:slug/packages/:resign_id/:name-:epoch-:version-:release.:arch.rpm`, where `:resign_id` is a newly generated UUID for that re-sign attempt. The job then updates the package row's `sha256` and `storage_path` in a single transaction. The same transaction increments the repository's `metadata_revision` and enqueues metadata regeneration so repodata reflects the new package checksum. The previous B2 object is deleted asynchronously by an idempotent cleanup job. If the upload succeeds but the package-row update fails, Dark Zenith immediately attempts to delete the newly uploaded object; if that cleanup fails, it enqueues an idempotent B2 cleanup job and returns the original database error to Oban for retry. Re-sign jobs retry up to 20 attempts with exponential backoff; exhausted jobs remain visible in Oban for admin intervention.
 
 Users can also explicitly revoke (remove) their GPG key without simultaneously replacing it. If the user has no repositories with `gpg_key_fingerprint` set or `sign_rpms = true`, `DELETE /api/v1/gpg_key` and the equivalent web UI action remove the key immediately.
 
@@ -592,12 +596,12 @@ JSON endpoints with request bodies require `Content-Type: application/json`. Fil
 Request bodies:
 
 - `POST /api/v1/auth/login`: JSON body `{"email": "...", "password": "..."}`.
-- `POST /api/v1/repos`: JSON body with `name`, `slug`, optional `description`, `is_public`, optional `gpg_key_fingerprint`, and `sign_rpms`. Requests with `sign_rpms = true` must also set `gpg_key_fingerprint` to the owner's current GPG key fingerprint or they are rejected with `422 validation_failed`.
-- `PATCH /api/v1/repos/:slug`: JSON body with any subset of repository fields accepted by create.
+- `POST /api/v1/repos`: JSON body with required `name` and `slug`, and optional `description`, `is_public`, `gpg_key_fingerprint`, and `sign_rpms`. Requests with `sign_rpms = true` must also set `gpg_key_fingerprint` to the owner's current GPG key fingerprint or they are rejected with `422 validation_failed`.
+- `PATCH /api/v1/repos/:slug`: JSON body with any subset of repository fields accepted by create. PATCH operations that would leave `sign_rpms = true` with `gpg_key_fingerprint` unset are rejected with `422 validation_failed` (mirroring the create-time constraint). Enabling `sign_rpms` on a repository that already has packages requires an explicit `existing_package_strategy` field with value `"resign"` (enqueue per-package re-sign jobs identical to the key replacement flow) or `"leave_unsigned"` (only future uploads are signed; existing packages remain as-is); transitioning `sign_rpms` to `true` on a non-empty repository without this field is rejected with `422 validation_failed`. When `sign_rpms` is unchanged, when it is transitioning from `true` to `false`, or when it is being enabled on an empty repository, `existing_package_strategy` is ignored.
 - `POST /api/v1/repos/:slug/packages`: multipart body with a single `rpm` file field. A duplicate NEVRA in the repository returns `409 conflict_duplicate_package`.
 - `POST /api/v1/repos/:slug/collaborators`: JSON body `{"email": "user@example.com"}`.
 - `POST /api/v1/api_keys`: JSON body with `name`, `scopes`, and optional `expires_at`. The plaintext API key is returned only in this response.
-- `PUT /api/v1/gpg_key`: multipart body with `public_key` and `private_key` fields containing ASCII-armored GPG keys. The public/private keys must match, and the private key must be usable for non-interactive signing.
+- `PUT /api/v1/gpg_key`: multipart body with `public_key` and `private_key` fields containing ASCII-armored GPG keys. The public and private keys must share the same fingerprint, and the private key must be usable for non-interactive signing.
 - `DELETE /api/v1/gpg_key`: no request body. Returns `204 No Content` when the key is not used by any repository; returns `409 conflict_gpg_key_in_use` with counts of metadata-signed and RPM-signed repositories when an explicit revocation strategy is required.
 - `POST /api/v1/gpg_key/revocation`: JSON body `{"strategy": "clear_metadata_signing"}` or `{"strategy": "delete_signed_packages"}`; or multipart body with `strategy=replace_key`, `public_key`, and `private_key` fields. Unknown strategies are rejected with `422 validation_failed`. `clear_metadata_signing` is rejected with `409 conflict_gpg_key_in_use` if any owned repository has `sign_rpms = true`.
 
@@ -730,7 +734,7 @@ Dark Zenith is designed for straightforward deployment:
 
 ### Initial Setup
 
-Since `REGISTRATION_ENABLED` defaults to `false`, the first admin account is bootstrapped via environment variables (`ADMIN_EMAIL` and `ADMIN_PASSWORD`). On first boot, if no users exist in the database, a confirmed admin user is created with these credentials. After the initial admin is created, these environment variables are ignored. Additional users can be created by the admin or by enabling public registration.
+Since `REGISTRATION_ENABLED` defaults to `false`, the first admin account is bootstrapped via environment variables (`ADMIN_EMAIL` and `ADMIN_PASSWORD`). On first boot, if no users exist in the database, a confirmed admin user is created with these credentials. If no users exist but `ADMIN_EMAIL` or `ADMIN_PASSWORD` is unset, Dark Zenith logs a warning and starts without creating an admin; the operator must restart with both variables set to bootstrap an admin. After the initial admin is created, these environment variables are ignored. Additional users can be created by the admin or by enabling public registration.
 
 ### Storage
 
@@ -763,7 +767,7 @@ All endpoints are rate limited. The rate limiting strategy differs based on auth
 - **Authentication attempts** (`/api/v1/auth/login`, registration, password reset): 10 requests per minute per IP address and 10 requests per minute per email address.
 - **Package uploads**: 60 uploads per hour per user, in addition to the authenticated general request limit.
 
-When a rate limit is exceeded, the server responds with **HTTP 429 Too Many Requests** and includes `Retry-After` and `X-RateLimit-Reset` headers. For unauthenticated requests, the 429 response body includes a message encouraging the user to create an account and authenticate for higher limits.
+When a rate limit is exceeded, the server responds with **HTTP 429 Too Many Requests** and includes `Retry-After` (a duration in seconds, per RFC 9110) and `X-RateLimit-Reset` (a Unix epoch timestamp in seconds indicating when the limit resets) headers. For unauthenticated requests, the 429 response body includes a message encouraging the user to create an account and authenticate for higher limits.
 
 ### Authenticated access to public repos
 
