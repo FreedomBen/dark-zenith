@@ -82,8 +82,8 @@ A Dark Zenith instance can host multiple named repositories. Each repository is 
 | `slug` | string | URL-safe identifier (e.g., `stable`, `nightly`) |
 | `name` | string | Display name |
 | `description` | text | Optional description |
-| `gpg_key_id` | string | Optional GPG key ID for signing (references a key in the owner's GPG keyring) |
-| `sign_rpms` | boolean | Whether uploaded RPMs are automatically signed with the owner's GPG key (default `false`) |
+| `gpg_key_id` | string | Optional GPG key ID for signing (must match the fingerprint of the owner's uploaded GPG key) |
+| `sign_rpms` | boolean | Whether uploaded RPMs are automatically signed with the repo owner's GPG key (default `false`; requires the owner to have uploaded a GPG key pair) |
 | `is_public` | boolean | Whether the repo is listed on the public page |
 | `inserted_at` | timestamp | Creation time |
 | `updated_at` | timestamp | Last modification time |
@@ -136,21 +136,24 @@ Each package record represents a single RPM file within a repository.
 | `inserted_at` | timestamp | Creation time |
 | `updated_at` | timestamp | Last modification time |
 
-**API Key Scopes**: Each scope grants access across all repositories owned by the key's user. Valid scopes:
+**API Key Scopes**: Scopes control which operations an API key can perform. Mutating scopes operate on repositories owned by the key's user. The `repo:read` scope grants read access based on the user's identity (owner, collaborator, or admin). Valid scopes:
 
 | Scope | Permits |
 |---|---|
+| `repo:read` | Read access to private repositories the user can access (as owner, collaborator, or admin) |
 | `repo:create` | Create new repositories |
 | `repo:update` | Update repository settings |
 | `repo:delete` | Delete repositories |
 | `package:upload` | Upload RPM packages |
 | `package:delete` | Delete packages from repositories |
 
-Users can create multiple API keys with different scopes and names (e.g., a read-only key for CI pulls, a scoped key for uploads). A key with an empty scopes list has read-only access. Admin users' API keys operate on all repos, not just their own.
+Users can create multiple API keys with different scopes and names (e.g., a `repo:read`-only key for CI pulls, a scoped key for uploads). A key with an empty scopes list has no access — at least one scope is required. Admin users' API keys operate on all repos, not just their own (e.g., an admin key with `package:upload` can upload to any repo).
+
+**Note**: Public repositories do not require `repo:read` — they are accessible without authentication. However, authenticated requests to public repos (using a key with any valid scope) benefit from higher rate limits (see Rate Limiting).
 
 ### Repository Collaborators
 
-Repo owners can grant other users read access to their private repositories.
+Repo owners can grant other users read access to their private repositories. When the invited user is already registered, a collaborator record is created immediately. When the email does not match a registered user, a pending invitation is created instead and converts to a collaborator record when the user registers.
 
 | Field | Type | Description |
 |---|---|---|
@@ -160,6 +163,54 @@ Repo owners can grant other users read access to their private repositories.
 | `inserted_at` | timestamp | Creation time |
 
 **Unique constraint**: `(repository_id, user_id)`
+
+### Collaborator Invitations
+
+Pending invitations for users who have not yet registered.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID | Primary key |
+| `repository_id` | UUID | FK to repositories |
+| `email` | string | Email address of the invited user |
+| `invited_by_id` | UUID | FK to users — the owner who sent the invitation |
+| `inserted_at` | timestamp | Invitation time |
+
+**Unique constraint**: `(repository_id, email)`
+
+When a user registers with an email that has pending invitations, those invitations are automatically converted to collaborator records and the invitation rows are deleted.
+
+### Session Tokens
+
+Short-lived bearer tokens issued by the login endpoint for interactive/CLI use.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID | Primary key |
+| `user_id` | UUID | FK to users |
+| `token_hash` | string | Hashed token value |
+| `expires_at` | timestamp | Expiration time (24 hours after creation) |
+| `inserted_at` | timestamp | Creation time |
+
+Expired tokens are periodically cleaned up by a background job.
+
+### Repository Metadata Cache
+
+Stores the pre-generated repodata XML blobs so they can be served without regeneration on every request.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID | Primary key |
+| `repository_id` | UUID | FK to repositories (unique — one cache entry per repo) |
+| `primary_xml_gz` | binary | Compressed `primary.xml.gz` blob |
+| `filelists_xml_gz` | binary | Compressed `filelists.xml.gz` blob |
+| `other_xml_gz` | binary | Compressed `other.xml.gz` blob |
+| `repomd_xml` | text | Generated `repomd.xml` content |
+| `repomd_xml_asc` | text | GPG signature of `repomd.xml` (null if unsigned) |
+| `inserted_at` | timestamp | Creation time |
+| `updated_at` | timestamp | Last regeneration time |
+
+**Unique constraint**: `(repository_id)`
 
 ### Users
 
@@ -205,7 +256,7 @@ GET /repos/:slug/repodata/repomd.xml
 GET /repos/:slug/repodata/primary.xml.gz
 GET /repos/:slug/repodata/filelists.xml.gz
 GET /repos/:slug/repodata/other.xml.gz
-GET /repos/:slug/packages/:name-:version-:release.:arch.rpm   → 302 redirect to signed B2 URL
+GET /repos/:slug/packages/:id/:filename.rpm   → 302 redirect to signed B2 URL
 ```
 
 ### Metadata Format
@@ -237,9 +288,9 @@ Multiple rapid changes are debounced — if a regeneration job is already queued
 
 ### RPM File Downloads
 
-When a client (e.g., `dnf`) requests an RPM file at `/repos/:slug/packages/:name-:version-:release.:arch.rpm`:
+When a client (e.g., `dnf`) requests an RPM file at `/repos/:slug/packages/:id/:filename.rpm`:
 
-1. Dark Zenith looks up the package record in PostgreSQL to find the B2 storage key.
+1. Dark Zenith looks up the package record by `:id` in PostgreSQL to find the B2 storage key. The `:filename` segment is cosmetic (ignored for routing) but provides a human-readable filename for download clients.
 2. Generates a **signed Backblaze B2 URL** with a **30-minute expiration**.
 3. Responds with **HTTP 302 redirect** to the signed URL.
 4. The client downloads the RPM directly from B2.
@@ -251,9 +302,9 @@ This keeps RPM file bandwidth off the app server entirely.
 Private repositories (`is_public = false`) require authentication on all endpoints, including repodata and RPM downloads. RPM clients (`dnf`/`yum`) authenticate via **HTTP Basic Auth**:
 
 - **Username**: `token` (literal string)
-- **Password**: a valid API key belonging to the repo owner or a collaborator
+- **Password**: a valid API key with the `repo:read` scope
 
-Dark Zenith checks the API key, resolves the owning user, and verifies they have access to the repository (as owner, collaborator, or admin) before serving metadata or issuing a signed B2 URL.
+Dark Zenith checks the API key, verifies it has the `repo:read` scope, resolves the owning user, and verifies they have access to the repository (as owner, collaborator, or admin) before serving metadata or issuing a signed B2 URL.
 
 Example `.repo` configuration for a private repo:
 
@@ -356,6 +407,7 @@ The web UI is built with Phoenix LiveView. Public pages are accessible to everyo
 - Repository description and status.
 - **Setup instructions** with copy-paste `dnf` commands for adding the repo to the user's system:
   - `.repo` file contents to place in `/etc/yum.repos.d/`.
+  - For public repos: unauthenticated config shown by default, with an authenticated variant (using Basic Auth with the user's API key) recommended for higher rate limits.
   - For private repos: instructions include Basic Auth credentials using the logged-in user's API key. If the user has no API key, prompt them to create one.
   - One-liner `dnf config-manager` command.
   - GPG key import instructions (if applicable).
@@ -383,6 +435,12 @@ The web UI is built with Phoenix LiveView. Public pages are accessible to everyo
 - Shows extracted metadata for confirmation before finalizing.
 - **Web only**: The two-step confirmation flow (preview then confirm) is a web UI feature. The REST API processes uploads immediately in a single request — see the API section.
 
+### GPG Key Management (authenticated, account settings)
+
+- Upload a GPG key pair (public + private) to the user's account.
+- View the fingerprint and public key of the currently uploaded key.
+- Remove the existing GPG key (only allowed if no repositories have signing enabled with this key).
+
 ### Authentication Pages
 
 - Login / logout.
@@ -393,7 +451,18 @@ The web UI is built with Phoenix LiveView. Public pages are accessible to everyo
 
 ## REST API
 
-The REST API provides programmatic access to everything the web interface supports. All mutating endpoints require authentication via `Authorization: Bearer <api-key>` header. Read-only endpoints for public repos are unauthenticated.
+The REST API provides programmatic access to everything the web interface supports. Authentication is via `Authorization: Bearer <token>` header, where the token is either an API key or a short-lived session token obtained from the login endpoint. API endpoints also accept session cookie authentication (as used by the web UI), which allows the web frontend to call API endpoints directly and enables users to create their first API key without already having one.
+
+Read-only endpoints for public repos are unauthenticated.
+
+### Authentication
+
+```
+POST   /api/v1/auth/login               # Login with email + password, returns a short-lived session token
+DELETE /api/v1/auth/logout              # Invalidate a session token
+```
+
+The login endpoint accepts `{"email": "...", "password": "..."}` and returns a short-lived bearer token (24-hour expiration). This token is distinct from API keys — it cannot be managed via the API keys endpoints, expires automatically, and is intended for interactive/CLI use. API keys remain the preferred mechanism for long-lived programmatic access.
 
 ### Repositories
 
@@ -417,9 +486,10 @@ DELETE /api/v1/repos/:slug/packages/:id           # Delete a package (auth requi
 ### Collaborators
 
 ```
-GET    /api/v1/repos/:slug/collaborators              # List collaborators (owner/admin only)
-POST   /api/v1/repos/:slug/collaborators              # Add a collaborator by email (owner/admin only)
+GET    /api/v1/repos/:slug/collaborators              # List collaborators and pending invitations (owner/admin only)
+POST   /api/v1/repos/:slug/collaborators              # Add a collaborator by email (owner/admin only; creates pending invitation if user not registered)
 DELETE /api/v1/repos/:slug/collaborators/:user_id      # Remove a collaborator (owner/admin only)
+DELETE /api/v1/repos/:slug/collaborators/invitations/:id  # Cancel a pending invitation (owner/admin only)
 ```
 
 ### API Keys
@@ -428,6 +498,14 @@ DELETE /api/v1/repos/:slug/collaborators/:user_id      # Remove a collaborator (
 GET    /api/v1/api_keys                 # List your API keys (auth required)
 POST   /api/v1/api_keys                 # Create an API key (auth required)
 DELETE /api/v1/api_keys/:id             # Revoke an API key (auth required)
+```
+
+### GPG Keys
+
+```
+GET    /api/v1/gpg_key                  # Get your GPG key info (auth required)
+PUT    /api/v1/gpg_key                  # Upload/replace your GPG key pair (auth required)
+DELETE /api/v1/gpg_key                  # Remove your GPG key (auth required)
 ```
 
 ### Response Format
@@ -488,6 +566,8 @@ Dark Zenith is configured via environment variables and/or `config/runtime.exs`:
 | `B2_ENDPOINT` | — | B2 S3-compatible endpoint URL |
 | `B2_SIGNED_URL_TTL` | `1800` | Signed URL expiration in seconds (default 30 min) |
 | `REGISTRATION_ENABLED` | `false` | Whether new account registration is open |
+| `ADMIN_EMAIL` | — | Email for the initial admin account, created on first boot if no users exist |
+| `ADMIN_PASSWORD` | — | Password for the initial admin account |
 
 ---
 
@@ -499,6 +579,10 @@ Dark Zenith is designed for straightforward deployment:
 - **Docker**: Dockerfile provided for containerized deployment.
 - **Systemd**: Example systemd unit file provided.
 - **Reverse proxy**: Designed to sit behind nginx/caddy for TLS termination.
+
+### Initial Setup
+
+Since `REGISTRATION_ENABLED` defaults to `false`, the first admin account is bootstrapped via environment variables (`ADMIN_EMAIL` and `ADMIN_PASSWORD`). On first boot, if no users exist in the database, a confirmed admin user is created with these credentials. After the initial admin is created, these environment variables are ignored. Additional users can be created by the admin or by enabling public registration.
 
 ### Storage
 
@@ -516,8 +600,23 @@ RPM files are stored exclusively in Backblaze B2. The app server handles no RPM 
 - RPM uploads are validated to prevent arbitrary file storage.
 - B2 storage keys use deterministic, sanitized paths to prevent key manipulation.
 - GPG private keys are encrypted at rest in the database using `SECRET_KEY_BASE`. They are only decrypted in-memory during signing operations.
-- Rate limiting on upload endpoints to prevent abuse.
+- Rate limiting on all endpoints (see Rate Limiting below).
 - CSRF protection on all web form submissions (standard Phoenix behavior).
+
+---
+
+## Rate Limiting
+
+All endpoints are rate limited. The rate limiting strategy differs based on authentication status:
+
+- **Authenticated requests** (API key, session token, or session cookie): Rate limited per user. All requests from the same user share a single bucket regardless of which API key or auth method is used.
+- **Unauthenticated requests**: Rate limited per IP address. Since multiple users may share an IP (corporate networks, VPNs, NAT), these limits are more restrictive.
+
+When a rate limit is exceeded, the server responds with **HTTP 429 Too Many Requests** and includes `Retry-After` and `X-RateLimit-Reset` headers. For unauthenticated requests, the 429 response body includes a message encouraging the user to create an account and authenticate for higher limits.
+
+### Authenticated access to public repos
+
+Public repositories are accessible without authentication, but authenticated requests receive higher rate limits. The web UI setup instructions for public repos include both an unauthenticated `.repo` configuration and an authenticated variant using the user's API key with HTTP Basic Auth. Users are encouraged to use authenticated access to get per-user rate limiting rather than sharing an IP-based limit with other users.
 
 ---
 
