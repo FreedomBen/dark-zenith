@@ -82,10 +82,10 @@ A Dark Zenith instance can host multiple named repositories. Each repository is 
 | `slug` | string | URL-safe identifier (e.g., `stable`, `nightly`) |
 | `name` | string | Display name |
 | `description` | text | Optional description |
-| `gpg_key_fingerprint` | string | Optional fingerprint of the GPG key used to sign metadata for this repo. Must match `gpg_key_fingerprint` on the owner's user record at the time the field is set. |
-| `sign_rpms` | boolean | Whether uploaded RPMs are automatically signed with the repo owner's GPG key (default `false`; requires the owner to have uploaded a GPG key pair) |
+| `gpg_key_fingerprint` | string | Optional full uppercase hex fingerprint of the GPG key used to sign metadata for this repo. Must match `gpg_key_fingerprint` on the owner's user record at the time the field is set. |
+| `sign_rpms` | boolean | Whether uploaded RPMs are automatically signed with the repo owner's GPG key (default `false`; requires `gpg_key_fingerprint` to be set) |
 | `is_public` | boolean | Whether unauthenticated users can list, browse, and download from the repo |
-| `metadata_revision` | integer | Monotonic revision incremented whenever package membership or metadata signing settings change (default `0`) |
+| `metadata_revision` | integer | Monotonic revision incremented whenever package membership, package metadata used in repodata, or metadata signing settings change (default `0`) |
 | `inserted_at` | timestamp | Creation time |
 | `updated_at` | timestamp | Last modification time |
 
@@ -100,7 +100,7 @@ Each package record represents a single RPM file within a repository.
 | `id` | UUID | Primary key |
 | `repository_id` | UUID | FK to repositories |
 | `name` | string | Package name (e.g., `nginx`) |
-| `epoch` | integer | RPM epoch (default `0`) |
+| `epoch` | integer | Non-negative RPM epoch (default `0` when the RPM has no epoch) |
 | `version` | string | Package version (e.g., `1.24.0`) |
 | `release` | string | Package release (e.g., `2.fc39`) |
 | `arch` | string | Architecture (`x86_64`, `noarch`, `aarch64`, etc.) |
@@ -110,7 +110,7 @@ Each package record represents a single RPM file within a repository.
 | `license` | string | License identifier |
 | `size_installed` | bigint | Installed size in bytes |
 | `size_package` | bigint | RPM file size in bytes |
-| `sha256` | string | SHA-256 checksum of the RPM file |
+| `sha256` | string | Lowercase hex-encoded SHA-256 checksum of the RPM file |
 | `rpm_sourcerpm` | string | Source RPM name |
 | `rpm_group` | string | RPM group |
 | `storage_path` | string | Path/key where the RPM file is stored |
@@ -150,11 +150,11 @@ Each package record represents a single RPM file within a repository.
 | `package:upload` | Upload RPM packages |
 | `package:delete` | Delete packages from repositories |
 
-Users can create multiple API keys with different scopes and names (e.g., a `repo:read`-only key for CI pulls, a scoped key for uploads). A key with an empty scopes list has no access — at least one scope is required. Admin users' API keys operate on all repos, not just their own (e.g., an admin key with `package:upload` can upload to any repo).
+Users can create multiple API keys with different scopes and names (e.g., a `repo:read`-only key for CI pulls, a scoped key for uploads). API key creation requires at least one valid scope. Admin users' API keys operate on all repos, not just their own (e.g., an admin key with `package:upload` can upload to any repo).
 
 **Note**: Public repositories do not require `repo:read` — they are accessible without authentication. However, authenticated requests to public repos (using any non-expired API key with at least one valid scope) benefit from higher rate limits (see Rate Limiting).
 
-**API Key Format**: API keys are generated from 32 bytes of cryptographically secure random data, encoded as unpadded base64url, and returned to the caller as `dzak_<secret>`. The plaintext key is shown only once at creation. The database stores `key_prefix` for display and `key_hash`, computed as `HMAC-SHA-256(SECRET_KEY_BASE, full_key_string)` and encoded as lowercase hex, where `full_key_string` is the complete returned value including the `dzak_` prefix. API key creation rejects unknown scope values with `422 validation_failed`. Expired keys and keys with no scopes are rejected as invalid credentials with `401 unauthenticated` before any scope-based authorization check.
+**API Key Format**: API keys are generated from 32 bytes of cryptographically secure random data, encoded as unpadded base64url, and returned to the caller as `dzak_<secret>`. The plaintext key is shown only once at creation. The database stores `key_prefix` for display and `key_hash`, computed as `HMAC-SHA-256(SECRET_KEY_BASE, full_key_string)` and encoded as lowercase hex, where `full_key_string` is the complete returned value including the `dzak_` prefix. API key creation rejects empty scopes and unknown scope values with `422 validation_failed`. Expired keys and any persisted keys with no scopes are rejected as invalid credentials with `401 unauthenticated` before any scope-based authorization check.
 
 ### Repository Collaborators
 
@@ -230,9 +230,9 @@ Built on `phx.gen.auth` (bcrypt-based session authentication).
 | `email` | string | Unique email address |
 | `hashed_password` | string | Bcrypt password hash |
 | `is_admin` | boolean | Admin flag — admins can manage all repos and users (default `false`) |
-| `gpg_key_private` | binary | Optional GPG private key, encrypted at rest using `SECRET_KEY_BASE` |
+| `gpg_key_private` | binary | Optional GPG private key, encrypted at rest using the versioned GPG private key encryption envelope |
 | `gpg_key_public` | text | ASCII-armored GPG public key (served at `/repos/:slug/RPM-GPG-KEY`) |
-| `gpg_key_fingerprint` | string | Fingerprint of the stored GPG key (for display/identification) |
+| `gpg_key_fingerprint` | string | Full uppercase hex fingerprint of the stored GPG key (for display/identification) |
 | `confirmed_at` | timestamp | Email confirmation time |
 | `inserted_at` | timestamp | Creation time |
 | `updated_at` | timestamp | Last modification time |
@@ -309,7 +309,7 @@ Multiple rapid changes are debounced with an Oban unique job keyed by `repositor
 
 When a client (e.g., `dnf`) requests an RPM file at `/repos/:slug/packages/:id/:filename.rpm`:
 
-1. Dark Zenith validates that `:filename` matches `^[A-Za-z0-9._+~-]+\.rpm$`; non-matching requests are rejected with `400 invalid_request`. It then looks up the package record by `:id` in PostgreSQL to find the B2 storage key. The `:filename` segment is otherwise cosmetic (ignored for routing) but provides a human-readable filename for download clients.
+1. Dark Zenith validates access to the repository identified by `:slug`, then validates that `:filename` matches `^[A-Za-z0-9._+~-]+\.rpm$`; non-matching requests are rejected with `400 invalid_request`. It then looks up the package record by `:id` scoped to that repository in PostgreSQL to find the B2 storage key. The `:filename` segment is otherwise cosmetic (ignored for routing) but provides a human-readable filename for download clients.
 2. Generates a **signed Backblaze B2 URL** using `B2_SIGNED_URL_TTL` (default **30-minute expiration**).
 3. Responds with **HTTP 302 redirect** to the signed URL.
 4. The client downloads the RPM directly from B2.
@@ -353,7 +353,15 @@ For private repositories without a configured GPG key, `gpgcheck` is `0` and the
 
 ### GPG Signing (Optional)
 
-Each user can upload a GPG key pair (public + private) to their account. The private key is encrypted at rest in the database using `SECRET_KEY_BASE`. Private keys must be dedicated repository-signing keys that can sign non-interactively; passphrase-protected private keys are rejected at upload with `422 validation_failed`. When creating or editing a repository, the owner can enable two levels of signing:
+Each user can upload a GPG key pair (public + private) to their account. The private key is encrypted at rest in the database using the GPG private key encryption envelope described below. Private keys must be dedicated repository-signing keys that can sign non-interactively; passphrase-protected private keys are rejected at upload with `422 validation_failed`.
+
+#### GPG private key encryption
+
+The `gpg_key_private` field stores a versioned encryption envelope rather than raw key material. Version `v1` uses AES-256-GCM with a 32-byte key derived from `SECRET_KEY_BASE` by HKDF-SHA-256 using a random 16-byte salt and the context string `dark_zenith:gpg_private_key:v1`. Each encrypted value stores the envelope version, salt, 12-byte nonce, ciphertext, and 16-byte authentication tag. The AEAD additional authenticated data is `dark_zenith:gpg_private_key:v1:<user_id>`, binding the encrypted value to the owning user.
+
+New writes use the current envelope version. Reads dispatch by the stored version so future releases can add new encryption versions and re-encrypt existing keys in a background rotation job without losing the ability to decrypt older rows. If root secret material changes, the rotation release must keep the previous version's root secret available until all rows for that version have been re-encrypted; rows with unsupported envelope versions fail closed and require admin intervention.
+
+When creating or editing a repository, the owner can enable two levels of signing:
 
 #### Repository metadata signing (`gpg_key_fingerprint` set)
 
@@ -380,7 +388,7 @@ When enabled, Dark Zenith automatically signs uploaded RPMs during the upload pr
 
 RPMs that are already signed are re-signed (the existing signature is replaced). This ensures all packages in the repo are signed with a consistent key.
 
-If `sign_rpms` is enabled but the owner has no GPG key configured, the upload is rejected with an error.
+If `sign_rpms` is enabled but the owner has no GPG key configured, the upload is rejected with `422 validation_failed`.
 
 #### Key replacement and revocation
 
@@ -388,14 +396,15 @@ Users can replace their GPG key by uploading a new pair (public + private). Repl
 
 1. The user's `gpg_key_private`, `gpg_key_public`, and `gpg_key_fingerprint` are updated to the new pair in a single transaction.
 2. Every repository owned by the user that has `gpg_key_fingerprint` set has its `gpg_key_fingerprint` updated to the new fingerprint, its `metadata_revision` incremented, and a metadata regeneration job enqueued so `repomd.xml.asc` is re-signed with the new key.
-3. For each affected repository where `sign_rpms = true`, a re-sign job is enqueued per existing package. Each re-sign job decrypts the new private key, re-signs the RPM with `rpmsign --resign`, verifies the result with `rpm --checksig`, recomputes the SHA-256, uploads the re-signed RPM to a fresh per-upload B2 path, and updates the package row's `sha256` and `storage_path` in a single transaction. The previous B2 object is deleted asynchronously by an idempotent cleanup job. Re-sign jobs retry up to 20 attempts with exponential backoff; exhausted jobs remain visible in Oban for admin intervention.
+3. For each affected repository where `sign_rpms = true`, a re-sign job is enqueued per existing package. Each re-sign job decrypts the new private key, re-signs the RPM with `rpmsign --resign`, verifies the result with `rpm --checksig`, recomputes the SHA-256, and uploads the re-signed RPM to `repos/:slug/packages/:resign_id/:name-:epoch-:version-:release.:arch.rpm`, where `:resign_id` is a newly generated UUID for that re-sign attempt. The job then updates the package row's `sha256` and `storage_path` in a single transaction. The same transaction increments the repository's `metadata_revision` and enqueues metadata regeneration so repodata reflects the new package checksum. The previous B2 object is deleted asynchronously by an idempotent cleanup job. If the upload succeeds but the package-row update fails, Dark Zenith immediately attempts to delete the newly uploaded object; if that cleanup fails, it enqueues an idempotent B2 cleanup job and returns the original database error to Oban for retry. Re-sign jobs retry up to 20 attempts with exponential backoff; exhausted jobs remain visible in Oban for admin intervention.
 
-Users can also explicitly revoke (remove) their GPG key without simultaneously replacing it. When revocation is requested and the user owns any repositories with `gpg_key_fingerprint` set or `sign_rpms = true`, the UI/API blocks the request until the user chooses one of:
+Users can also explicitly revoke (remove) their GPG key without simultaneously replacing it. If the user has no repositories with `gpg_key_fingerprint` set or `sign_rpms = true`, `DELETE /api/v1/gpg_key` and the equivalent web UI action remove the key immediately.
 
-- **Delete signed packages**: For every affected repository, all package rows are deleted (which enqueues the standard B2 cleanup jobs), `gpg_key_fingerprint` is cleared, `sign_rpms` is set to `false`, and metadata regeneration is enqueued. The user's GPG key is then removed.
-- **Re-sign with a new key**: The user uploads a new GPG key pair as part of the same request, and the operation is processed as a replacement (see above) instead of a revocation.
+When the user owns any affected repositories, `DELETE /api/v1/gpg_key` returns `409 conflict_gpg_key_in_use` with counts of metadata-signed and RPM-signed repositories. The web UI prompts the user to choose one of the same explicit strategies exposed by `POST /api/v1/gpg_key/revocation`:
 
-If the user has no signing-enabled repositories, revocation proceeds without prompting.
+- **Clear metadata signing** (`strategy: "clear_metadata_signing"`): Allowed only when none of the user's repositories have `sign_rpms = true`. For every affected repository, `gpg_key_fingerprint` is cleared and metadata regeneration is enqueued. Package rows and B2 objects are left intact. The user's GPG key is then removed.
+- **Delete signed packages** (`strategy: "delete_signed_packages"`): For every affected repository where `sign_rpms = true`, all package rows are deleted (which enqueues the standard B2 cleanup jobs), `gpg_key_fingerprint` is cleared, `sign_rpms` is set to `false`, and metadata regeneration is enqueued. For repositories that only have metadata signing enabled, `gpg_key_fingerprint` is cleared and metadata regeneration is enqueued without deleting packages. The user's GPG key is then removed.
+- **Re-sign with a new key** (`strategy: "replace_key"`): The user uploads a new GPG key pair as part of the same multipart request, and the operation is processed as a replacement (see above) instead of a revocation.
 
 ---
 
@@ -404,7 +413,7 @@ If the user has no signing-enabled repositories, revocation proceeds without pro
 When an RPM file is uploaded (via web UI or API) by a repository owner or admin:
 
 1. **Validate**: Confirm the file is a valid RPM by reading the RPM lead and header.
-2. **Extract metadata**: Parse the RPM headers to extract name, version, release, epoch, arch, dependencies, file lists, changelogs, summary, description, license, etc. This is done in Elixir by reading the RPM binary format directly (RPM header structure). Verify that `name`, `version`, `release`, and `arch` each match `^[A-Za-z0-9._+~-]+$`; any value that does not match is rejected with `422 validation_failed`. This keeps B2 storage keys constrained to a safe, predictable character set.
+2. **Extract metadata**: Parse the RPM headers to extract name, version, release, epoch, arch, dependencies, file lists, changelogs, summary, description, license, etc. This is done in Elixir by reading the RPM binary format directly (RPM header structure). Verify that `epoch` is a non-negative integer and that `name`, `version`, `release`, and `arch` each match `^[A-Za-z0-9._+~-]+$`; any value that does not match is rejected with `422 validation_failed`. This keeps B2 storage keys constrained to a safe, predictable character set.
 3. **Sign** (if `sign_rpms` enabled): Sign the RPM using the owner's GPG key and `rpmsign` (see GPG Signing section).
 4. **Checksum**: Compute SHA-256 of the (possibly signed) RPM file.
 5. **Duplicate check**: If a package with the same `(repository_id, name, epoch, version, release, arch)` already exists, reject the upload with **HTTP 409 Conflict**. The database unique constraint is still the source of truth for concurrent uploads.
@@ -415,6 +424,8 @@ When an RPM file is uploaded (via web UI or API) by a repository owner or admin:
 If B2 upload fails, no package row is inserted and the caller receives an upload error. If the B2 upload succeeds but the database insert fails, Dark Zenith immediately attempts to delete the just-uploaded object — safe because the object's key includes the unreferenced UUID. If that cleanup fails, it enqueues an idempotent B2 cleanup job and returns the original database error to the caller. If the package insert succeeds but metadata regeneration fails, the upload remains successful; the regeneration job retries until the cache reaches the repository's latest `metadata_revision`.
 
 Package deletion removes the package row, increments `metadata_revision`, and enqueues metadata regeneration in one database transaction. B2 object deletion happens in a separate idempotent Oban job with retries. If B2 deletion fails, the package no longer appears in metadata or API responses, and package-id download URLs no longer resolve, but the orphaned object is retried for cleanup.
+
+Repository deletion is a hard delete. When an authorized owner or admin deletes a repository, Dark Zenith reads the current package `storage_path` values, deletes the repository row and dependent package, collaborator, invitation, and metadata-cache rows in one database transaction, and returns `204 No Content` after that transaction commits. B2 object deletion happens after commit through idempotent cleanup jobs for the collected storage paths. If one or more B2 cleanup jobs fail, the repository remains deleted from PostgreSQL and inaccessible through the web, API, metadata, and package download endpoints while cleanup continues through Oban retries.
 
 ### RPM Parsing
 
@@ -484,7 +495,7 @@ The web UI is built with Phoenix LiveView. Public pages are accessible to everyo
 
 - Upload a GPG key pair (public + private) to the user's account. Uploading a new pair when one already exists is treated as a replacement and triggers automatic re-signing of metadata and (if `sign_rpms` is enabled) existing packages — see "Key replacement and revocation" under GPG Signing.
 - View the fingerprint and public key of the currently uploaded key.
-- Remove the existing GPG key. If any owned repositories have `gpg_key_fingerprint` set or `sign_rpms = true`, the UI prompts the user to either delete the signed packages (and clear repo signing settings) or upload a replacement key as part of the same flow.
+- Remove the existing GPG key. If any owned repositories have `gpg_key_fingerprint` set or `sign_rpms = true`, the UI prompts the user to clear metadata signing, delete RPM-signed packages, or upload a replacement key as part of the same flow.
 - Passphrase-protected private keys are rejected; users should upload a dedicated repository-signing key.
 
 ### Authentication Pages
@@ -501,7 +512,7 @@ The REST API provides programmatic access to repository operations. Authenticati
 
 Read-only endpoints for public repos are unauthenticated.
 
-Mutating API endpoints require either session/cookie authentication or an API key with the matching scope. Repository-scoped mutations also require the authenticated user to be the repository owner or an admin.
+Mutating API endpoints require either session token/cookie authentication or an API key with the matching scope. Repository-scoped mutations also require the authenticated user to be the repository owner or an admin.
 
 ### Authentication
 
@@ -570,24 +581,27 @@ DELETE /api/v1/api_keys/:id             # Revoke an API key (auth required)
 ```
 GET    /api/v1/gpg_key                  # Get your GPG key info (auth required)
 PUT    /api/v1/gpg_key                  # Upload/replace your GPG key pair (auth required)
-DELETE /api/v1/gpg_key                  # Remove your GPG key (auth required)
+DELETE /api/v1/gpg_key                  # Remove your GPG key when it is not used by any repository (auth required)
+POST   /api/v1/gpg_key/revocation       # Remove or replace an in-use GPG key with an explicit strategy (auth required)
 ```
 
 ### API Contract Details
 
-JSON endpoints require `Content-Type: application/json`. Upload endpoints use `multipart/form-data`. All timestamps are ISO-8601 UTC strings, all IDs are UUID strings, and all request strings are trimmed before validation. Email addresses are normalized to lowercase. Repository slugs are normalized to lowercase and must match `^[a-z0-9][a-z0-9_-]{0,63}$`. Unknown JSON fields are rejected with `422 validation_failed`.
+JSON endpoints with request bodies require `Content-Type: application/json`. File and key upload requests use `multipart/form-data`. All timestamps are ISO-8601 UTC strings and all IDs are UUID strings. User-provided metadata strings are trimmed before validation, but secrets and key material (passwords, bearer/API token values, and GPG armored key fields) are not modified except by their documented parsers. Email addresses are normalized to lowercase. Repository slugs are normalized to lowercase and must match `^[a-z0-9][a-z0-9_-]{0,63}$`. Unknown JSON fields are rejected with `422 validation_failed`.
 
 Request bodies:
 
 - `POST /api/v1/auth/login`: JSON body `{"email": "...", "password": "..."}`.
-- `POST /api/v1/repos`: JSON body with `name`, `slug`, optional `description`, `is_public`, optional `gpg_key_fingerprint`, and `sign_rpms`.
+- `POST /api/v1/repos`: JSON body with `name`, `slug`, optional `description`, `is_public`, optional `gpg_key_fingerprint`, and `sign_rpms`. Requests with `sign_rpms = true` must also set `gpg_key_fingerprint` to the owner's current GPG key fingerprint or they are rejected with `422 validation_failed`.
 - `PATCH /api/v1/repos/:slug`: JSON body with any subset of repository fields accepted by create.
 - `POST /api/v1/repos/:slug/packages`: multipart body with a single `rpm` file field. A duplicate NEVRA in the repository returns `409 conflict_duplicate_package`.
 - `POST /api/v1/repos/:slug/collaborators`: JSON body `{"email": "user@example.com"}`.
 - `POST /api/v1/api_keys`: JSON body with `name`, `scopes`, and optional `expires_at`. The plaintext API key is returned only in this response.
 - `PUT /api/v1/gpg_key`: multipart body with `public_key` and `private_key` fields containing ASCII-armored GPG keys. The public/private keys must match, and the private key must be usable for non-interactive signing.
+- `DELETE /api/v1/gpg_key`: no request body. Returns `204 No Content` when the key is not used by any repository; returns `409 conflict_gpg_key_in_use` with counts of metadata-signed and RPM-signed repositories when an explicit revocation strategy is required.
+- `POST /api/v1/gpg_key/revocation`: JSON body `{"strategy": "clear_metadata_signing"}` or `{"strategy": "delete_signed_packages"}`; or multipart body with `strategy=replace_key`, `public_key`, and `private_key` fields. Unknown strategies are rejected with `422 validation_failed`. `clear_metadata_signing` is rejected with `409 conflict_gpg_key_in_use` if any owned repository has `sign_rpms = true`.
 
-All list endpoints — including `/repos`, `/repos/:slug/packages`, `/repos/:slug/collaborators`, and `/api_keys` — support `page` and `per_page` query parameters and return the same paginated envelope. `page` defaults to `1`; `per_page` defaults to `50` and is capped at `100`. Package list endpoints additionally support `q`, `name`, `arch`, and `sort`. The `q` parameter performs a case-insensitive substring match against the package `name` and `summary` fields combined; `name` is an exact-match filter. Valid package sort values are `name`, `version`, `arch`, and `inserted_at`; prefix with `-` for descending order.
+All list endpoints — including `/api/v1/repos`, `/api/v1/repos/:slug/packages`, `/api/v1/repos/:slug/collaborators`, and `/api/v1/api_keys` — support `page` and `per_page` query parameters and return the same paginated envelope. `page` defaults to `1`; `per_page` defaults to `50` and is capped at `100`. Package list endpoints additionally support `q`, `name`, `arch`, and `sort`. The `q` parameter performs a case-insensitive substring match against the package `name` and `summary` fields combined; `name` is an exact-match filter. Valid package sort values are `name`, `version`, `arch`, and `inserted_at`; prefix with `-` for descending order.
 
 Successful JSON responses use a `data` envelope:
 
@@ -612,19 +626,20 @@ Error responses use this shape:
 
 Standard API error codes:
 
-| HTTP | Code                         | Meaning                                                                                    |
-| ---: | ---------------------------- | ------------------------------------------------------------------------------------------ |
-|  400 | `invalid_request`            | Malformed JSON, malformed multipart upload, or unsupported content type                    |
-|  401 | `unauthenticated`            | Missing, expired, or invalid credentials                                                   |
-|  403 | `forbidden`                  | Authenticated user lacks the required scope or repository permission                       |
-|  404 | `not_found`                  | Requested repository, package, collaborator, invitation, API key, or GPG key was not found |
-|  409 | `conflict_duplicate_package` | Package with the same repository/name/epoch/version/release/arch already exists            |
-|  409 | `conflict_user_owns_repositories` | Admin attempted to delete a user that still owns repositories                          |
-|  422 | `validation_failed`          | Request shape is valid but field values failed validation                                  |
-|  429 | `rate_limited`               | Request exceeded the applicable rate limit                                                 |
-|  500 | `internal_error`             | Unexpected server error                                                                    |
+| HTTP | Code                                | Meaning                                                                                                  |
+| ---: | ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
+|  400 | `invalid_request`                   | Malformed JSON, malformed multipart upload, or unsupported content type                                  |
+|  401 | `unauthenticated`                   | Missing, expired, or invalid credentials                                                                 |
+|  403 | `forbidden`                         | Authenticated user lacks the required scope or repository permission                                     |
+|  404 | `not_found`                         | Requested repository, package, collaborator, invitation, API key, or GPG key was not found               |
+|  409 | `conflict_duplicate_package`        | Package with the same repository/name/epoch/version/release/arch already exists                          |
+|  409 | `conflict_gpg_key_in_use`           | GPG key removal requires an explicit revocation strategy because one or more repositories still use it   |
+|  409 | `conflict_user_owns_repositories`   | Admin attempted to delete a user that still owns repositories                                            |
+|  422 | `validation_failed`                 | Request shape is valid but field values failed validation                                                |
+|  429 | `rate_limited`                      | Request exceeded the applicable rate limit                                                               |
+|  500 | `internal_error`                    | Unexpected server error                                                                                  |
 
-To avoid leaking the existence of private resources, requests that target a private repository (or any resource scoped under one) which the requester cannot access return `404 not_found`, not `403 forbidden`. `401 unauthenticated` is reserved for requests that present no credentials at all (or credentials that fail validation — invalid signature, expired, revoked). `403 forbidden` is returned only when the authenticated principal is known to exist and is permitted to see the resource but lacks the specific scope required for the requested operation (e.g., a valid API key without `package:upload` attempting an upload to a public repo).
+To avoid leaking the existence of private resources, requests authenticated to a valid principal that target a private repository (or any resource scoped under one) which that principal cannot access return `404 not_found`, not `403 forbidden`. `401 unauthenticated` is reserved for requests that present no credentials at all (or credentials that fail validation — invalid signature, expired, revoked). `403 forbidden` is returned only when the authenticated principal is known to exist and is permitted to see the resource but lacks the specific scope or mutation permission required for the requested operation (e.g., a valid API key without `package:upload` attempting an upload to a public repo).
 
 ### Response Format
 
@@ -732,7 +747,7 @@ RPM files are stored exclusively in Backblaze B2. The app server handles no RPM 
 - Signed B2 URLs expire after `B2_SIGNED_URL_TTL` seconds (default 30 minutes), limiting the window for URL sharing/leakage.
 - RPM uploads are validated to prevent arbitrary file storage.
 - B2 storage keys use deterministic, sanitized paths to prevent key manipulation.
-- GPG private keys are encrypted at rest in the database using `SECRET_KEY_BASE`. They are only decrypted in-memory during signing operations.
+- GPG private keys are encrypted at rest in the database with the versioned AES-256-GCM envelope described in GPG Signing. They are only decrypted in-memory during signing operations.
 - Downloadable `.repo` files never include API keys, session tokens, or passwords.
 - Rate limiting on all endpoints (see Rate Limiting below).
 - CSRF protection on all web form submissions and cookie-authenticated mutating API requests (standard Phoenix behavior).
