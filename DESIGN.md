@@ -139,6 +139,8 @@ Each package record represents a single RPM file within a repository.
 | `inserted_at` | timestamp | Creation time |
 | `updated_at` | timestamp | Last modification time |
 
+**Unique constraint**: `(key_hash)`
+
 **API Key Scopes**: Scopes control which operations an API key can perform. Mutating scopes operate on repositories owned by the key's user. The `repo:read` scope grants read access based on the user's identity (owner, collaborator, or admin). Valid scopes:
 
 | Scope | Permits |
@@ -158,7 +160,7 @@ Users can create multiple API keys with different scopes and names (e.g., a `rep
 
 ### Repository Collaborators
 
-Repo owners can grant other users read access to their private repositories. When the invited user is already registered, a collaborator record is created immediately. When the email does not match a registered user, a pending invitation is created instead and converts to a collaborator record when the user registers. The invited user receives an email notification: registered users get a direct link to the repository, and unregistered invitees get a registration link that converts the pending invitation on signup.
+Repo owners can grant other users read access to their private repositories. When the invited user is already registered, a collaborator record is created immediately. When the email does not match a registered user, a pending invitation is created instead and converts to a collaborator record when the user registers. The invited user receives an email notification: registered users get a direct link to the repository, and unregistered invitees get a registration link that converts the pending invitation on signup. When `REGISTRATION_ENABLED = false`, pending invitations to unregistered addresses are still created so they convert automatically once an admin provisions the account, but no email is sent to the unregistered invitee. The inviting owner is shown a UI notice indicating that an admin must create the account before the invitation can be accepted.
 
 | Field | Type | Description |
 |---|---|---|
@@ -197,6 +199,8 @@ Short-lived bearer tokens issued by the login endpoint for interactive/CLI use.
 | `expires_at` | timestamp | Expiration time (24 hours after creation) |
 | `inserted_at` | timestamp | Creation time |
 
+**Unique constraint**: `(token_hash)`
+
 Session tokens are generated from 32 bytes of cryptographically secure random data, encoded as unpadded base64url, and returned as `dzst_<secret>`. The database stores only `HMAC-SHA-256(SECRET_KEY_BASE, full_token_string)` encoded as lowercase hex, where `full_token_string` is the complete returned value including the `dzst_` prefix. Session tokens do not have scopes; they authorize API requests as the logged-in user and still require the same owner/admin checks as web sessions.
 
 Expired tokens are periodically cleaned up by a background job.
@@ -233,6 +237,7 @@ Built on `phx.gen.auth` (bcrypt-based session authentication).
 | `gpg_key_private` | binary | Optional GPG private key, encrypted at rest using the versioned GPG private key encryption envelope |
 | `gpg_key_public` | text | ASCII-armored GPG public key (served at `/repos/:slug/RPM-GPG-KEY`) |
 | `gpg_key_fingerprint` | string | 40-character uppercase hex OpenPGP V4 fingerprint of the stored GPG key (for display/identification) |
+| `previous_gpg_key_public` | text | Optional ASCII-armored previous public GPG key, retained while a GPG key replacement is mid-transition so clients can still verify signatures made with the previous key; cleared when every per-package re-sign job for the user's repositories has completed successfully |
 | `confirmed_at` | timestamp | Email confirmation time |
 | `inserted_at` | timestamp | Creation time |
 | `updated_at` | timestamp | Last modification time |
@@ -248,7 +253,7 @@ Built on `phx.gen.auth` (bcrypt-based session authentication).
 ### User Lifecycle
 
 - User accounts are created via web registration (when `REGISTRATION_ENABLED = true`) or by an admin in the admin web UI. There is no REST API for user creation or deletion; admin user management is web-only.
-- An admin can delete a user account from the admin UI, but the deletion is rejected with `409 conflict_user_owns_repositories` if that user still owns any repositories. The admin must first reassign or delete those repositories.
+- An admin can delete a user account from the admin UI, but the deletion is rejected with `409 conflict_user_owns_repositories` if that user still owns any repositories. The admin must first delete those repositories.
 - Users cannot delete their own accounts; account deletion is admin-only.
 - When a user is deleted, the database cascades remove their API keys, session tokens, GPG key, and pending collaborator invitations they sent, removes any collaborator membership rows where they are the collaborator, and deletes any pending collaborator invitations addressed to the deleted user's email so a later re-registration with the same email does not silently re-attach to old invites. Repositories owned by other users on which the deleted user was a collaborator are otherwise unaffected.
 
@@ -311,7 +316,7 @@ Multiple rapid changes are debounced with an Oban unique job keyed by `repositor
 
 When a client (e.g., `dnf`) requests an RPM file at `/repos/:slug/packages/:id/:filename.rpm`:
 
-1. Dark Zenith validates access to the repository identified by `:slug`, then validates that `:filename` matches `^[A-Za-z0-9._+~-]+\.rpm$`; non-matching requests are rejected with `400 invalid_request`. It then looks up the package record by `:id` scoped to that repository in PostgreSQL to find the B2 storage key. The `:filename` segment is otherwise cosmetic (ignored for routing) but provides a human-readable filename for download clients.
+1. Dark Zenith validates access to the repository identified by `:slug`, then validates that `:filename` matches `^[A-Za-z0-9._+~_-]+\.rpm$`; non-matching requests are rejected with `400 invalid_request`. It then looks up the package record by `:id` scoped to that repository in PostgreSQL to find the B2 storage key. The `:filename` segment is otherwise cosmetic (ignored for routing) but provides a human-readable filename for download clients.
 2. Generates a **signed Backblaze B2 URL** using `B2_SIGNED_URL_TTL` (default **30-minute expiration**).
 3. Responds with **HTTP 302 redirect** to the signed URL.
 4. The client downloads the RPM directly from B2.
@@ -378,7 +383,7 @@ GET /repos/:slug/repodata/repomd.xml.asc
 GET /repos/:slug/RPM-GPG-KEY
 ```
 
-Both endpoints return `404 not_found` when the repository has no `gpg_key_fingerprint` configured.
+Both endpoints return `404 not_found` when the repository has no `gpg_key_fingerprint` configured. While the repository owner is mid-transition through a GPG key replacement (their `previous_gpg_key_public` is set), `/repos/:slug/RPM-GPG-KEY` returns the previous and current public keys concatenated as a single ASCII-armored keyring so clients can verify both old- and new-key signatures during the transition (see "Key replacement and revocation" below).
 
 #### RPM signing (`sign_rpms = true`, requires `gpg_key_fingerprint`)
 
@@ -400,11 +405,12 @@ When `sign_rpms` is enabled on a repository that already has packages, the owner
 
 #### Key replacement and revocation
 
-Users can replace their GPG key by uploading a new pair (public + private). Replacement is allowed even when repositories have signing enabled. When replacement happens:
+Users can replace their GPG key by uploading a new pair (public + private). Replacement is allowed even when repositories have signing enabled. Because the cached metadata signature and existing per-package signatures may still chain to the previous key while re-sign jobs run, the previous public key is retained during the transition so clients keep verifying successfully. When replacement happens:
 
-1. The user's `gpg_key_private`, `gpg_key_public`, and `gpg_key_fingerprint` are updated to the new pair in a single transaction.
-2. Every repository owned by the user that has `gpg_key_fingerprint` set has its `gpg_key_fingerprint` updated to the new fingerprint, its `metadata_revision` incremented, and a metadata regeneration job enqueued so `repomd.xml.asc` is re-signed with the new key.
+1. In a single transaction, the user's existing `gpg_key_public` is copied to `previous_gpg_key_public`, the user's `gpg_key_private`, `gpg_key_public`, and `gpg_key_fingerprint` are updated to the new pair, every repository owned by the user that has `gpg_key_fingerprint` set has its `gpg_key_fingerprint` updated to the new fingerprint and its `metadata_revision` incremented, and a metadata regeneration job is enqueued for each so `repomd.xml.asc` is re-signed with the new key.
+2. While `previous_gpg_key_public` is set, every `GET /repos/:slug/RPM-GPG-KEY` request for any repository owned by that user returns the previous and current public keys concatenated as a single ASCII-armored keyring, so clients can verify signatures made with either key during the transition.
 3. For each affected repository where `sign_rpms = true`, a re-sign job is enqueued per existing package. Each re-sign job decrypts the new private key, downloads the existing RPM from B2, signs unsigned RPMs with `rpmsign --addsign`, re-signs already signed RPMs with `rpmsign --resign`, verifies the result with `rpm --checksig`, recomputes the SHA-256 and final RPM file size, and uploads the re-signed RPM to `repos/:slug/packages/:resign_id/:name-:epoch-:version-:release.:arch.rpm`, where `:resign_id` is a newly generated UUID for that re-sign attempt. The job then updates the package row's `sha256`, `size_package`, and `storage_path` in a single transaction. The same transaction increments the repository's `metadata_revision` and enqueues metadata regeneration so repodata reflects the new package checksum and size. The previous B2 object is deleted asynchronously by an idempotent cleanup job. If the upload succeeds but the package-row update fails, Dark Zenith immediately attempts to delete the newly uploaded object; if that cleanup fails, it enqueues an idempotent B2 cleanup job and returns the original database error to Oban for retry. Re-sign jobs retry up to 20 attempts with exponential backoff; exhausted jobs remain visible in Oban for admin intervention.
+4. A periodic background sweep checks whether every re-sign job tied to repositories owned by the user has reached a terminal state. When every such job has completed successfully and none are pending, the sweep clears `previous_gpg_key_public` on the user in a single transaction. If any re-sign job has exhausted its retry budget, `previous_gpg_key_public` is left in place so old-key signatures remain verifiable, and the admin must resolve and replay the failed jobs (or delete the affected packages) before the previous key is cleared.
 
 Users can also explicitly revoke (remove) their GPG key without simultaneously replacing it. If the user has no repositories with `gpg_key_fingerprint` set or `sign_rpms = true`, `DELETE /api/v1/gpg_key` and the equivalent web UI action remove the key immediately.
 
@@ -421,7 +427,7 @@ When the user owns any affected repositories, `DELETE /api/v1/gpg_key` returns `
 When an RPM file is uploaded (via web UI or API) by a repository owner or admin:
 
 1. **Validate**: Confirm the file is a valid RPM by reading the RPM lead and header.
-2. **Extract metadata**: Parse the RPM headers to extract name, version, release, epoch, arch, dependencies, file lists, changelogs, summary, description, license, etc. This is done in Elixir by reading the RPM binary format directly (RPM header structure). Verify that `epoch` is a non-negative integer and that `name`, `version`, `release`, and `arch` each match `^[A-Za-z0-9._+~-]+$`; any value that does not match is rejected with `422 validation_failed`. This keeps B2 storage keys constrained to a safe, predictable character set.
+2. **Extract metadata**: Parse the RPM headers to extract name, version, release, epoch, arch, dependencies, file lists, changelogs, summary, description, license, etc. This is done in Elixir by reading the RPM binary format directly (RPM header structure). Verify that `epoch` is a non-negative integer and that `name`, `version`, `release`, and `arch` each match `^[A-Za-z0-9._+~_-]+$`; any value that does not match is rejected with `422 validation_failed`. This keeps B2 storage keys constrained to a safe, predictable character set.
 3. **Sign** (if `sign_rpms` enabled): Sign the RPM using the owner's GPG key and `rpmsign` (see GPG Signing section).
 4. **Checksum and final size**: Compute SHA-256 and `size_package` from the final RPM file after any signing step has completed.
 5. **Duplicate check**: If a package with the same `(repository_id, name, epoch, version, release, arch)` already exists, reject the upload with **HTTP 409 Conflict**. The database unique constraint is still the source of truth for concurrent uploads.
@@ -603,7 +609,7 @@ Request bodies:
 
 - `POST /api/v1/auth/login`: JSON body `{"email": "...", "password": "..."}`.
 - `POST /api/v1/repos`: JSON body with required `name` and `slug`, and optional `description`, `is_public`, `gpg_key_fingerprint`, and `sign_rpms`. Requests with `sign_rpms = true` must also set `gpg_key_fingerprint` to the owner's current GPG key fingerprint or they are rejected with `422 validation_failed`.
-- `PATCH /api/v1/repos/:slug`: JSON body with any subset of repository fields accepted by create. PATCH operations that would leave `sign_rpms = true` with `gpg_key_fingerprint` unset are rejected with `422 validation_failed` (mirroring the create-time constraint). Enabling `sign_rpms` on a repository that already has packages requires an explicit `existing_package_strategy` field with value `"resign"` to confirm per-package re-sign jobs identical to the key replacement flow; transitioning `sign_rpms` to `true` on a non-empty repository without this field is rejected with `422 validation_failed`. Unknown `existing_package_strategy` values are rejected with `422 validation_failed`. When `sign_rpms` is unchanged, when it is transitioning from `true` to `false`, or when it is being enabled on an empty repository, requests that include `existing_package_strategy` are rejected with `422 validation_failed`.
+- `PATCH /api/v1/repos/:slug`: JSON body with any subset of repository fields accepted by create, except `slug`, which is immutable. PATCH requests that include `slug` are rejected with `422 validation_failed` so existing client `.repo` files continue to resolve. PATCH operations that would leave `sign_rpms = true` with `gpg_key_fingerprint` unset are rejected with `422 validation_failed` (mirroring the create-time constraint). Enabling `sign_rpms` on a repository that already has packages requires an explicit `existing_package_strategy` field with value `"resign"` to confirm per-package re-sign jobs identical to the key replacement flow; transitioning `sign_rpms` to `true` on a non-empty repository without this field is rejected with `422 validation_failed`. Unknown `existing_package_strategy` values are rejected with `422 validation_failed`. When `sign_rpms` is unchanged, when it is transitioning from `true` to `false`, or when it is being enabled on an empty repository, requests that include `existing_package_strategy` are rejected with `422 validation_failed`.
 - `POST /api/v1/repos/:slug/packages`: multipart body with a single `rpm` file field. A duplicate NEVRA in the repository returns `409 conflict_duplicate_package`.
 - `POST /api/v1/repos/:slug/collaborators`: JSON body `{"email": "user@example.com"}`. The email is normalized to lowercase before lookup. If the email belongs to the repository owner, the request is rejected with `422 validation_failed`. If a collaborator or pending invitation already exists for the normalized email, the request succeeds idempotently with `200 OK` and returns the existing collaborator or invitation instead of creating a duplicate. Newly created collaborators or invitations return `201 Created`.
 - `POST /api/v1/api_keys`: JSON body with `name`, `scopes`, and optional `expires_at`. The plaintext API key is returned only in this response.
@@ -723,9 +729,26 @@ Dark Zenith is configured via environment variables and/or `config/runtime.exs`:
 | `RPM_PATH`             | `rpm`       | Path to the `rpm` executable used for signature verification                   |
 | `RPMSIGN_PATH`         | `rpmsign`   | Path to the `rpmsign` executable used when RPM signing is enabled              |
 | `GPG_PATH`             | `gpg`       | Path to the `gpg` executable used by metadata signing and `rpmsign`            |
+| `MAIL_ADAPTER`         | `zepto`     | Outbound email adapter (Swoosh module). Default uses Zepto Mail. See Email Delivery below. |
+| `ZEPTO_API_KEY`        | —           | Zepto Mail API key (required when `MAIL_ADAPTER=zepto`)                        |
+| `MAIL_FROM_ADDRESS`    | —           | Sender address for outbound notifications (required when email is enabled)     |
+| `MAIL_FROM_NAME`       | `Dark Zenith` | Display name shown for the sender                                            |
 | `REGISTRATION_ENABLED` | `false`     | Whether new account registration is open                                       |
 | `ADMIN_EMAIL`          | —           | Email for the initial admin account, created on first boot if no users exist   |
 | `ADMIN_PASSWORD`       | —           | Password for the initial admin account                                         |
+
+---
+
+## Email Delivery
+
+Dark Zenith sends transactional emails for:
+
+- Account email confirmation and password reset (via `phx.gen.auth`).
+- Collaborator invitations to registered and unregistered users (subject to the registration-disabled exception described under Repository Collaborators).
+
+Email delivery is built on Swoosh with a pluggable adapter selected by `MAIL_ADAPTER`. The default is `zepto`, which sends through Zepto Mail's HTTPS API using `ZEPTO_API_KEY`. The application code uses a single `DarkZenith.Mailer` module and a thin notifier layer, so swapping providers is a configuration change rather than a code change — alternative Swoosh adapters (e.g., `Swoosh.Adapters.SMTP`, `Swoosh.Adapters.Local`) can be selected by setting `MAIL_ADAPTER` to the corresponding short alias and configuring the adapter's environment variables in `config/runtime.exs`.
+
+Outbound mail uses `MAIL_FROM_ADDRESS` as the sender and `MAIL_FROM_NAME` (default `Dark Zenith`) as the display name. Every email is dispatched through an Oban worker so a transient provider outage does not fail the originating request; delivery jobs retry up to 20 attempts with exponential backoff and exhausted jobs remain visible in Oban for admin intervention.
 
 ---
 
