@@ -126,6 +126,27 @@ Each package record represents a single RPM file within a repository.
 
 **Unique constraint**: `(repository_id, name, epoch, version, release, arch)`
 
+### Web Upload Previews
+
+Temporary records used only by the web UI's preview-and-confirm RPM upload flow.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID | Primary key |
+| `repository_id` | UUID | FK to repositories |
+| `user_id` | UUID | FK to users — the owner/admin who initiated the preview |
+| `token_hash` | string | HMAC-SHA-256 hash of the full preview token string, including the `dzup_` prefix |
+| `original_filename` | string | Original uploaded filename for display |
+| `tmp_path` | string | Server-local temporary path under `RPM_UPLOAD_TMPDIR` containing the uploaded RPM until confirmation or expiration |
+| `size_uploaded` | bigint | Uploaded file size in bytes |
+| `metadata` | jsonb | Extracted preview metadata (`name`, `epoch`, `version`, `release`, `arch`, `summary`, `description`, `url`, `license`, `size_installed`, dependencies, files, and changelogs) using the same dependency, file, and changelog shapes as package detail responses |
+| `expires_at` | timestamp | Expiration time (15 minutes after creation) |
+| `inserted_at` | timestamp | Creation time |
+
+**Unique constraint**: `(token_hash)`
+
+Preview tokens are generated from 32 bytes of cryptographically secure random data, encoded as unpadded base64url, and returned to the web UI as `dzup_<secret>`. The database stores only `HMAC-SHA-256(SECRET_KEY_BASE, full_token_string)` encoded as lowercase hex. Expired preview rows and their temporary files are deleted by a periodic Oban cleanup job. Repository deletion removes pending preview rows for that repository and enqueues cleanup for their temporary files.
+
 ### API Keys
 
 | Field | Type | Description |
@@ -161,7 +182,7 @@ Users can create multiple API keys with different scopes and names (e.g., a `rep
 
 ### Repository Collaborators
 
-Repo owners can grant other users read access to their private repositories. When the invited email address, after normalization, matches an already registered user, a collaborator record is created immediately. When the normalized email does not match a registered user, a pending invitation is created instead and converts to a collaborator record when the user registers. The invited user receives an email notification: registered users get a direct link to the repository, and unregistered invitees get a registration link that converts the pending invitation on signup. When `REGISTRATION_ENABLED = false`, pending invitations to unregistered addresses are still created so they convert automatically once an admin provisions the account, but no email is sent to the unregistered invitee. The inviting owner is shown a UI notice indicating that an admin must create the account before the invitation can be accepted.
+Repo owners can grant other users read access to their private repositories. When the invited email address, after normalization, matches an already registered user, a collaborator record is created immediately. When the normalized email does not match a registered user, a pending invitation is created instead and converts to a collaborator record when a matching user account is created. The invited user receives an email notification: registered users get a direct link to the repository, and unregistered invitees get a registration link that converts the pending invitation on signup. When `REGISTRATION_ENABLED = false`, pending invitations to unregistered addresses are still created so they convert automatically once an admin provisions the account, but no email is sent to the unregistered invitee. The inviting owner is shown a UI notice indicating that an admin must create the account before the invitation can be accepted.
 
 | Field | Type | Description |
 |---|---|---|
@@ -174,7 +195,7 @@ Repo owners can grant other users read access to their private repositories. Whe
 
 ### Collaborator Invitations
 
-Pending invitations for users who have not yet registered.
+Pending invitations for email addresses that do not yet belong to a user account.
 
 | Field | Type | Description |
 |---|---|---|
@@ -186,7 +207,7 @@ Pending invitations for users who have not yet registered.
 
 **Unique constraint**: `(repository_id, email)`
 
-When a user registers with a normalized email that has pending invitations, those invitations are automatically converted to collaborator records and the invitation rows are deleted.
+When a user account is created with a normalized email that has pending invitations, whether by public registration or admin provisioning, those invitations are automatically converted to collaborator records and the invitation rows are deleted.
 
 ### Session Tokens
 
@@ -256,7 +277,7 @@ Built on `phx.gen.auth` (bcrypt-based session authentication).
 - User accounts are created via web registration (when `REGISTRATION_ENABLED = true`) or by an admin in the admin web UI. There is no REST API for user creation or deletion; admin user management is web-only. Web-registered users go through the standard `phx.gen.auth` email confirmation flow before they can log in. Admin-created users are auto-confirmed: `confirmed_at` is set at creation time so the new account can log in immediately, and no confirmation email is sent (mirroring the bootstrap admin behavior).
 - An admin can delete a user account from the admin UI, but the deletion is rejected with `409 conflict_user_owns_repositories` if that user still owns any repositories. The admin must first delete those repositories.
 - Users cannot delete their own accounts; account deletion is admin-only.
-- When a user is deleted, the database cascades remove their API keys, session tokens, GPG key, and pending collaborator invitations they sent, removes any collaborator membership rows where they are the collaborator, and deletes any pending collaborator invitations addressed to the deleted user's normalized email so a later re-registration with the same email does not silently re-attach to old invites. Repositories owned by other users on which the deleted user was a collaborator are otherwise unaffected.
+- When a user is deleted, the database cascades remove their API keys, session tokens, GPG key, web upload preview rows they initiated, and pending collaborator invitations they sent, removes any collaborator membership rows where they are the collaborator, and deletes any pending collaborator invitations addressed to the deleted user's normalized email so a later re-registration with the same email does not silently re-attach to old invites. Temporary files for deleted web upload previews are cleaned up by the preview cleanup job. Repositories owned by other users on which the deleted user was a collaborator are otherwise unaffected.
 
 ---
 
@@ -304,7 +325,7 @@ Metadata is regenerated as a background job (via Oban) when packages are added t
 
 1. Package upload/deletion increments the repository's `metadata_revision` inside the same database transaction that changes package membership.
 2. The transaction enqueues a unique Oban regeneration job for the affected repository. On deletion, a separate idempotent Oban job removes the RPM file from B2 after the package row is removed.
-3. The regeneration job reads the current repository `metadata_revision`, then queries all packages in the repository from PostgreSQL.
+3. The regeneration job reads the current repository `metadata_revision`, then queries all packages in the repository from PostgreSQL in deterministic order by `name`, `epoch`, `version`, `release`, `arch`, and `id`.
 4. XML metadata files are generated in-memory and compressed with gzip.
 5. A new `repomd.xml` is generated with checksums pointing to the current metadata files.
 6. The generated metadata blobs, `repomd.xml`, optional `repomd.xml.asc` signature, and `source_revision` are stored in PostgreSQL keyed by repository.
@@ -322,7 +343,7 @@ Multiple rapid changes are debounced with an Oban unique job keyed by `repositor
 When a client (e.g., `dnf`) requests an RPM file at `/repos/:slug/packages/:id/:filename.rpm`:
 
 1. Dark Zenith validates access to the repository identified by `:slug`, then validates that `:filename` matches `^[A-Za-z0-9._+~-]+\.rpm$`; non-matching requests are rejected with `400 invalid_request`. It then looks up the package record by `:id` scoped to that repository in PostgreSQL to find the B2 storage key. The `:filename` segment is otherwise cosmetic (ignored for routing) but provides a human-readable filename for download clients.
-2. Generates a **signed Backblaze B2 URL** using `B2_SIGNED_URL_TTL` (default **30-minute expiration**).
+2. Generates a **signed Backblaze B2 URL** using `B2_SIGNED_URL_TTL` (default **30-minute expiration**). If B2 signed URL generation fails for an infrastructure reason, the endpoint returns `503 storage_unavailable`.
 3. Responds with **HTTP 302 redirect** to the signed URL.
 4. The client downloads the RPM directly from B2.
 
@@ -447,16 +468,16 @@ Upload processing uses a per-upload temporary working directory under `RPM_UPLOA
 2. **Extract metadata**: Parse the RPM headers to extract name, version, release, epoch, arch, dependencies, file lists, changelogs, summary, description, license, etc. This is done in Elixir by reading the RPM binary format directly (RPM header structure). Verify that `epoch` is a non-negative integer and that `name`, `version`, `release`, and `arch` each match `^[A-Za-z0-9._+~-]+$`; any value that does not match is rejected with `422 validation_failed`. This keeps B2 storage keys constrained to a safe, predictable character set.
 3. **Sign** (if `sign_rpms` enabled): Sign the RPM using the owner's GPG key and `rpmsign` (see GPG Signing section).
 4. **Checksum and final size**: Compute SHA-256 and `size_package` from the final RPM file after any signing step has completed.
-5. **Duplicate check**: If a package with the same `(repository_id, name, epoch, version, release, arch)` already exists, reject the upload with **HTTP 409 Conflict**. The database unique constraint is still the source of truth for concurrent uploads.
+5. **Duplicate check**: If a package with the same `(repository_id, name, epoch, version, release, arch)` already exists, reject the upload with `409 conflict_duplicate_package`. The database unique constraint is still the source of truth for concurrent uploads.
 6. **Generate package UUID**: Allocate the package row's UUID in application code so it can be used in the B2 storage key before the row is inserted.
 7. **Upload to B2**: Store the RPM file in Backblaze B2 at the per-upload key `repos/:slug/packages/:id/:name-:epoch-:version-:release.:arch.rpm`, where `:id` is the UUID generated in step 6. Including the per-upload UUID guarantees that two concurrent uploads of the same NEVRA never share a B2 path, so a failed-insert cleanup cannot delete an object referenced by another package row.
 8. **Record**: Insert the package record into PostgreSQL using the UUID from step 6 and the B2 storage key from step 7, increment `metadata_revision`, and enqueue the repository metadata regeneration job in the same transaction.
 
-If B2 upload fails, no package row is inserted and the caller receives an upload error. If the B2 upload succeeds but the database insert fails, Dark Zenith immediately attempts to delete the just-uploaded object — safe because the object's key includes the unreferenced UUID. If that cleanup fails, it enqueues an idempotent B2 cleanup job and returns the original database error to the caller. If the package insert succeeds but metadata regeneration fails, the upload remains successful; the regeneration job retries until the cache reaches the repository's latest `metadata_revision`.
+If signing is required but `rpm`, `rpmsign`, or `gpg` is unavailable or fails for an infrastructure reason, no package row is inserted and the caller receives `503 signing_unavailable`. If B2 upload fails, no package row is inserted and the caller receives `503 storage_unavailable`. If the B2 upload succeeds but the database insert fails, Dark Zenith immediately attempts to delete the just-uploaded object — safe because the object's key includes the unreferenced UUID. If that cleanup fails, it enqueues an idempotent B2 cleanup job and returns the original database error mapped to its standard API error response (for example, a concurrent unique-constraint failure returns `409 conflict_duplicate_package`). If the package insert succeeds but metadata regeneration fails, the upload remains successful; the regeneration job retries until the cache reaches the repository's latest `metadata_revision`.
 
-Package deletion removes the package row, increments `metadata_revision`, and enqueues metadata regeneration in one database transaction. B2 object deletion happens in a separate idempotent Oban job with retries. If B2 deletion fails, the package no longer appears in metadata or API responses, and package-id download URLs no longer resolve, but the orphaned object is retried for cleanup.
+Package deletion removes the package row, increments `metadata_revision`, and enqueues metadata regeneration in one database transaction. B2 object deletion happens in a separate idempotent Oban job with retries. If B2 deletion fails, the package no longer appears in metadata or API responses, and package-id download URLs no longer resolve, but the orphaned object is retried for cleanup. Previously issued signed B2 URLs may remain usable until they expire or until the B2 object is deleted, whichever happens first.
 
-Repository deletion is a hard delete. When an authorized owner or admin deletes a repository, Dark Zenith reads the current package `storage_path` values, deletes the repository row and dependent packages, collaborator, invitation, and metadata-cache rows in one database transaction, and returns `204 No Content` after that transaction commits. B2 object deletion happens after commit through idempotent cleanup jobs for the collected storage paths. If one or more B2 cleanup jobs fail, the repository remains deleted from PostgreSQL and inaccessible through the web, API, metadata, and package download endpoints while cleanup continues through Oban retries.
+Repository deletion is a hard delete. When an authorized owner or admin deletes a repository, Dark Zenith reads the current package `storage_path` values and pending web upload preview `tmp_path` values, deletes the repository row and dependent packages, collaborators, invitations, metadata-cache rows, and web upload preview rows in one database transaction, and returns `204 No Content` after that transaction commits. B2 object deletion happens after commit through idempotent cleanup jobs for the collected storage paths; temporary preview-file deletion happens through the preview cleanup job. If one or more B2 cleanup jobs fail, the repository remains deleted from PostgreSQL and inaccessible through the web, API, metadata, and package download endpoints while cleanup continues through Oban retries. Previously issued signed B2 URLs for the repository's RPM objects may remain usable until they expire or until the B2 objects are deleted, whichever happens first.
 
 ### RPM Parsing
 
@@ -521,7 +542,9 @@ The web UI is built with Phoenix LiveView. Public pages are accessible to everyo
 ### Upload RPM (owner/admin, `GET /repos/:slug/upload`)
 
 - Drag-and-drop or file picker to upload an RPM to the selected repository.
-- Shows extracted metadata for confirmation before finalizing.
+- **Preview**: The uploaded RPM is size-checked, validated, and parsed using the same validation and metadata extraction rules as the final upload pipeline. No package row is created and no B2 object is written during preview. On success, Dark Zenith stores the uploaded file in a temporary path under `RPM_UPLOAD_TMPDIR`, creates a Web Upload Preview record with a 15-minute expiration, and shows the extracted metadata for confirmation.
+- **Confirm**: The confirmation request sends the preview token back to the server. Dark Zenith reloads the preview row, verifies that it belongs to the same repository and authenticated user, verifies that it has not expired, re-runs RPM validation and metadata extraction from the temporary file, and rejects the confirmation with `422 validation_failed` if the NEVRA or extracted metadata no longer matches the stored preview. The confirmation then runs the normal upload pipeline starting with signing, checksum/final-size calculation, duplicate check, B2 upload, and package insertion. Confirmation consumes the preview token; the preview row and temporary file are deleted after success or failure.
+- **Expiration**: Expired previews cannot be confirmed. The UI asks the user to upload the RPM again.
 - **Web only**: The two-step confirmation flow (preview then confirm) is a web UI feature. The REST API processes uploads immediately in a single request — see the API section.
 
 ### GPG Key Management (authenticated, account settings)
@@ -545,7 +568,9 @@ The REST API provides programmatic access to repository operations. Authenticati
 
 Read-only endpoints for public repos are unauthenticated.
 
-Mutating API endpoints require either session token/cookie authentication or an API key with the matching scope. Repository-scoped mutations also require the authenticated user to be the repository owner or an admin.
+Repository-scoped mutating API endpoints require either session token/cookie authentication or an API key with the matching scope. Repository-scoped mutations also require the authenticated user to be the repository owner or an admin.
+
+Account-management API endpoints for API keys and GPG keys require session token or session cookie authentication. API key credentials are not accepted for `/api/v1/api_keys`, `/api/v1/gpg_key`, or `/api/v1/gpg_key/revocation`; requests authenticated only by API key return `403 forbidden`.
 
 ### Authentication
 
@@ -604,39 +629,52 @@ DELETE /api/v1/repos/:slug/collaborators/invitations/:id  # Cancel a pending inv
 ### API Keys
 
 ```
-GET    /api/v1/api_keys                 # List your API keys (auth required)
-POST   /api/v1/api_keys                 # Create an API key (auth required)
-DELETE /api/v1/api_keys/:id             # Revoke an API key (auth required)
+GET    /api/v1/api_keys                 # List your API keys (session token/cookie auth required)
+POST   /api/v1/api_keys                 # Create an API key (session token/cookie auth required)
+DELETE /api/v1/api_keys/:id             # Revoke an API key (session token/cookie auth required)
 ```
 
 ### GPG Keys
 
 ```
-GET    /api/v1/gpg_key                  # Get your GPG key info (auth required)
-PUT    /api/v1/gpg_key                  # Upload/replace your GPG key pair (auth required)
-DELETE /api/v1/gpg_key                  # Remove your GPG key when it is not used by any repository (auth required)
-POST   /api/v1/gpg_key/revocation       # Remove or replace an in-use GPG key with an explicit strategy (auth required)
+GET    /api/v1/gpg_key                  # Get your GPG key info (session token/cookie auth required)
+PUT    /api/v1/gpg_key                  # Upload/replace your GPG key pair (session token/cookie auth required)
+DELETE /api/v1/gpg_key                  # Remove your GPG key when it is not used by any repository (session token/cookie auth required)
+POST   /api/v1/gpg_key/revocation       # Remove or replace an in-use GPG key with an explicit strategy (session token/cookie auth required)
 ```
 
 ### API Contract Details
 
 JSON endpoints with request bodies require `Content-Type: application/json`. File and key upload requests use `multipart/form-data`. All timestamps are ISO-8601 UTC strings and all IDs are UUID strings. User-provided metadata strings are trimmed before validation, but secrets and key material (passwords, bearer/API token values, and GPG armored key fields) are not modified except by their documented parsers. Email addresses are normalized to lowercase. Repository slugs are normalized to lowercase and must match `^[a-z0-9][a-z0-9_-]{0,63}$`. Unknown JSON fields are rejected with `422 validation_failed`.
 
-Request bodies:
+Request bodies and endpoint-specific behavior:
 
 - `POST /api/v1/auth/login`: JSON body `{"email": "...", "password": "..."}`.
 - `POST /api/v1/repos`: JSON body with required `name` and `slug`, and optional `description`, `is_public`, `gpg_key_fingerprint`, and `sign_rpms`. Requests with a `slug` whose normalized form is already in use by another repository are rejected with `422 validation_failed` and `details.slug` indicating the conflict, so slug uniqueness collisions surface the same way as format violations. Requests with `gpg_key_fingerprint` set to anything other than the owner's current GPG key fingerprint are rejected with `422 validation_failed`. Requests with `sign_rpms = true` must also set `gpg_key_fingerprint` to the owner's current GPG key fingerprint or they are rejected with `422 validation_failed`. `rpm_signing_state` is server-managed; requests that include it are rejected with `422 validation_failed`. A new empty repository created with `sign_rpms = true` starts with `rpm_signing_state = "enabled"`.
 - `PATCH /api/v1/repos/:slug`: JSON body with any subset of repository fields accepted by create, except `slug`, which is immutable. PATCH requests that include `slug` are rejected with `422 validation_failed` so existing client `.repo` files continue to resolve. `rpm_signing_state` is server-managed; PATCH requests that include it are rejected with `422 validation_failed`. PATCH requests with `gpg_key_fingerprint` set to anything other than the owner's current GPG key fingerprint are rejected with `422 validation_failed`. PATCH operations that would leave `sign_rpms = true` with `gpg_key_fingerprint` unset are rejected with `422 validation_failed` (mirroring the create-time constraint). Enabling `sign_rpms` on a repository that already has packages requires an explicit `existing_package_strategy` field with value `"resign"` to confirm per-package re-sign jobs identical to the key replacement flow; the server sets `rpm_signing_state = "signing"` until those jobs complete. Transitioning `sign_rpms` to `true` on a non-empty repository without this field is rejected with `422 validation_failed`. Unknown `existing_package_strategy` values are rejected with `422 validation_failed`. When `sign_rpms` is unchanged, when it is transitioning from `true` to `false`, or when it is being enabled on an empty repository, requests that include `existing_package_strategy` are rejected with `422 validation_failed`. Enabling `sign_rpms` on an empty repository sets `rpm_signing_state = "enabled"`; disabling `sign_rpms` sets `rpm_signing_state = "disabled"`.
-- `POST /api/v1/repos/:slug/packages`: multipart body with exactly one `rpm` file field. A duplicate NEVRA in the repository returns `409 conflict_duplicate_package`. Oversized uploads return `413 payload_too_large`; valid-size files that are not valid RPMs return `422 validation_failed`; insufficient temporary upload workspace returns `503 upload_temp_space_unavailable`.
+- `POST /api/v1/repos/:slug/packages`: multipart body with exactly one `rpm` file field. A duplicate NEVRA in the repository returns `409 conflict_duplicate_package`. Oversized uploads return `413 payload_too_large`; valid-size files that are not valid RPMs return `422 validation_failed`; insufficient temporary upload workspace returns `503 upload_temp_space_unavailable`; signing infrastructure failures return `503 signing_unavailable`; object-storage failures return `503 storage_unavailable`.
 - `POST /api/v1/repos/:slug/collaborators`: JSON body `{"email": "user@example.com"}`. The email is normalized to lowercase before lookup. If the email belongs to the repository owner, the request is rejected with `422 validation_failed`. If a collaborator or pending invitation already exists for the normalized email, the request succeeds idempotently with `200 OK` and returns the existing collaborator or invitation instead of creating a duplicate. Newly created collaborators or invitations return `201 Created`.
-- `POST /api/v1/api_keys`: JSON body with `name`, `scopes`, and optional `expires_at`. The plaintext API key is returned only in this response.
-- `PUT /api/v1/gpg_key`: multipart body with `public_key` and `private_key` fields containing ASCII-armored GPG keys. The public and private keys must share the same fingerprint, and the private key must be usable for non-interactive signing. If `previous_gpg_key_public` is already set for the user, or if any repository owned by the user has `rpm_signing_state = "signing"`, the request is rejected with `409 conflict_gpg_key_transition_in_progress`.
-- `DELETE /api/v1/gpg_key`: no request body. Returns `204 No Content` when the key is not used by any repository; returns `409 conflict_gpg_key_in_use` with counts of metadata-signed and RPM-signed repositories when an explicit revocation strategy is required.
-- `POST /api/v1/gpg_key/revocation`: JSON body `{"strategy": "clear_metadata_signing"}` or `{"strategy": "delete_signed_packages"}`; or multipart body with `strategy=replace_key`, `public_key`, and `private_key` fields. Unknown strategies are rejected with `422 validation_failed`. `clear_metadata_signing` is rejected with `409 conflict_gpg_key_in_use` if any owned repository has `sign_rpms = true`. `strategy=replace_key` is rejected with `409 conflict_gpg_key_transition_in_progress` if `previous_gpg_key_public` is already set for the user, or if any repository owned by the user has `rpm_signing_state = "signing"`.
+- `POST /api/v1/api_keys`: JSON body with `name`, `scopes`, and optional `expires_at`. `scopes` must be a non-empty array of valid scope strings. The plaintext API key is returned only in this response.
+- `GET /api/v1/gpg_key`: no request body. Returns the current GPG key resource, or `404 not_found` if the authenticated user has no GPG key.
+- `PUT /api/v1/gpg_key`: multipart body with `public_key` and `private_key` fields containing ASCII-armored GPG keys. The public and private keys must share the same fingerprint, and the private key must be usable for non-interactive signing. The response is `200 OK` with the GPG key resource. If `previous_gpg_key_public` is already set for the user, or if any repository owned by the user has `rpm_signing_state = "signing"`, the request is rejected with `409 conflict_gpg_key_transition_in_progress`.
+- `DELETE /api/v1/gpg_key`: no request body. Returns `404 not_found` when the authenticated user has no GPG key. Returns `204 No Content` when the key exists and is not used by any repository. Returns `409 conflict_gpg_key_in_use` with `details.metadata_signed_repositories` and `details.rpm_signed_repositories` counts when an explicit revocation strategy is required.
+- `POST /api/v1/gpg_key/revocation`: JSON body `{"strategy": "clear_metadata_signing"}` or `{"strategy": "delete_signed_packages"}`; or multipart body with `strategy=replace_key`, `public_key`, and `private_key` fields. Returns `404 not_found` when the authenticated user has no GPG key. Unknown strategies are rejected with `422 validation_failed`. `clear_metadata_signing` is rejected with `409 conflict_gpg_key_in_use` if any owned repository has `sign_rpms = true`. `strategy=replace_key` is rejected with `409 conflict_gpg_key_transition_in_progress` if `previous_gpg_key_public` is already set for the user, or if any repository owned by the user has `rpm_signing_state = "signing"`. Successful `clear_metadata_signing` and `delete_signed_packages` requests return `204 No Content`; successful `replace_key` requests return `200 OK` with the new GPG key resource.
+
+Resource response shapes:
+
+- Repository resources have shape `{"id": "<uuid>", "owner_id": "<uuid>", "slug": "stable", "name": "Stable", "description": null, "is_public": true, "gpg_key_fingerprint": null, "sign_rpms": false, "rpm_signing_state": "disabled", "metadata_revision": 0, "package_count": 0, "inserted_at": "...", "updated_at": "..."}`.
+- Package list resources have shape `{"id": "<uuid>", "repository_id": "<uuid>", "name": "nginx", "epoch": 0, "version": "1.24.0", "release": "2.fc39", "arch": "x86_64", "summary": "A high performance web server and reverse proxy server", "size_package": 623104, "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "download_path": "/repos/stable/packages/<uuid>/nginx-1.24.0-2.fc39.x86_64.rpm", "inserted_at": "...", "updated_at": "..."}`.
+- Package detail resources include every package list field plus `description`, `url`, `license`, `size_installed`, `rpm_sourcerpm`, `rpm_group`, `requires`, `provides`, `conflicts`, `obsoletes`, `files`, and `changelogs`. Package resources never expose the internal `storage_path`.
+- Optional string fields use `null` when absent.
+- Dependency entries in `requires`, `provides`, `conflicts`, and `obsoletes` have shape `{"name": "libc.so.6()(64bit)", "op": ">=", "epoch": 0, "version": "2.34", "release": null}`. `op` is one of `<`, `<=`, `=`, `>=`, `>`, or `null`; `epoch`, `version`, and `release` are `null` when there is no version constraint. `requires` entries additionally include `pre`, a boolean indicating a pre-transaction dependency.
+- File entries have shape `{"path": "/usr/bin/nginx", "type": "file", "flags": []}`. `type` is `file`, `directory`, or `symlink`. `flags` is an array containing zero or more of `config`, `doc`, `ghost`, `license`, and `readme`.
+- Changelog entries have shape `{"timestamp": "2025-01-15T10:30:00Z", "author": "Packager <packager@example.com>", "text": "Updated to 1.24.0"}`.
+- API key resources have shape `{"id": "<uuid>", "name": "CI read-only", "key_prefix": "dzak_abcdefg", "scopes": ["repo:read"], "expires_at": null, "inserted_at": "...", "updated_at": "..."}`. `POST /api/v1/api_keys` returns the same resource plus `key`, the full plaintext API key; no other response includes `key` or `key_hash`.
+- GPG key resources have shape `{"fingerprint": "0123456789ABCDEF0123456789ABCDEF01234567", "public_key": "-----BEGIN PGP PUBLIC KEY BLOCK-----\n...\n-----END PGP PUBLIC KEY BLOCK-----", "replacement_in_progress": false, "previous_public_key": null, "updated_at": "..."}`. GPG key resources never expose private key material.
 
 `GET /api/v1/repos/:slug/collaborators` returns collaborators and pending invitations as typed rows in the standard paginated list envelope. Rows are sorted by normalized email ascending, then by `type` (`collaborator` before `invitation`), then by `id` ascending. Collaborator rows have shape `{"type": "collaborator", "id": "<collaborator_id>", "user_id": "<user_id>", "email": "user@example.com", "inserted_at": "..."}`. Invitation rows have shape `{"type": "invitation", "id": "<invitation_id>", "email": "pending@example.com", "invited_by_id": "<user_id>", "inserted_at": "..."}`.
 
-All list endpoints — including `/api/v1/repos`, `/api/v1/repos/:slug/packages`, `/api/v1/repos/:slug/collaborators`, and `/api/v1/api_keys` — support `page` and `per_page` query parameters and return the same paginated envelope. `page` defaults to `1`; `per_page` defaults to `50` and is capped at `100`. Non-integer or non-positive pagination values are rejected with `422 validation_failed`. Package list endpoints additionally support `q`, `name`, `arch`, and `sort`. The `q` parameter performs a case-insensitive substring match against the package `name` and `summary` fields combined; `name` is an exact-match filter. Valid package sort values are `name`, `version`, `arch`, and `inserted_at`; prefix with `-` for descending order. The `version` sort orders packages by RPM EVR using `(epoch, version, release)` and RPM's native comparison semantics (`rpmvercmp` behavior), with `name`, `arch`, and `id` as deterministic tie-breakers. `-version` reverses the EVR ordering. Unknown sort values are rejected with `422 validation_failed`.
+All list endpoints — including `/api/v1/repos`, `/api/v1/repos/:slug/packages`, `/api/v1/repos/:slug/collaborators`, and `/api/v1/api_keys` — support `page` and `per_page` query parameters and return the same paginated envelope. `page` defaults to `1`; `per_page` defaults to `50` and is capped at `100`. Non-integer or non-positive pagination values are rejected with `422 validation_failed`. Default ordering is deterministic: repositories by `slug` ascending then `id` ascending; packages by `name` ascending, `arch` ascending, RPM EVR descending, then `id` ascending; collaborators as described above; and API keys by `inserted_at` descending then `id` ascending. Package list endpoints additionally support `q`, `name`, `arch`, and `sort`. The `q` parameter performs a case-insensitive substring match against the package `name` and `summary` fields combined; `name` is an exact-match filter. Valid package sort values are `name`, `version`, `arch`, and `inserted_at`; prefix with `-` for descending order. The `version` sort orders packages by RPM EVR using `(epoch, version, release)` and RPM's native comparison semantics (`rpmvercmp` behavior), with `name`, `arch`, and `id` as deterministic tie-breakers. `-version` reverses the EVR ordering. Non-version package sorts use `id` ascending as the final tie-breaker. Unknown sort values are rejected with `422 validation_failed`.
 
 Successful JSON responses use a `data` envelope:
 
@@ -659,13 +697,28 @@ Error responses use this shape:
 }
 ```
 
+`conflict_gpg_key_in_use` responses use this `details` shape:
+
+```json
+{
+  "error": {
+    "code": "conflict_gpg_key_in_use",
+    "message": "GPG key is still used by repositories",
+    "details": {
+      "metadata_signed_repositories": 2,
+      "rpm_signed_repositories": 1
+    }
+  }
+}
+```
+
 Standard API error codes:
 
 | HTTP | Code                                       | Meaning                                                                                                |
 | ---: | ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
 |  400 | `invalid_request`                          | Malformed JSON, malformed multipart upload, or unsupported content type                                |
 |  401 | `unauthenticated`                          | Missing, expired, or invalid credentials                                                               |
-|  403 | `forbidden`                                | Authenticated user lacks the required scope or repository permission                                   |
+|  403 | `forbidden`                                | Authenticated user lacks the required scope, repository permission, or allowed authentication method    |
 |  404 | `not_found`                                | Requested repository, package, collaborator, invitation, API key, or GPG key was not found             |
 |  409 | `conflict_duplicate_package`               | Package with the same repository/name/epoch/version/release/arch already exists                        |
 |  409 | `conflict_gpg_key_in_use`                  | GPG key removal requires an explicit revocation strategy because one or more repositories still use it |
@@ -675,27 +728,40 @@ Standard API error codes:
 |  422 | `validation_failed`                        | Request shape is valid but field values failed validation                                              |
 |  429 | `rate_limited`                             | Request exceeded the applicable rate limit                                                             |
 |  500 | `internal_error`                           | Unexpected server error                                                                                |
+|  503 | `signing_unavailable`                      | Required RPM/GPG signing tooling or signing infrastructure is temporarily unavailable                   |
+|  503 | `storage_unavailable`                      | Backblaze B2 or object-storage operation is temporarily unavailable                                    |
 |  503 | `upload_temp_space_unavailable`            | Temporary upload workspace lacks the required free space                                               |
 
-To avoid leaking the existence of private resources, requests authenticated to a valid principal that target a private repository (or any resource scoped under one) which that principal cannot access return `404 not_found`, not `403 forbidden`. `401 unauthenticated` is reserved for requests that present no credentials at all (or credentials that fail validation — invalid signature, expired, revoked). `403 forbidden` is returned only when the authenticated principal is known to exist and is permitted to see the resource but lacks the specific scope or mutation permission required for the requested operation (e.g., a valid API key without `package:upload` attempting an upload to a public repo).
+To avoid leaking the existence of private resources, requests authenticated to a valid principal that target a private repository (or any resource scoped under one) which that principal cannot access return `404 not_found`, not `403 forbidden`. `401 unauthenticated` is reserved for requests that present no credentials at all (or credentials that fail validation — invalid signature, expired, revoked). `403 forbidden` is returned only when the authenticated principal is known to exist and is permitted to see the resource but lacks the specific scope, mutation permission, or allowed authentication method required for the requested operation (e.g., a valid API key without `package:upload` attempting an upload to a public repo, or any API key attempting to manage API keys or GPG keys).
 
 ### Response Format
 
-Example package response:
+Example package list response:
 
 ```json
 {
-  "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "name": "nginx",
-    "epoch": 0,
-    "version": "1.24.0",
-    "release": "2.fc39",
-    "arch": "x86_64",
-    "summary": "A high performance web server and reverse proxy server",
-    "size_package": 623104,
-    "sha256": "abc123...",
-    "inserted_at": "2025-01-15T10:30:00Z"
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "repository_id": "76c4474c-4b87-4ee8-8eb5-b2f7f4673e31",
+      "name": "nginx",
+      "epoch": 0,
+      "version": "1.24.0",
+      "release": "2.fc39",
+      "arch": "x86_64",
+      "summary": "A high performance web server and reverse proxy server",
+      "size_package": 623104,
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "download_path": "/repos/stable/packages/550e8400-e29b-41d4-a716-446655440000/nginx-1.24.0-2.fc39.x86_64.rpm",
+      "inserted_at": "2025-01-15T10:30:00Z",
+      "updated_at": "2025-01-15T10:30:00Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "per_page": 50,
+    "total": 1,
+    "total_pages": 1
   }
 }
 ```
@@ -808,6 +874,7 @@ RPM files are stored exclusively in Backblaze B2. The app server handles no RPM 
 
 - Mutating actions (create repo, upload RPM, delete) require session auth (web) or bearer token auth (API).
 - Mutating actions on a repository are restricted to the repo owner or an admin user. API keys inherit the permissions of their owning user.
+- API key and GPG key management endpoints require session token or session cookie authentication; API keys cannot manage API keys or GPG keys.
 - Public read-only endpoints (repo browsing, package listing, repodata, RPM downloads) require no authentication for public repos.
 - Private repo read endpoints require authentication. Browser requests may use the user's session; RPM clients use HTTP Basic Auth with API keys for repodata and RPM downloads.
 - Signed B2 URLs expire after `B2_SIGNED_URL_TTL` seconds (default 30 minutes), limiting the window for URL sharing/leakage.
