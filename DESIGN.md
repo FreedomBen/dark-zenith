@@ -183,7 +183,7 @@ Users can create multiple API keys with different scopes and names (e.g., a `rep
 
 ### Repository Collaborators
 
-Repo owners can grant other users read access to their private repositories. When the invited email address, after normalization, matches an already registered user, a collaborator record is created immediately. When the normalized email does not match a registered user, a pending invitation is created instead and converts to a collaborator record when a matching user account is created. The invited user receives an email notification: registered users get a direct link to the repository, and unregistered invitees get a registration link that converts the pending invitation on signup. When `REGISTRATION_ENABLED = false`, pending invitations to unregistered addresses are still created so they convert automatically once an admin provisions the account, but no email is sent to the unregistered invitee. The inviting owner is shown a UI notice indicating that an admin must create the account before the invitation can be accepted.
+Repo owners and admins can grant other users read access to private repositories. When the invited email address, after normalization, matches an already registered user, a collaborator record is created immediately. When the normalized email does not match a registered user, a pending invitation is created instead and converts to a collaborator record when a matching user account is created. The invited user receives an email notification: registered users get a direct link to the repository, and unregistered invitees get a registration link that converts the pending invitation on signup. When `REGISTRATION_ENABLED = false`, pending invitations to unregistered addresses are still created so they convert automatically once an admin provisions the account, but no email is sent to the unregistered invitee. The inviting user is shown a UI notice indicating that an admin must create the account before the invitation can be accepted.
 
 | Field | Type | Description |
 |---|---|---|
@@ -203,7 +203,7 @@ Pending invitations for email addresses that do not yet belong to a user account
 | `id` | UUID | Primary key |
 | `repository_id` | UUID | FK to repositories |
 | `email` | string | Normalized lowercase email address of the invited user (max 160 characters after trimming) |
-| `invited_by_id` | UUID | FK to users — the owner who sent the invitation |
+| `invited_by_id` | UUID | FK to users — the user who sent the invitation |
 | `inserted_at` | timestamp | Invitation time |
 
 **Unique constraint**: `(repository_id, email)`
@@ -299,6 +299,7 @@ The critical sub-paths that RPM clients expect:
 
 ```
 GET /repos/:slug/repodata/repomd.xml
+GET /repos/:slug/repodata/repomd.xml.asc        (when metadata signing is enabled)
 GET /repos/:slug/repodata/primary.xml.gz
 GET /repos/:slug/repodata/filelists.xml.gz
 GET /repos/:slug/repodata/other.xml.gz
@@ -353,7 +354,7 @@ When a client (e.g., `dnf`) requests an RPM file at `/repos/:slug/packages/:id/:
 
 This keeps RPM file bandwidth off the app server entirely.
 
-Repository-serving endpoints intended for RPM clients (`/repos/:slug/repodata/...`, `/repos/:slug/packages/:id/:filename.rpm`, `/repos/:slug/RPM-GPG-KEY`, and `/repos/:slug/dark-zenith.repo`) use plain-text error responses. On these endpoints, 4xx and 5xx errors such as `400 invalid_request`, `401 unauthenticated`, `404 not_found`, `429 rate_limited`, `503 storage_unavailable`, `503 signing_unavailable`, and `503 metadata_not_ready` return a `text/plain; charset=utf-8` body whose contents are the error code string and nothing else. Web UI routes under `/repos/:slug` keep their normal HTML responses, and `/api/v1/...` endpoints use the JSON `{"error": {...}}` envelope.
+Repository-serving endpoints intended for RPM clients (`/repos/:slug/repodata/...`, `/repos/:slug/packages/:id/:filename.rpm`, `/repos/:slug/RPM-GPG-KEY`, and `/repos/:slug/dark-zenith.repo`) use plain-text error responses. On these endpoints, 4xx and 5xx errors such as `400 invalid_request`, `401 unauthenticated`, `403 forbidden`, `404 not_found`, `429 rate_limited`, `503 storage_unavailable`, `503 signing_unavailable`, and `503 metadata_not_ready` return a `text/plain; charset=utf-8` body whose contents are the error code string and nothing else. Web UI routes under `/repos/:slug` keep their normal HTML responses, and `/api/v1/...` endpoints use the JSON `{"error": {...}}` envelope.
 
 ### Private Repository Authentication
 
@@ -363,6 +364,8 @@ Private repositories (`is_public = false`) require authentication on all endpoin
 - **Password**: a valid API key with the `repo:read` scope
 
 Dark Zenith checks the API key, verifies it has the `repo:read` scope, resolves the owning user, and verifies they have access to the repository (as owner, collaborator, or admin) before serving metadata or issuing a signed B2 URL.
+
+Public repositories may also receive the same Basic Auth credentials as optional authentication for higher rate limits. For public repository reads, the API key only needs to be valid, non-expired, and have at least one valid scope; `repo:read` and repository access checks are not required.
 
 Example `.repo` configuration for a private repo with metadata signing and `rpm_signing_state = "enabled"`:
 
@@ -548,7 +551,7 @@ The web UI is built with Phoenix LiveView. Public pages are accessible to everyo
 - Full package metadata: name, epoch, version, release, arch, summary, full description.
 - Dependency information (requires, provides, conflicts, obsoletes).
 - File list and changelog.
-- Direct download link (generates a signed B2 URL).
+- Direct download link to the app's package download endpoint, which redirects to a signed B2 URL.
 
 ### Upload RPM (owner/admin, `GET /repos/:slug/upload`)
 
