@@ -106,26 +106,28 @@ Each package record represents a single RPM file within a repository.
 | `version` | string | Package version (e.g., `1.24.0`); max 256 characters |
 | `release` | string | Package release (e.g., `2.fc39`); max 256 characters |
 | `arch` | string | Architecture (`x86_64`, `noarch`, `aarch64`, etc.); max 256 characters |
-| `summary` | string | One-line description (max 256 characters after trimming) |
-| `description` | text | Full description (max 65 536 characters after trimming) |
-| `url` | string | Upstream project URL (max 256 characters after trimming) |
-| `license` | string | License identifier (max 256 characters after trimming) |
+| `summary` | string | Required one-line description (max 256 characters after trimming) |
+| `description` | text | Required full description (max 65 536 characters after trimming) |
+| `url` | string | Optional upstream project URL (max 256 characters after trimming) |
+| `license` | string | Required license identifier (max 256 characters after trimming) |
 | `size_installed` | bigint | Installed size in bytes |
 | `size_package` | bigint | RPM file size in bytes |
 | `sha256` | string | Lowercase hex-encoded SHA-256 checksum of the RPM file |
-| `rpm_sourcerpm` | string | Source RPM name (max 256 characters after trimming) |
-| `rpm_group` | string | RPM group (max 256 characters after trimming) |
+| `rpm_sourcerpm` | string | Optional source RPM name (max 256 characters after trimming) |
+| `rpm_group` | string | Optional RPM group (max 256 characters after trimming) |
 | `storage_path` | string | Path/key where the RPM file is stored |
-| `requires` | jsonb | List of dependency requirements |
-| `provides` | jsonb | List of capabilities provided |
-| `conflicts` | jsonb | List of conflicts |
-| `obsoletes` | jsonb | List of obsoletes |
-| `files` | jsonb | List of files contained in the RPM |
-| `changelogs` | jsonb | Changelog entries |
+| `requires` | jsonb | List of dependency requirements (default `[]`) |
+| `provides` | jsonb | List of capabilities provided (default `[]`) |
+| `conflicts` | jsonb | List of conflicts (default `[]`) |
+| `obsoletes` | jsonb | List of obsoletes (default `[]`) |
+| `files` | jsonb | List of files contained in the RPM (default `[]`) |
+| `changelogs` | jsonb | Changelog entries (default `[]`) |
 | `inserted_at` | timestamp | Upload time |
 | `updated_at` | timestamp | Last modification time |
 
 **Unique constraint**: `(repository_id, name, epoch, version, release, arch)`
+
+Persisted packages require `name`, `epoch`, `version`, `release`, `arch`, `summary`, `description`, `license`, `size_installed`, `size_package`, and `sha256`. The `url`, `rpm_sourcerpm`, and `rpm_group` fields are nullable when absent or empty after trimming. Dependency, file, and changelog fields are stored as empty arrays when the RPM has no entries for that category.
 
 ### Web Upload Previews
 
@@ -271,7 +273,7 @@ Built on `phx.gen.auth` (bcrypt-based session authentication).
 ### Authorization
 
 - **Owner**: A user owns the repositories they create. Only the owner can modify (update, delete, upload to) their repositories. Owners can add collaborators to their private repos.
-- **Collaborator**: A user granted read access to a private repository by its owner. Collaborators can browse, view packages, and download RPMs from that repo. They cannot modify the repo or upload packages.
+- **Collaborator**: A user granted read access to a private repository by its owner or an admin. Collaborators can browse, view packages, and download RPMs from that repo. They cannot modify the repo or upload packages.
 - **Admin**: Users with `is_admin = true` can perform any action on any repository, manage users, and access admin-only features.
 - **Public**: Unauthenticated users can browse public repos, view packages, and download RPMs. No authentication is required for read-only access to public repositories.
 - **Private repos**: When `is_public = false`, all access (including repodata and RPM downloads) requires authentication. Only the owner, collaborators, and admins can access private repos.
@@ -479,7 +481,7 @@ Uploads are limited to `MAX_RPM_UPLOAD_BYTES` bytes (default 512 MiB). Requests 
 Upload processing uses a per-upload temporary working directory under `RPM_UPLOAD_TMPDIR`. Before processing begins, Dark Zenith verifies that the temporary filesystem has at least `3 * uploaded_file_size + 67108864` free bytes, allowing room for the original upload, a working copy, a signed output file, and parser/signing overhead. If the check fails, the request is rejected with `503 upload_temp_space_unavailable` and no B2 or database changes are made. Temporary files are removed after success or failure.
 
 1. **Validate**: Confirm the file is a valid RPM by reading the RPM lead and header.
-2. **Extract metadata**: Parse the RPM headers to extract name, version, release, epoch, arch, dependencies, file lists, changelogs, summary, description, license, etc. This is done in Elixir by reading the RPM binary format directly (RPM header structure). Verify that `epoch` is an integer in the unsigned 32-bit range (`0 ≤ epoch ≤ 4 294 967 295`), that `name`, `version`, `release`, and `arch` each match `^[A-Za-z0-9._+~-]+$` and are at most 256 characters long, and that other extracted strings respect the maximum lengths defined in the Packages data-model table (`summary` ≤ 256, `description` ≤ 65 536, `url` ≤ 256, `license` ≤ 256, `rpm_sourcerpm` ≤ 256, `rpm_group` ≤ 256, all measured after trimming). Any value that fails these checks is rejected with `422 validation_failed`. This keeps B2 storage keys constrained to a safe, predictable character set and prevents oversized fields from ballooning generated repodata.
+2. **Extract metadata**: Parse the RPM headers to extract name, version, release, epoch, arch, dependencies, file lists, changelogs, summary, description, license, etc. This is done in Elixir by reading the RPM binary format directly (RPM header structure). Required RPM header metadata is `name`, `version`, `release`, `arch`, `summary`, `description`, `license`, and `size_installed`; `epoch` defaults to `0` when absent. Optional `url`, `rpm_sourcerpm`, and `rpm_group` values are stored as `NULL` when absent or empty after trimming, and dependency, file, and changelog collections default to empty arrays. Verify that `epoch` is an integer in the unsigned 32-bit range (`0 ≤ epoch ≤ 4 294 967 295`), that `name`, `version`, `release`, and `arch` each match `^[A-Za-z0-9._+~-]+$` and are at most 256 characters long, and that other extracted strings respect the maximum lengths defined in the Packages data-model table (`summary` ≤ 256, `description` ≤ 65 536, `url` ≤ 256, `license` ≤ 256, `rpm_sourcerpm` ≤ 256, `rpm_group` ≤ 256, all measured after trimming). Any value that fails these checks is rejected with `422 validation_failed`. This keeps B2 storage keys constrained to a safe, predictable character set and prevents oversized fields from ballooning generated repodata.
 3. **Sign** (if `sign_rpms` enabled): Sign the RPM using the owner's GPG key and `rpmsign` (see GPG Signing section).
 4. **Checksum and final size**: Compute SHA-256 and `size_package` from the final RPM file after any signing step has completed.
 5. **Duplicate check**: If a package with the same `(repository_id, name, epoch, version, release, arch)` already exists, reject the upload with `409 conflict_duplicate_package`. The database unique constraint is still the source of truth for concurrent uploads.
@@ -533,7 +535,7 @@ The web UI is built with Phoenix LiveView. Public pages are accessible to everyo
   - For private repos: instructions include Basic Auth credentials using one of the logged-in user's API keys with `repo:read`. If the user has no suitable API key, prompt them to create one.
   - One-liner `dnf config-manager` command.
   - GPG key import instructions (if applicable).
-- **Package list**: Searchable, sortable table of packages in this repo (name, version, arch, summary).
+- **Package list**: Searchable, sortable table of packages in this repo (name, EVR, arch, summary). EVR displays as `epoch:version-release` when `epoch` is nonzero and as `version-release` otherwise.
 - Repository owners and admins see an "Upload RPM" action.
 - **Owner/admin only**: "Manage Collaborators" section to add/remove users who can access a private repo.
   - Adding a collaborator by the repository owner's email is rejected with `422 validation_failed`.
@@ -542,7 +544,7 @@ The web UI is built with Phoenix LiveView. Public pages are accessible to everyo
 ### Package Detail (`GET /repos/:slug/packages/:name`)
 
 - Lists all versions/architectures available for this package name.
-- For each version: arch, summary, size, upload date.
+- For each package build: EVR, arch, summary, size, upload date. EVR uses the same `epoch:version-release` display rule as repository package lists.
 - **Install instructions**: `dnf install <package>` command (assumes the repo is already configured).
 - Links to individual package version pages, keyed by package UUID.
 
@@ -667,7 +669,7 @@ Request bodies and endpoint-specific behavior:
 - `POST /api/v1/repos`: JSON body with required `name` and `slug`, and optional `description`, `is_public`, `gpg_key_fingerprint`, and `sign_rpms`. Requests with a `slug` whose normalized form is already in use by another repository are rejected with `422 validation_failed` and `details.slug` indicating the conflict, so slug uniqueness collisions surface the same way as format violations. Requests with `gpg_key_fingerprint` set to anything other than the owner's current GPG key fingerprint are rejected with `422 validation_failed`. Requests with `sign_rpms = true` must also set `gpg_key_fingerprint` to the owner's current GPG key fingerprint or they are rejected with `422 validation_failed`. `rpm_signing_state` is server-managed; requests that include it are rejected with `422 validation_failed`. A new empty repository created with `sign_rpms = true` starts with `rpm_signing_state = "enabled"`.
 - `PATCH /api/v1/repos/:slug`: JSON body with any subset of repository fields accepted by create, except `slug`, which is immutable. PATCH requests that include `slug` are rejected with `422 validation_failed` so existing client `.repo` files continue to resolve. `rpm_signing_state` is server-managed; PATCH requests that include it are rejected with `422 validation_failed`. PATCH requests with `gpg_key_fingerprint` set to anything other than the owner's current GPG key fingerprint are rejected with `422 validation_failed`. PATCH operations that would leave `sign_rpms = true` with `gpg_key_fingerprint` unset are rejected with `422 validation_failed` (mirroring the create-time constraint). Enabling `sign_rpms` on a repository that already has packages requires an explicit `existing_package_strategy` field with value `"resign"` to confirm per-package re-sign jobs identical to the key replacement flow; the server sets `rpm_signing_state = "signing"` until those jobs complete. Transitioning `sign_rpms` to `true` on a non-empty repository without this field is rejected with `422 validation_failed`. Unknown `existing_package_strategy` values are rejected with `422 validation_failed`. When `sign_rpms` is unchanged, when it is transitioning from `true` to `false`, or when it is being enabled on an empty repository, requests that include `existing_package_strategy` are rejected with `422 validation_failed`. Enabling `sign_rpms` on an empty repository sets `rpm_signing_state = "enabled"`; disabling `sign_rpms` sets `rpm_signing_state = "disabled"`.
 - `POST /api/v1/repos/:slug/packages`: multipart body with exactly one `rpm` file field. A duplicate NEVRA in the repository returns `409 conflict_duplicate_package`. Oversized uploads return `413 payload_too_large`; valid-size files that are not valid RPMs return `422 validation_failed`; insufficient temporary upload workspace returns `503 upload_temp_space_unavailable`; signing infrastructure failures return `503 signing_unavailable`; object-storage failures return `503 storage_unavailable`.
-- `POST /api/v1/repos/:slug/collaborators`: JSON body `{"email": "user@example.com"}`. The email is normalized to lowercase before lookup. If the email belongs to the repository owner, the request is rejected with `422 validation_failed`. If a collaborator or pending invitation already exists for the normalized email, the request succeeds idempotently with `200 OK` and returns the existing collaborator or invitation instead of creating a duplicate. Newly created collaborators or invitations return `201 Created`.
+- `POST /api/v1/repos/:slug/collaborators`: JSON body `{"email": "user@example.com"}`. Collaborator mutation endpoints are valid only for private repositories; requests to add, remove, or cancel collaborators/invitations on a public repository are rejected with `422 validation_failed`. The email is normalized to lowercase before lookup. If the email belongs to the repository owner, the request is rejected with `422 validation_failed`. If a collaborator or pending invitation already exists for the normalized email, the request succeeds idempotently with `200 OK` and returns the existing collaborator or invitation instead of creating a duplicate. Newly created collaborators or invitations return `201 Created`.
 - `POST /api/v1/api_keys`: JSON body with `name`, `scopes`, and optional `expires_at`. `name` is trimmed, must be non-blank, and must be at most 100 characters after trimming. `scopes` must be a non-empty array of valid scope strings. When `expires_at` is provided it must be a future ISO-8601 UTC timestamp; values at or before the current server time are rejected with `422 validation_failed`. The plaintext API key is returned only in this response.
 - `GET /api/v1/gpg_key`: no request body. Returns the current GPG key resource, or `404 not_found` if the authenticated user has no GPG key.
 - `PUT /api/v1/gpg_key`: multipart body with `public_key` and `private_key` fields containing ASCII-armored GPG keys. Each key field is capped at 1 048 576 bytes; larger key uploads are rejected with `413 payload_too_large`. The public and private keys must share the same fingerprint, and the private key must be usable for non-interactive signing. The response is `200 OK` with the GPG key resource. If `previous_gpg_key_public` is already set for the user, or if any repository owned by the user has `rpm_signing_state = "signing"`, the request is rejected with `409 conflict_gpg_key_transition_in_progress`.
@@ -680,7 +682,7 @@ Resource response shapes:
 - Package list resources have shape `{"id": "<uuid>", "repository_id": "<uuid>", "name": "nginx", "epoch": 0, "version": "1.24.0", "release": "2.fc39", "arch": "x86_64", "summary": "A high performance web server and reverse proxy server", "size_package": 623104, "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "download_path": "/repos/stable/packages/<uuid>/nginx-1.24.0-2.fc39.x86_64.rpm", "inserted_at": "...", "updated_at": "..."}`.
 - Package detail resources include every package list field plus `description`, `url`, `license`, `size_installed`, `rpm_sourcerpm`, `rpm_group`, `requires`, `provides`, `conflicts`, `obsoletes`, `files`, and `changelogs`. Package resources never expose the internal `storage_path`.
 - Optional string fields use `null` when absent.
-- Dependency entries in `requires`, `provides`, `conflicts`, and `obsoletes` have shape `{"name": "libc.so.6()(64bit)", "op": ">=", "epoch": 0, "version": "2.34", "release": null}`. `op` is one of `<`, `<=`, `=`, `>=`, `>`, or `null`; `epoch`, `version`, and `release` are `null` when there is no version constraint. `requires` entries additionally include `pre`, a boolean indicating a pre-transaction dependency.
+- Dependency entries in `requires`, `provides`, `conflicts`, and `obsoletes` have shape `{"name": "libc.so.6()(64bit)", "op": ">=", "epoch": 0, "version": "2.34", "release": null}`. `op` is one of `<`, `<=`, `=`, `>=`, `>`, or `null`. When `op` is `null`, `epoch`, `version`, and `release` are also `null`. When `op` is set, `version` is required, `epoch` is `0` if the RPM omits an epoch, and `release` is `null` only when the RPM omits a release constraint. `requires` entries additionally include `pre`, a boolean indicating a pre-transaction dependency.
 - File entries have shape `{"path": "/usr/bin/nginx", "type": "file", "flags": []}`. `type` is `file`, `directory`, or `symlink`. `flags` is an array containing zero or more of `config`, `doc`, `ghost`, `license`, and `readme`.
 - Changelog entries have shape `{"timestamp": "2025-01-15T10:30:00Z", "author": "Packager <packager@example.com>", "text": "Updated to 1.24.0"}`.
 - API key resources have shape `{"id": "<uuid>", "name": "CI read-only", "key_prefix": "dzak_abcdefg", "scopes": ["repo:read"], "expires_at": null, "inserted_at": "...", "updated_at": "..."}`. `POST /api/v1/api_keys` returns the same resource plus `key`, the full plaintext API key; no other response includes `key` or `key_hash`.
@@ -746,7 +748,7 @@ Standard API error codes:
 |  503 | `storage_unavailable`                      | Backblaze B2 or object-storage operation is temporarily unavailable                                    |
 |  503 | `upload_temp_space_unavailable`            | Temporary upload workspace lacks the required free space                                               |
 
-To avoid leaking the existence of private resources, requests authenticated to a valid principal that target a private repository (or any resource scoped under one) which that principal cannot access return `404 not_found`, not `403 forbidden`. Unauthenticated requests to a private repository, and unauthenticated requests to a slug that does not exist, both return `404 not_found` as well, so anonymous clients cannot distinguish "this slug is private" from "this slug does not exist." Other endpoints and actions that require authentication return `401 unauthenticated` for missing credentials and also return `401 unauthenticated` for credentials that fail validation — invalid signature, expired, or revoked. `403 forbidden` is returned only when the authenticated principal is known to exist and is permitted to see the resource but lacks the specific scope, mutation permission, or allowed authentication method required for the requested operation (e.g., a valid API key without `package:upload` attempting an upload to a public repo, or any API key attempting to manage API keys or GPG keys).
+To avoid leaking the existence of private resources, repository-scoped requests that target a private repository (or any resource scoped under one) return `404 not_found` when the requester is anonymous, presents invalid/expired/revoked credentials, or is authenticated as a valid principal that lacks access to that repository. Requests to a slug that does not exist also return `404 not_found`, so clients cannot distinguish "this slug is private" from "this slug does not exist." For public repository reads, optional credentials that fail validation return `401 unauthenticated` instead of falling back to anonymous access, so bad client configuration is visible. Other endpoints and actions that require authentication return `401 unauthenticated` for missing credentials and also return `401 unauthenticated` for credentials that fail validation — invalid signature, expired, or revoked. `403 forbidden` is returned only when the authenticated principal is known to exist and is permitted to see the resource but lacks the specific scope, mutation permission, or allowed authentication method required for the requested operation (e.g., a valid API key without `package:upload` attempting an upload to a public repo, a valid API key with `repo:read` but without `repo:update` attempting to add a collaborator on a private repo it can read, or any API key attempting to manage API keys or GPG keys).
 
 ### Response Format
 
