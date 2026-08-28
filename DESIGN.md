@@ -47,19 +47,19 @@ Dark Zenith is an Elixir/Phoenix application that serves as a fully-functional R
 
 ```
                         ┌──────────────────────────────────┐
-                        │          Dark Zenith              │
-                        │         (Phoenix App)             │
+                        │           Dark Zenith            │
+                        │          (Phoenix App)           │
                         ├──────────┬───────────┬───────────┤
                         │   Web    │  REST API │   Repo    │
                         │   UI     │ (JSON)    │  Endpoint │
                         │(LiveView)│           │ (repodata)│
                         ├──────────┴───────────┴───────────┤
-                        │          Core Domain              │
-                        │  (Packages, Repos, Metadata)      │
-                        ├──────────────────┬───────────────┤
-                        │    PostgreSQL    │  Backblaze B2  │
+                        │           Core Domain            │
+                        │   (Packages, Repos, Metadata)    │
+                        ├─────────────────┬────────────────┤
+                        │   PostgreSQL    │  Backblaze B2  │
                         │   (metadata)    │  (RPM files)   │
-                        └──────────────────┴───────────────┘
+                        └─────────────────┴────────────────┘
                                                   │
                                       signed URLs (default 30 min)
                                                   │
@@ -142,7 +142,7 @@ Temporary records used only by the web UI's preview-and-confirm RPM upload flow.
 | `original_filename` | string | Original uploaded filename for display |
 | `tmp_path` | string | Server-local temporary path under `RPM_UPLOAD_TMPDIR` containing the uploaded RPM until confirmation or expiration |
 | `size_uploaded` | bigint | Uploaded file size in bytes |
-| `metadata` | jsonb | Extracted preview metadata (`name`, `epoch`, `version`, `release`, `arch`, `summary`, `description`, `url`, `license`, `size_installed`, dependencies, files, and changelogs) using the same dependency, file, and changelog shapes as package detail responses |
+| `metadata` | jsonb | Extracted preview metadata (`name`, `epoch`, `version`, `release`, `arch`, `summary`, `description`, `url`, `license`, `rpm_sourcerpm`, `rpm_group`, `size_installed`, dependencies, files, and changelogs) using the same dependency, file, and changelog shapes as package detail responses |
 | `expires_at` | timestamp | Expiration time (15 minutes after creation) |
 | `inserted_at` | timestamp | Creation time |
 
@@ -181,7 +181,7 @@ Users can create multiple API keys with different scopes and names (e.g., a `rep
 
 **Note**: Public repositories do not require `repo:read` — they are accessible without authentication. However, authenticated requests to public repos (using any non-expired API key with at least one valid scope) benefit from higher rate limits (see Rate Limiting).
 
-**API Key Format**: API keys are generated from 32 bytes of cryptographically secure random data, encoded as unpadded base64url, and returned to the caller as `dzak_<secret>`. The plaintext key is shown only once at creation. The database stores `key_prefix` for display and `key_hash`, computed as `HMAC-SHA-256(SECRET_KEY_BASE, full_key_string)` and encoded as lowercase hex, where `full_key_string` is the complete returned value including the `dzak_` prefix. API key creation rejects empty scopes and unknown scope values with `422 validation_failed`. Expired keys and any persisted keys with no scopes are rejected as invalid credentials with `401 unauthenticated` before any scope-based authorization check.
+**API Key Format**: API keys are generated from 32 bytes of cryptographically secure random data, encoded as unpadded base64url, and returned to the caller as `dzak_<secret>`. The plaintext key is shown only once at creation. The database stores `key_prefix` for display and `key_hash`, computed as `HMAC-SHA-256(SECRET_KEY_BASE, full_key_string)` and encoded as lowercase hex, where `full_key_string` is the complete returned value including the `dzak_` prefix. API key creation rejects empty scopes and unknown scope values with `422 validation_failed`. Expired keys and any persisted keys with no scopes are rejected as invalid credentials with `401 unauthenticated` before any scope-based authorization check (surfaced as `404 not_found` on requests where the private-repository masking rule in API Contract Details applies).
 
 ### Repository Collaborators
 
@@ -228,6 +228,8 @@ Short-lived bearer tokens issued by the login endpoint for interactive/CLI use.
 
 Session tokens are generated from 32 bytes of cryptographically secure random data, encoded as unpadded base64url, and returned as `dzst_<secret>`. The database stores only `HMAC-SHA-256(SECRET_KEY_BASE, full_token_string)` encoded as lowercase hex, where `full_token_string` is the complete returned value including the `dzst_` prefix. Session tokens do not have scopes; they authorize API requests as the logged-in user and still require the same owner/admin checks as web sessions.
 
+When a user's password is changed or reset, all of that user's session tokens are deleted in the same operation (matching `phx.gen.auth`, which likewise invalidates the user's web sessions). API keys are unaffected by password changes.
+
 Expired tokens are periodically cleaned up by a background job.
 
 ### Repository Metadata Cache
@@ -251,7 +253,7 @@ Stores the pre-generated repodata XML blobs so they can be served without regene
 
 ### Users
 
-Built on `phx.gen.auth` (bcrypt-based session authentication).
+Built on `phx.gen.auth` (bcrypt-based session authentication). Passwords follow the `phx.gen.auth` defaults: minimum 12 characters and maximum 72 bytes, enforced on registration, admin-created accounts, password change, and password reset.
 
 | Field | Type | Description |
 |---|---|---|
@@ -314,7 +316,7 @@ Dark Zenith generates standard `repodata/` metadata as defined by the RPM reposi
 
 - **`repomd.xml`**: Root metadata index. Lists the location, checksum, size, and timestamp of each metadata file (`primary`, `filelists`, `other`). This is the entry point that `dnf`/`yum` fetches first.
 
-- **`primary.xml.gz`**: Contains package names, versions, architectures, summaries, sizes, checksums, and dependency information (requires, provides, conflicts, obsoletes). This is the main metadata file used for dependency resolution. Each package's `<location>` element uses the relative path `packages/:id/:name-:version-:release.:arch.rpm` (the standard RPM filename, with no epoch component), so RPM clients resolve downloads against the repository base URL. The route is keyed by package UUID, so the filename segment is cosmetic and does not need to match the B2 storage key, which includes the epoch.
+- **`primary.xml.gz`**: Contains package names, versions, architectures, summaries, sizes, checksums, and dependency information (requires, provides, conflicts, obsoletes). This is the main metadata file used for dependency resolution. Each package entry also includes the standard "primary files" subset of that package's file list — paths under `/etc/`, paths containing `bin/`, and `/usr/lib/sendmail` — matching `createrepo_c` behavior so file-path dependencies on common paths (e.g., `/bin/sh`) resolve without downloading filelists. Each package's `<location>` element uses the relative path `packages/:id/:name-:version-:release.:arch.rpm` (the standard RPM filename, with no epoch component), so RPM clients resolve downloads against the repository base URL. The route is keyed by package UUID, so the filename segment is cosmetic and does not need to match the B2 storage key, which includes the epoch.
 
 - **`filelists.xml.gz`**: Lists all files contained in each package. Used when a user runs commands like `dnf provides /usr/bin/something`.
 
@@ -366,6 +368,8 @@ Private repositories (`is_public = false`) require authentication on all endpoin
 - **Password**: a valid API key with the `repo:read` scope
 
 Dark Zenith checks the API key, verifies it has the `repo:read` scope, resolves the owning user, and verifies they have access to the repository (as owner, collaborator, or admin) before serving metadata or issuing a signed B2 URL.
+
+Browser requests to these repository-serving endpoints — for example, the direct download link on the package version detail page — may instead authenticate with the standard web session cookie; the same repository access checks apply.
 
 Public repositories may also receive the same Basic Auth credentials as optional authentication for higher rate limits. For public repository reads, the API key only needs to be valid, non-expired, and have at least one valid scope; `repo:read` and repository access checks are not required.
 
@@ -451,7 +455,7 @@ If `sign_rpms` is enabled but the owner has no GPG key configured, the upload is
 
 When `sign_rpms` is enabled on an empty repository, `rpm_signing_state` becomes `enabled` immediately. When `sign_rpms` is enabled on a repository that already has packages, the owner must explicitly confirm re-signing existing packages retroactively using the same per-package job flow described under "Key replacement and revocation". The REST API exposes this confirmation via the `existing_package_strategy` field on `PATCH /api/v1/repos/:slug` with value `"resign"`, and the web UI prompts the owner to confirm. The transaction generates a fresh `transition_id` UUID, sets `sign_rpms = true`, sets `rpm_signing_state = "signing"`, writes the new `transition_id` to the repository's `signing_transition_id` column, and enqueues one re-sign job per existing package with that `transition_id` in the job's Oban args. New uploads are signed before insertion while the repository is in `signing`.
 
-A periodic sweep sets `rpm_signing_state = "enabled"` and clears `signing_transition_id` only after every re-sign job tagged with the repository's current `signing_transition_id` has completed successfully, no such job is still pending or scheduled, and the metadata cache has reached the repository's current `metadata_revision`. Re-sign jobs whose `transition_id` argument no longer matches the repository's `signing_transition_id` are ignored by the sweep — that is how exhausted jobs from a prior, since-superseded transition stop blocking later transitions. If any job tagged with the current `signing_transition_id` exhausts its retry budget, `rpm_signing_state` remains `signing` and generated client configuration keeps `gpgcheck=0` until an admin resolves and replays the failed jobs or deletes the affected packages. Signing only future uploads while leaving existing packages unsigned is not supported. Disabling `sign_rpms` sets `rpm_signing_state = "disabled"`, clears `signing_transition_id`, and does not strip signatures from already-signed packages. Pending transition re-sign jobs are canceled when possible; running jobs must re-check `sign_rpms`, `rpm_signing_state`, the repository's current `signing_transition_id`, and the target fingerprint before updating a package row, and must no-op if the job's `transition_id` argument no longer matches the repository's `signing_transition_id`.
+A periodic sweep sets `rpm_signing_state = "enabled"` and clears `signing_transition_id` only after every re-sign job tagged with the repository's current `signing_transition_id` has completed successfully, no such job remains in a non-terminal Oban state (available, scheduled, executing, or retryable), and the metadata cache has reached the repository's current `metadata_revision`. Re-sign jobs whose `transition_id` argument no longer matches the repository's `signing_transition_id` are ignored by the sweep — that is how exhausted jobs from a prior, since-superseded transition stop blocking later transitions. If any job tagged with the current `signing_transition_id` exhausts its retry budget, `rpm_signing_state` remains `signing` and generated client configuration keeps `gpgcheck=0` until an admin resolves and replays the failed jobs or deletes the affected packages. Signing only future uploads while leaving existing packages unsigned is not supported. Disabling `sign_rpms` sets `rpm_signing_state = "disabled"`, clears `signing_transition_id`, and does not strip signatures from already-signed packages. Pending transition re-sign jobs are canceled when possible; running jobs must re-check `sign_rpms`, `rpm_signing_state`, the repository's current `signing_transition_id`, and the target fingerprint before updating a package row, and must no-op if the job's `transition_id` argument no longer matches the repository's `signing_transition_id`.
 
 #### Key replacement and revocation
 
@@ -460,7 +464,7 @@ Users can replace their GPG key by uploading a new pair (public + private). Repl
 1. In a single transaction, the user's existing `gpg_key_public` is copied to `previous_gpg_key_public`, a fresh `transition_id` UUID is generated and written to the user's `gpg_key_transition_id`, the user's `gpg_key_private`, `gpg_key_public`, and `gpg_key_fingerprint` are updated to the new pair, every repository owned by the user that has `gpg_key_fingerprint` set has its `gpg_key_fingerprint` updated to the new fingerprint and its `metadata_revision` incremented, and a metadata regeneration job is enqueued for each so `repomd.xml.asc` is re-signed with the new key.
 2. While `previous_gpg_key_public` is set, every `GET /repos/:slug/RPM-GPG-KEY` request for a repository owned by that user with `gpg_key_fingerprint` configured returns the previous and current public keys concatenated as a single ASCII-armored keyring, so clients can verify signatures made with either key during the transition. Repositories without `gpg_key_fingerprint` configured continue to return `404 not_found`.
 3. For each affected repository where `sign_rpms = true`, a re-sign job is enqueued per existing package and tagged with the user's `gpg_key_transition_id` in its Oban args. Each re-sign job decrypts the new private key, downloads the existing RPM from B2, signs unsigned RPMs with `rpmsign --addsign`, re-signs already signed RPMs with `rpmsign --resign`, verifies the result with `rpm --checksig`, recomputes the SHA-256 and final RPM file size, and uploads the re-signed RPM to `repos/:slug/packages/:resign_id/:name-:epoch-:version-:release.:arch.rpm`, where `:resign_id` is a newly generated UUID for that re-sign attempt. The job then updates the package row's `sha256`, `size_package`, and `storage_path` in a single transaction. The same transaction increments the repository's `metadata_revision` and enqueues metadata regeneration so repodata reflects the new package checksum and size. The previous B2 object is deleted asynchronously by an idempotent cleanup job. If the upload succeeds but the package-row update fails, Dark Zenith immediately attempts to delete the newly uploaded object; if that cleanup fails, it enqueues an idempotent B2 cleanup job and returns the original database error to Oban for retry. Re-sign jobs retry up to 20 attempts with exponential backoff; exhausted jobs remain visible in Oban for admin intervention. Running re-sign jobs must re-check the user's current `gpg_key_transition_id` before updating a package row and must no-op if the job's `transition_id` argument no longer matches. Key replacement does not move an `enabled` repository back to `signing`, because `/repos/:slug/RPM-GPG-KEY` serves both old and new keys during the transition.
-4. A periodic background sweep checks whether affected repository metadata caches have reached the current `metadata_revision` and whether every re-sign job tagged with the user's current `gpg_key_transition_id` has reached a terminal state. When every affected metadata cache is current, every such re-sign job has completed successfully, and none are pending or scheduled, the sweep clears `previous_gpg_key_public` and `gpg_key_transition_id` on the user in a single transaction. Re-sign jobs tagged with a different `transition_id` (for example, jobs from a prior transition that has since been resolved) are ignored by the sweep. If any re-sign job tagged with the current `gpg_key_transition_id` has exhausted its retry budget, `previous_gpg_key_public` is left in place so old-key signatures remain verifiable, and the admin must resolve and replay the failed jobs (or delete the affected packages) before the previous key is cleared.
+4. A periodic background sweep checks whether affected repository metadata caches have reached the current `metadata_revision` and whether every re-sign job tagged with the user's current `gpg_key_transition_id` has reached a terminal state. When every affected metadata cache is current, every such re-sign job has completed successfully, and none remain in a non-terminal Oban state (available, scheduled, executing, or retryable), the sweep clears `previous_gpg_key_public` and `gpg_key_transition_id` on the user in a single transaction. Re-sign jobs tagged with a different `transition_id` (for example, jobs from a prior transition that has since been resolved) are ignored by the sweep. If any re-sign job tagged with the current `gpg_key_transition_id` has exhausted its retry budget, `previous_gpg_key_public` is left in place so old-key signatures remain verifiable, and the admin must resolve and replay the failed jobs (or delete the affected packages) before the previous key is cleared.
 
 Users can also explicitly revoke (remove) their GPG key without simultaneously replacing it. If the user has no repositories with `gpg_key_fingerprint` set or `sign_rpms = true`, `DELETE /api/v1/gpg_key` and the equivalent web UI action remove the key immediately.
 
@@ -478,7 +482,7 @@ When an RPM file is uploaded (via web UI or API) by a repository owner or admin:
 
 Uploads are limited to `MAX_RPM_UPLOAD_BYTES` bytes (default 512 MiB). Requests that exceed the limit are rejected with `413 payload_too_large` before RPM parsing or B2 upload. Malformed multipart bodies, missing `rpm` file fields, and requests with more than one `rpm` file field are rejected with `400 invalid_request`. Files that are within the size limit but are not valid RPMs, have unreadable RPM headers, are missing required metadata, or contain metadata values that fail validation are rejected with `422 validation_failed`.
 
-Upload processing uses a per-upload temporary working directory under `RPM_UPLOAD_TMPDIR`. Before processing begins, Dark Zenith verifies that the temporary filesystem has at least `3 * uploaded_file_size + 67108864` free bytes, allowing room for the original upload, a working copy, a signed output file, and parser/signing overhead. If the check fails, the request is rejected with `503 upload_temp_space_unavailable` and no B2 or database changes are made. Temporary files are removed after success or failure.
+Upload processing uses a per-upload temporary working directory under `RPM_UPLOAD_TMPDIR`. Before processing begins, Dark Zenith verifies that the temporary filesystem has at least `3 * uploaded_file_size + 67108864` free bytes, allowing room for the original upload, a working copy, a signed output file, and parser/signing overhead. If the check fails, the request is rejected with `503 upload_temp_space_unavailable` and no B2 or database changes are made. The web upload preview request runs the same free-space check before parsing, and the confirmation step re-runs it before signing begins, because free space may have changed during the preview window; either failure is rejected with `503 upload_temp_space_unavailable`. Temporary files are removed after success or failure.
 
 1. **Validate**: Confirm the file is a valid RPM by reading the RPM lead and header.
 2. **Extract metadata**: Parse the RPM headers to extract name, version, release, epoch, arch, dependencies, file lists, changelogs, summary, description, license, etc. This is done in Elixir by reading the RPM binary format directly (RPM header structure). Required RPM header metadata is `name`, `version`, `release`, `arch`, `summary`, `description`, `license`, and `size_installed`; `epoch` defaults to `0` when absent. Optional `url`, `rpm_sourcerpm`, and `rpm_group` values are stored as `NULL` when absent or empty after trimming, and dependency, file, and changelog collections default to empty arrays. Verify that `epoch` is an integer in the unsigned 32-bit range (`0 ≤ epoch ≤ 4 294 967 295`), that `name`, `version`, `release`, and `arch` each match `^[A-Za-z0-9._+~-]+$` and are at most 256 characters long, and that other extracted strings respect the maximum lengths defined in the Packages data-model table (`summary` ≤ 256, `description` ≤ 65 536, `url` ≤ 256, `license` ≤ 256, `rpm_sourcerpm` ≤ 256, `rpm_group` ≤ 256, all measured after trimming). Any value that fails these checks is rejected with `422 validation_failed`. This keeps B2 storage keys constrained to a safe, predictable character set and prevents oversized fields from ballooning generated repodata.
@@ -560,7 +564,7 @@ The web UI is built with Phoenix LiveView. Public pages are accessible to everyo
 - Drag-and-drop or file picker to upload an RPM to the selected repository.
 - **Preview**: The uploaded RPM is size-checked, validated, and parsed using the same validation and metadata extraction rules as the final upload pipeline. No package row is created and no B2 object is written during preview. On success, Dark Zenith stores the uploaded file in a temporary path under `RPM_UPLOAD_TMPDIR`, creates a Web Upload Preview record with a 15-minute expiration, and shows the extracted metadata for confirmation.
 - **Confirm**: The confirmation request sends the preview token back to the server. Dark Zenith reloads the preview row, verifies that it belongs to the same repository and authenticated user, verifies that it has not expired, re-runs RPM validation and metadata extraction from the temporary file, and rejects the confirmation with `422 validation_failed` if the NEVRA or extracted metadata no longer matches the stored preview. The confirmation then runs the normal upload pipeline starting with signing, checksum/final-size calculation, duplicate check, B2 upload, and package insertion. Confirmation consumes the preview token; the preview row and temporary file are deleted after success or failure.
-- **Expiration**: Expired previews cannot be confirmed. The UI asks the user to upload the RPM again.
+- **Expiration**: Expired previews cannot be confirmed. A preview token that is unknown or already consumed is treated the same as an expired one. In every such case the UI asks the user to upload the RPM again.
 - **Web only**: The two-step confirmation flow (preview then confirm) is a web UI feature. The REST API processes uploads immediately in a single request — see the API section.
 
 ### GPG Key Management (authenticated, account settings)
@@ -574,7 +578,13 @@ The web UI is built with Phoenix LiveView. Public pages are accessible to everyo
 
 - Login / logout.
 - Account registration (when enabled).
+- Password reset and email confirmation (including resending the confirmation email), via the standard `phx.gen.auth` flows.
 - API key management for the authenticated user.
+
+### Admin (admin-only)
+
+- **User management**: List users; create users (created accounts are auto-confirmed and no confirmation email is sent, mirroring the bootstrap admin); delete users, which is rejected while the target user still owns repositories (the web equivalent of the `409 conflict_user_owns_repositories` rule).
+- **Background jobs**: An admin-only view of Oban jobs (for example, a mounted Oban dashboard) for inspecting, retrying, or discarding the failed and exhausted jobs that the admin-intervention flows in this document rely on.
 
 ---
 
@@ -690,7 +700,7 @@ Resource response shapes:
 
 `GET /api/v1/repos/:slug/collaborators` returns collaborators and pending invitations as typed rows in the standard paginated list envelope. Rows are sorted by normalized email ascending, then by `type` (`collaborator` before `invitation`), then by `id` ascending. Collaborator rows have shape `{"type": "collaborator", "id": "<collaborator_id>", "user_id": "<user_id>", "email": "user@example.com", "inserted_at": "..."}`. Invitation rows have shape `{"type": "invitation", "id": "<invitation_id>", "email": "pending@example.com", "invited_by_id": "<user_id>", "inserted_at": "..."}`.
 
-All list endpoints — including `/api/v1/repos`, `/api/v1/repos/:slug/packages`, `/api/v1/repos/:slug/collaborators`, and `/api/v1/api_keys` — support `page` and `per_page` query parameters and return the same paginated envelope. `page` defaults to `1`; `per_page` defaults to `50` and is capped at `100`. Non-integer or non-positive pagination values are rejected with `422 validation_failed`. `total_pages` is computed as `ceil(total / per_page)`, so it is `0` when `total` is `0`. Requests for a `page` value greater than `total_pages` succeed with `200 OK`, return an empty `data` array, and echo the requested `page` value in the pagination envelope. Default ordering is deterministic: repositories by `slug` ascending then `id` ascending; packages by `name` ascending, `arch` ascending, RPM EVR descending, then `id` ascending; collaborators as described above; and API keys by `inserted_at` descending then `id` ascending. Package list endpoints additionally support `q`, `name`, `arch`, and `sort`. The `q` parameter performs a case-insensitive substring match against the package `name` and `summary` fields combined; `name` is an exact-match filter. Valid package sort values are `name`, `version`, `arch`, and `inserted_at`; prefix with `-` for descending order. The `version` sort orders packages by RPM EVR using `(epoch, version, release)` and RPM's native comparison semantics (`rpmvercmp` behavior), with `name`, `arch`, and `id` as deterministic tie-breakers. `-version` reverses the EVR ordering. Non-version package sorts use `id` ascending as the final tie-breaker. Unknown sort values are rejected with `422 validation_failed`.
+All list endpoints — including `/api/v1/repos`, `/api/v1/repos/:slug/packages`, `/api/v1/repos/:slug/collaborators`, and `/api/v1/api_keys` — support `page` and `per_page` query parameters and return the same paginated envelope. `page` defaults to `1`; `per_page` defaults to `50` and is capped at `100`. Non-integer or non-positive pagination values are rejected with `422 validation_failed`. `total_pages` is computed as `ceil(total / per_page)`, so it is `0` when `total` is `0`. Requests for a `page` value greater than `total_pages` succeed with `200 OK`, return an empty `data` array, and echo the requested `page` value in the pagination envelope. Default ordering is deterministic: repositories by `slug` ascending then `id` ascending; packages by `name` ascending, `arch` ascending, RPM EVR descending, then `id` ascending; collaborators as described above; and API keys by `inserted_at` descending then `id` ascending. Package list endpoints additionally support `q`, `name`, `arch`, and `sort`. The `q` parameter performs a case-insensitive substring match against the package `name` and `summary` fields combined; `name` is an exact-match filter. Valid package sort values are `name`, `version`, `arch`, and `inserted_at`; prefix with `-` for descending order. The `version` sort orders packages by RPM EVR using `(epoch, version, release)` and RPM's native comparison semantics (`rpmvercmp` behavior), with `name`, `arch`, and `id` as deterministic tie-breakers. `-version` reverses the EVR ordering. For every descending sort, only the named sort column is reversed; tie-breaker columns keep their ascending order. Non-version package sorts use `id` ascending as the final tie-breaker. Unknown sort values are rejected with `422 validation_failed`.
 
 Successful JSON responses use a `data` envelope:
 
@@ -712,6 +722,8 @@ Error responses use this shape:
   }
 }
 ```
+
+`details` is optional: it is included when field-level or structured information is available (for example, validation errors and the conflict shape below) and omitted otherwise.
 
 `conflict_gpg_key_in_use` responses use this `details` shape:
 
@@ -860,7 +872,7 @@ Email delivery is built on Swoosh with a pluggable adapter selected by `MAIL_ADA
 |---|---|---|
 | `zepto` | Zepto Mail HTTPS API | Default. Requires `ZEPTO_API_KEY` and `MAIL_FROM_ADDRESS`. |
 | `smtp` | `Swoosh.Adapters.SMTP` | Configure host, port, username, password, and TLS settings in `config/runtime.exs`. |
-| `local` | `Swoosh.Adapters.Local` | In-memory mailbox for development; messages can be viewed at `/dev/mailbox`. |
+| `local` | `Swoosh.Adapters.Local` | In-memory mailbox for development; messages can be viewed at `/dev/mailbox`. The `/dev/mailbox` route is mounted only in the dev Mix environment. |
 
 Unknown aliases cause the application to refuse to boot. When the selected adapter requires credentials or sender configuration, the application also refuses to boot if the required values are missing; with the default `MAIL_ADAPTER=zepto`, both `ZEPTO_API_KEY` and `MAIL_FROM_ADDRESS` are required. Development and test deployments may set `MAIL_ADAPTER=local` to avoid external mail credentials. Additional Swoosh adapters can be wired in by adding a new alias to this mapping in a future release.
 
@@ -877,10 +889,11 @@ Dark Zenith is designed for straightforward deployment:
 - **Systemd**: Example systemd unit file provided.
 - **Reverse proxy**: Designed to sit behind nginx/caddy for TLS termination.
 - **RPM signing tools**: Deployments that enable RPM signing must have `rpm`, `rpmsign`, and `gpg` available in the runtime environment.
+- **Single application node**: The initial version assumes one app node. Web upload previews keep their temporary files on node-local `RPM_UPLOAD_TMPDIR`, and rate-limit buckets live in node-local memory (ETS). Running multiple nodes would require a shared upload workspace (or session affinity) and a shared rate-limit store, and is out of scope for the initial version.
 
 ### Initial Setup
 
-Since `REGISTRATION_ENABLED` defaults to `false`, the first admin account is bootstrapped via environment variables (`ADMIN_EMAIL` and `ADMIN_PASSWORD`). On first boot, if no users exist in the database, a confirmed admin user is created with these credentials. If no users exist but `ADMIN_EMAIL` or `ADMIN_PASSWORD` is unset, Dark Zenith logs a warning and starts without creating an admin; the operator must restart with both variables set to bootstrap an admin. After the initial admin is created, these environment variables are ignored. Additional users can be created by the admin or by enabling public registration.
+Since `REGISTRATION_ENABLED` defaults to `false`, the first admin account is bootstrapped via environment variables (`ADMIN_EMAIL` and `ADMIN_PASSWORD`). On first boot, if no users exist in the database, a confirmed admin user is created with these credentials. If no users exist but `ADMIN_EMAIL` or `ADMIN_PASSWORD` is unset, Dark Zenith logs a warning and starts without creating an admin; the operator must restart with both variables set to bootstrap an admin. `ADMIN_EMAIL` and `ADMIN_PASSWORD` must satisfy the same email and password validation rules as regular accounts; if either fails validation, Dark Zenith logs a warning and starts without creating an admin, the same as when the variables are unset. After the initial admin is created, these environment variables are ignored. Additional users can be created by the admin or by enabling public registration.
 
 ### Storage
 
@@ -912,7 +925,7 @@ All endpoints are rate limited. The rate limiting strategy differs based on auth
 
 - **Authenticated general requests** (API key, session token, or session cookie): 600 requests per minute per user. All requests from the same user share a single bucket regardless of which API key or auth method is used.
 - **Unauthenticated general requests**: 120 requests per minute per IP address. Since multiple users may share an IP (corporate networks, VPNs, NAT), these limits are more restrictive.
-- **Authentication attempts** (`/api/v1/auth/login`, the web login route, registration, and password reset): 10 requests per minute per IP address and 10 requests per minute per email address. These buckets apply *in lieu of* the 120/min unauthenticated general bucket — requests to these routes do not also count against the general bucket.
+- **Authentication attempts** (`/api/v1/auth/login`, the web login route, registration, and password reset): 10 requests per minute per IP address and 10 requests per minute per normalized (trimmed, lowercased) email address. These buckets apply *in lieu of* the 120/min unauthenticated general bucket — requests to these routes do not also count against the general bucket.
 - **Package uploads**: 60 uploads per hour per user, in addition to the authenticated general request limit.
 
 Every response to a rate-limited endpoint includes `X-RateLimit-Limit` (the ceiling for the bucket that governed the request, in requests per window) and `X-RateLimit-Remaining` (the number of requests still allowed in the current window) so clients can self-throttle without waiting for a rejection. When a rate limit is exceeded, the server additionally responds with **HTTP 429 Too Many Requests** and includes `Retry-After` (a duration in seconds, per RFC 9110) and `X-RateLimit-Reset` (a Unix epoch timestamp in seconds indicating when the limit resets) headers. When more than one bucket applies to a request (for example, package upload endpoints that count against both the per-user general bucket and the per-user upload bucket), the headers reflect the bucket with the smallest remaining allowance. For unauthenticated API and web requests, the 429 response body includes a message encouraging the user to create an account and authenticate for higher limits. Repository-serving endpoints keep the plain-text `rate_limited` body described in the RPM Repository Endpoint section.
@@ -925,7 +938,7 @@ Per-IP rate-limit buckets and the authentication-attempt buckets identify the cl
 2. Else, if the connecting TCP peer is in `TRUSTED_PROXIES` and the request includes `X-Forwarded-For`, walk the comma-separated chain from right to left, skip every address that is itself in `TRUSTED_PROXIES`, and use the first remaining address as the client IP.
 3. Otherwise, use the TCP peer address.
 
-When `TRUSTED_PROXIES` is empty, forwarded-IP headers are ignored entirely and the TCP peer address is always used. Operators MUST configure `TRUSTED_PROXIES` to include Cloudflare's published IP ranges (and any additional in-cluster reverse proxies) when running behind Cloudflare; failing to do so causes every request to be bucketed as a single source IP.
+When `TRUSTED_PROXIES` is empty, forwarded-IP headers are ignored entirely and the TCP peer address is always used. Operators MUST configure `TRUSTED_PROXIES` to include Cloudflare's published IP ranges (and any additional in-cluster reverse proxies) when running behind Cloudflare; failing to do so causes every request to be bucketed as a single source IP. Because step 1 accepts `CF-Connecting-IP` from any trusted peer, operators who place additional non-Cloudflare reverse proxies in `TRUSTED_PROXIES` must ensure those proxies are reachable only through Cloudflare or strip client-supplied `CF-Connecting-IP` headers; otherwise a client that can reach such a proxy directly could spoof its rate-limit identity.
 
 ### Authenticated access to public repos
 
