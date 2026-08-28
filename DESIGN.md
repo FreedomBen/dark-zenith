@@ -13,7 +13,7 @@ Dark Zenith is an Elixir/Phoenix application that serves as a fully-functional R
 - **Repo setup instructions**: Per-repo page with copy-paste commands for adding the repo to a user's `dnf` configuration.
 - **View available packages**: Browsable, searchable list of packages within a repository.
 - **Package install instructions**: Per-package page with `dnf install` commands and details.
-- **Upload RPM packages**: Repository owners and admins can upload new RPM versions to a repository.
+- **Upload RPM packages**: Repository owners and admins can upload new RPM versions (binary or source) to a repository.
 
 ### REST API
 
@@ -79,7 +79,7 @@ A Dark Zenith instance can host multiple named repositories. Each repository is 
 |---|---|---|
 | `id` | UUID | Primary key |
 | `user_id` | UUID | FK to users — the owner of this repository |
-| `slug` | string | Normalized lowercase URL-safe identifier (e.g., `stable`, `nightly`); must match `^[a-z0-9][a-z0-9_-]{0,63}$` |
+| `slug` | string | Normalized lowercase URL-safe identifier (e.g., `stable`, `nightly`); must match `^[a-z0-9][a-z0-9_-]{0,63}$`; the value `new` is reserved for the repository-creation route and rejected |
 | `name` | string | Display name (max 100 characters after trimming) |
 | `description` | text | Optional description (max 4 096 characters after trimming) |
 | `gpg_key_fingerprint` | string | Optional 40-character uppercase hex OpenPGP V4 fingerprint of the GPG key used to sign metadata for this repo. Must match `gpg_key_fingerprint` on the owner's user record at the time the field is set. |
@@ -105,7 +105,7 @@ Each package record represents a single RPM file within a repository.
 | `epoch` | integer | RPM epoch in the unsigned 32-bit range (`0 ≤ epoch ≤ 4 294 967 295`); default `0` when the RPM has no epoch |
 | `version` | string | Package version (e.g., `1.24.0`); max 256 characters |
 | `release` | string | Package release (e.g., `2.fc39`); max 256 characters |
-| `arch` | string | Architecture (`x86_64`, `noarch`, `aarch64`, etc.); max 256 characters |
+| `arch` | string | Architecture (`x86_64`, `noarch`, `aarch64`, etc.), or the literal `src` for source RPMs; max 256 characters |
 | `summary` | string | Required one-line description (max 256 characters after trimming) |
 | `description` | text | Required full description (max 65 536 characters after trimming) |
 | `url` | string | Optional upstream project URL (max 256 characters after trimming) |
@@ -451,7 +451,7 @@ When enabled, Dark Zenith automatically signs uploaded RPMs during the upload pr
 6. The SHA-256 checksum is recomputed on the signed RPM.
 7. The signed RPM is uploaded to B2.
 
-RPMs that are already signed are re-signed (the existing signature is replaced). This ensures all packages in the repo are signed with a consistent key.
+RPMs that are already signed are re-signed (the existing signature is replaced). This ensures all packages in the repo are signed with a consistent key. Source RPMs are signed and verified through the same flow as binary RPMs.
 
 If `sign_rpms` is enabled but the owner has no GPG key configured, the upload is rejected with `422 validation_failed`.
 
@@ -492,8 +492,8 @@ Uploads are limited to `MAX_RPM_UPLOAD_BYTES` bytes (default 512 MiB). Requests 
 
 Upload processing uses a per-upload temporary working directory under `RPM_UPLOAD_TMPDIR`. Before processing begins, Dark Zenith verifies that the temporary filesystem has at least `3 * uploaded_file_size + 67108864` free bytes, allowing room for the original upload, a working copy, a signed output file, and parser/signing overhead. If the check fails, the request is rejected with `503 upload_temp_space_unavailable` and no B2 or database changes are made. The web upload preview request runs the same free-space check before parsing, and the confirmation step re-runs it before signing begins, because free space may have changed during the preview window; either failure is rejected with `503 upload_temp_space_unavailable`. Temporary files are removed after success or failure.
 
-1. **Validate**: Confirm the file is a valid RPM by reading the RPM lead and header.
-2. **Extract metadata**: Parse the RPM headers to extract name, version, release, epoch, arch, dependencies, file lists, changelogs, summary, description, license, etc. This is done in Elixir by reading the RPM binary format directly (RPM header structure). Required RPM header metadata is `name`, `version`, `release`, `arch`, `summary`, `description`, `license`, and `size_installed`; `epoch` defaults to `0` when absent. Optional `url`, `rpm_sourcerpm`, and `rpm_group` values are stored as `NULL` when absent or empty after trimming; `build_time` is read from the `BUILDTIME` header tag (an unsigned 32-bit Unix timestamp) and stored as `NULL` when absent; and dependency, file, and changelog collections default to empty arrays. Verify that `epoch` is an integer in the unsigned 32-bit range (`0 ≤ epoch ≤ 4 294 967 295`), that `name`, `version`, `release`, and `arch` each match `^[A-Za-z0-9._+~-]+$` and are at most 256 characters long, and that other extracted strings respect the maximum lengths defined in the Packages data-model table (`summary` ≤ 256, `description` ≤ 65 536, `url` ≤ 256, `license` ≤ 256, `rpm_sourcerpm` ≤ 256, `rpm_group` ≤ 256, all measured after trimming). Any value that fails these checks is rejected with `422 validation_failed`. Verify finally that the composed B2 storage key (step 7) is at most 1 024 bytes, the B2 file-name length limit; RPMs whose metadata would produce a longer key are rejected with `422 validation_failed`. Re-sign storage keys differ from upload keys only in their UUID segment, so the same bound covers them. This keeps B2 storage keys constrained to a safe, predictable character set and prevents oversized fields from ballooning generated repodata.
+1. **Validate**: Confirm the file is a valid RPM by reading the RPM lead and header. Both binary and source RPMs are accepted; the lead's `type` field (`0` = binary, `1` = source) determines which, and source packages follow the source-specific extraction rules in step 2.
+2. **Extract metadata**: Parse the RPM headers to extract name, version, release, epoch, arch, dependencies, file lists, changelogs, summary, description, license, etc. This is done in Elixir by reading the RPM binary format directly (RPM header structure). Required RPM header metadata is `name`, `version`, `release`, `arch`, `summary`, `description`, `license`, and `size_installed`; `epoch` defaults to `0` when absent. Optional `url`, `rpm_sourcerpm`, and `rpm_group` values are stored as `NULL` when absent or empty after trimming; `build_time` is read from the `BUILDTIME` header tag (an unsigned 32-bit Unix timestamp) and stored as `NULL` when absent; and dependency, file, and changelog collections default to empty arrays. For source RPMs, `arch` is stored as the literal `src`, matching the repodata convention for source packages; the header `ARCH` tag (which records the build architecture) is ignored and not required, the extracted file list contains the bare source and spec file names from the header (no leading directory), and `rpm_sourcerpm` is `NULL`. Binary RPMs whose header `arch` is `src` are rejected with `422 validation_failed`. Verify that `epoch` is an integer in the unsigned 32-bit range (`0 ≤ epoch ≤ 4 294 967 295`), that `name`, `version`, `release`, and `arch` each match `^[A-Za-z0-9._+~-]+$` and are at most 256 characters long, and that other extracted strings respect the maximum lengths defined in the Packages data-model table (`summary` ≤ 256, `description` ≤ 65 536, `url` ≤ 256, `license` ≤ 256, `rpm_sourcerpm` ≤ 256, `rpm_group` ≤ 256, all measured after trimming). Any value that fails these checks is rejected with `422 validation_failed`. Verify finally that the composed B2 storage key (step 7) is at most 1 024 bytes, the B2 file-name length limit; RPMs whose metadata would produce a longer key are rejected with `422 validation_failed`. Re-sign storage keys differ from upload keys only in their UUID segment, so the same bound covers them. This keeps B2 storage keys constrained to a safe, predictable character set and prevents oversized fields from ballooning generated repodata.
 3. **Sign** (if `sign_rpms` enabled): Sign the RPM using the owner's GPG key and `rpmsign` (see GPG Signing section).
 4. **Checksum and final size**: Compute SHA-256 and `size_package` from the final RPM file after any signing step has completed.
 5. **Duplicate check**: If a package with the same `(repository_id, name, epoch, version, release, arch)` already exists, reject the upload with `409 conflict_duplicate_package`. The database unique constraint is still the source of truth for concurrent uploads.
@@ -511,7 +511,7 @@ Repository deletion is a hard delete. When an authorized owner or admin deletes 
 
 For metadata extraction, rather than shelling out to `rpm` or `rpm2cpio`, Dark Zenith will include a pure-Elixir RPM header parser. The RPM format is well-documented:
 
-- **Lead** (96 bytes): Magic number, format version. Used for quick validation.
+- **Lead** (96 bytes): Magic number, format version, and package type (binary or source). Used for quick validation and source-package detection.
 - **Signature header**: Contains size and digest information.
 - **Main header**: Contains all package metadata as tagged entries (name, version, dependencies, etc.) using a well-defined set of tag constants.
 - **Payload**: The compressed cpio archive (not needed for metadata extraction).
@@ -534,7 +534,7 @@ The web UI is built with Phoenix LiveView. Public pages are accessible to everyo
 - Browse public repositories with name, description, and package count; authenticated users also see private repositories they can access.
 - Authenticated users see a "Create New Repo" action.
 
-### Create Repository (authenticated)
+### Create Repository (authenticated, `GET /repos/new`)
 
 - Form to create a new repository: name, slug, description, public/private, GPG signing settings (enable metadata signing, enable RPM auto-signing).
 
@@ -563,7 +563,7 @@ The web UI is built with Phoenix LiveView. Public pages are accessible to everyo
 
 - Lists all versions/architectures available for this package name.
 - For each package build: EVR, arch, summary, size, upload date. EVR uses the same `epoch:version-release` display rule as repository package lists.
-- **Install instructions**: `dnf install <package>` command (assumes the repo is already configured).
+- **Install instructions**: `dnf install <package>` command (assumes the repo is already configured). Names whose builds include source packages (arch `src`) also show a `dnf download --source <package>` command; when only source builds exist, the install command is omitted, since source packages cannot be installed directly.
 - Links to individual package version pages, keyed by package UUID.
 
 ### Package Version Detail (`GET /repos/:slug/package-versions/:id`)
@@ -636,7 +636,7 @@ A successful login responds with `200 OK` and the body:
 
 Failed logins return `401 unauthenticated` with no further detail (to avoid distinguishing unknown email from wrong password).
 
-`DELETE /api/v1/auth/logout` invalidates the session token presented in the `Authorization` header and responds `204 No Content`. If the request is authenticated by an API key (or by a session cookie) rather than a session token, the server responds `422 validation_failed` — only session tokens can be invalidated through this endpoint. API keys are revoked via `DELETE /api/v1/api_keys/:id`.
+`DELETE /api/v1/auth/logout` invalidates the session token presented in the `Authorization` header and responds `204 No Content`. If the request is authenticated by an API key (or by a session cookie) rather than a session token, the server responds `403 forbidden` — only session tokens can be invalidated through this endpoint. API keys are revoked via `DELETE /api/v1/api_keys/:id`.
 
 ### Repositories
 
@@ -685,7 +685,7 @@ POST   /api/v1/gpg_key/revocation       # Remove or replace an in-use GPG key wi
 
 ### API Contract Details
 
-JSON endpoints with request bodies require `Content-Type: application/json`. File and key upload requests use `multipart/form-data`. All timestamps are ISO-8601 UTC strings and all IDs are UUID strings. User-provided metadata strings are trimmed before validation, but secrets and key material (passwords, bearer/API token values, and GPG armored key fields) are not modified except by their documented parsers. For optional string fields, a value that is empty after trimming is coerced to `NULL` at storage time and surfaced as `null` in responses; an explicit `null` in the request body is treated the same way. Required string fields with an empty-after-trim value are rejected with `422 validation_failed`. Email addresses are trimmed, normalized to lowercase, capped at 160 characters after trimming, and validated with the same email rules used by `phx.gen.auth`. Repository slugs are normalized to lowercase and must match `^[a-z0-9][a-z0-9_-]{0,63}$`. Unknown JSON fields are rejected with `422 validation_failed`; multipart requests that include any field name the target endpoint does not define are likewise rejected with `422 validation_failed`. String fields whose trimmed length exceeds the maximum specified in the data-model tables are rejected with `422 validation_failed`.
+JSON endpoints with request bodies require `Content-Type: application/json`. File and key upload requests use `multipart/form-data`. All timestamps are ISO-8601 UTC strings and all IDs are UUID strings. User-provided metadata strings are trimmed before validation, but secrets and key material (passwords, bearer/API token values, and GPG armored key fields) are not modified except by their documented parsers. For optional string fields, a value that is empty after trimming is coerced to `NULL` at storage time and surfaced as `null` in responses; an explicit `null` in the request body is treated the same way. Required string fields with an empty-after-trim value are rejected with `422 validation_failed`. Email addresses are trimmed, normalized to lowercase, capped at 160 characters after trimming, and validated with the same email rules used by `phx.gen.auth`. Repository slugs are normalized to lowercase and must match `^[a-z0-9][a-z0-9_-]{0,63}$`; the slug `new` is reserved for the web UI's repository-creation route and rejected with `422 validation_failed`. Unknown JSON fields are rejected with `422 validation_failed`; multipart requests that include any field name the target endpoint does not define are likewise rejected with `422 validation_failed`. String fields whose trimmed length exceeds the maximum specified in the data-model tables are rejected with `422 validation_failed`.
 
 Request bodies and endpoint-specific behavior:
 
