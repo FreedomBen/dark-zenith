@@ -230,7 +230,7 @@ Pending invitations for email addresses that do not yet belong to a user account
 
 **Unique constraint**: `(repository_id, email)`
 
-When a user account is created with a normalized email that has pending invitations, whether by public registration or admin provisioning, those invitations are automatically converted to collaborator records and the invitation rows are deleted. Invitations expire `INVITATION_EXPIRY_DAYS` days after creation (default 30; `0` disables expiry and stores `expires_at` as null), bounding how long a stale invitation to an unregistered address remains a standing access grant. Expired invitations are never converted: conversion skips and deletes them, and a periodic cleanup job that runs hourly deletes expired invitation rows. User and collaborator-invitation email addresses use the same validation rules as `phx.gen.auth`: values are trimmed, lowercased, capped at 160 characters after trimming, and rejected with `422 validation_failed` when they fail the email format rules.
+When a user account is created with a normalized email that has pending invitations, whether by public registration or admin provisioning, those invitations are automatically converted to collaborator records and the invitation rows are deleted. The same conversion runs when an existing user confirms an account email change to a normalized email that has pending invitations (see User Lifecycle). Invitations expire `INVITATION_EXPIRY_DAYS` days after creation (default 30; `0` disables expiry and stores `expires_at` as null), bounding how long a stale invitation to an unregistered address remains a standing access grant. Expired invitations are never converted: conversion skips and deletes them, and a periodic cleanup job that runs hourly deletes expired invitation rows. User and collaborator-invitation email addresses use the same validation rules as `phx.gen.auth`: values are trimmed, lowercased, capped at 160 characters after trimming, and rejected with `422 validation_failed` when they fail the email format rules.
 
 ### Session Tokens
 
@@ -308,7 +308,7 @@ An append-only log of security-relevant actions. Rows are written in the same da
 | `metadata` | jsonb | Event-specific details (e.g., package NEVRA, invited email, changed setting names), default `{}`; never contains secrets, token values, or key material |
 | `inserted_at` | timestamp | Event time |
 
-Audited actions: successful and failed logins (web and API), password changes and resets, account registration and admin account creation, API key creation and revocation, GPG key upload, replacement, removal, and revocation strategies, repository creation, settings changes, and deletion, package uploads and deletions, collaborator additions and removals, invitation creation, cancellation, conversion, and expiry refresh, admin-flag changes, user deletion, and retired-slug releases. Failed-login volume is bounded by the authentication-attempt rate limits. Admins browse the audit log in the admin UI.
+Audited actions: successful and failed logins (web and API), password changes and resets, account email changes, account registration and admin account creation, API key creation and revocation, GPG key upload, replacement, removal, and revocation strategies, repository creation, settings changes, and deletion, package uploads and deletions, collaborator additions and removals, invitation creation, cancellation, conversion, and expiry refresh, admin-flag changes, user deletion, and retired-slug releases. Failed-login volume is bounded by the authentication-attempt rate limits. Admins browse the audit log in the admin UI.
 
 ### Authorization
 
@@ -321,6 +321,7 @@ Audited actions: successful and failed logins (web and API), password changes an
 ### User Lifecycle
 
 - User accounts are created via web registration (when `REGISTRATION_ENABLED = true`) or by an admin in the admin web UI. There is no REST API for user creation or deletion; admin user management is web-only. Web-registered users must complete the `phx.gen.auth` email-confirmation flow before they can log in. Both the web login path (customized on top of `phx.gen.auth`) and the API login endpoint (`POST /api/v1/auth/login`) reject any user whose `confirmed_at` is null with the standard invalid-credentials response. Admin-created users are auto-confirmed: `confirmed_at` is set at creation time so the new account can log in immediately, and no confirmation email is sent (mirroring the bootstrap admin behavior).
+- Users can change their account email through the standard `phx.gen.auth` settings flow: the change takes effect only when the user confirms it from a link emailed to the proposed new address, which must pass the same normalization, validation, and uniqueness rules as registration. On confirmation, pending collaborator invitations addressed to the new normalized email are converted to collaborator records exactly as at account creation, a security-notification email is sent to the previous address, and the change is recorded in the audit log.
 - The `is_admin` flag is managed only in the admin web UI: an admin can grant or revoke it on any user other than themselves. Because admins can never change their own flag, the last remaining admin cannot demote itself. There is no REST API for admin-flag management.
 - An admin can delete a user account from the admin UI, but the deletion is rejected with `409 conflict_user_owns_repositories` if that user still owns any repositories. The admin must first delete those repositories.
 - Users cannot delete their own accounts; account deletion is admin-only.
@@ -405,7 +406,7 @@ Repository-serving endpoints intended for RPM clients (`/repos/:slug/repodata/..
 
 Private repositories (`is_public = false`) require authentication on all endpoints, including repodata and RPM downloads. RPM clients (`dnf`/`yum`) authenticate via **HTTP Basic Auth**:
 
-- **Username**: `token` (literal string)
+- **Username**: `token` by convention — the server ignores the username, so any value works; the password alone is the credential
 - **Password**: a valid API key with the `repo:read` scope
 
 Dark Zenith checks the API key, verifies it has the `repo:read` scope, resolves the owning user, and verifies they have access to the repository (as owner, collaborator, or admin) before serving metadata or issuing a signed B2 URL.
@@ -423,6 +424,7 @@ Example `.repo` configuration for a private repo with metadata signing and `rpm_
 name=Dark Zenith - :repo_name
 baseurl=https://token:<api-key>@<hostname>/repos/:slug/
 enabled=1
+metadata_expire=6h
 repo_gpgcheck=1
 gpgcheck=1
 gpgkey=https://token:<api-key>@<hostname>/repos/:slug/RPM-GPG-KEY
@@ -437,6 +439,7 @@ baseurl=https://<hostname>/repos/:slug/
 username=token
 password=<api-key>
 enabled=1
+metadata_expire=6h
 repo_gpgcheck=1
 gpgcheck=1
 gpgkey=https://<hostname>/repos/:slug/RPM-GPG-KEY
@@ -632,6 +635,7 @@ The web UI is built with Phoenix LiveView. Public pages are accessible to everyo
 - Login / logout.
 - Account registration (when enabled).
 - Password reset and email confirmation (including resending the confirmation email), via the standard `phx.gen.auth` flows. The password reset completion page additionally lists the account's active API keys with a one-click option to revoke them all (see Session Tokens).
+- Account email change, via the standard `phx.gen.auth` settings flow (see User Lifecycle).
 - API key management for the authenticated user.
 
 ### Admin (admin-only)
@@ -662,7 +666,7 @@ DELETE /api/v1/auth/logout              # Invalidate a session token
 
 The login endpoint accepts `{"email": "...", "password": "..."}` and returns a short-lived bearer token (24-hour expiration). This token is distinct from API keys — it cannot be managed via the API keys endpoints, expires automatically, and is intended for interactive/CLI use. API keys remain the preferred mechanism for long-lived programmatic access.
 
-Account registration, email confirmation, and password reset are web-only flows generated by `phx.gen.auth`; they have no REST API equivalents. Rate limits on those flows apply to the corresponding web routes.
+Account registration, email confirmation, password reset, and account email change are web-only flows generated by `phx.gen.auth`; they have no REST API equivalents. Rate limits on those flows apply to the corresponding web routes.
 
 A successful login responds with `200 OK` and the body:
 
@@ -872,12 +876,13 @@ For a repository with metadata signing and `rpm_signing_state = "enabled"`, retu
 name=Dark Zenith - :repo_name
 baseurl=https://<hostname>/repos/:slug/
 enabled=1
+metadata_expire=6h
 repo_gpgcheck=1
 gpgcheck=1
 gpgkey=https://<hostname>/repos/:slug/RPM-GPG-KEY
 ```
 
-For repositories without metadata signing, `repo_gpgcheck` is `0`. For repositories whose `rpm_signing_state` is not `enabled`, including repositories still in the `signing` transition, `gpgcheck` is `0`. The `gpgkey` line is included whenever `gpg_key_fingerprint` is configured and is omitted only when no repository key is configured. For private repositories, the file includes credential placeholders:
+For repositories without metadata signing, `repo_gpgcheck` is `0`. For repositories whose `rpm_signing_state` is not `enabled`, including repositories still in the `signing` transition, `gpgcheck` is `0`. The `gpgkey` line is included whenever `gpg_key_fingerprint` is configured and is omitted only when no repository key is configured. Every generated file sets `metadata_expire=6h` so configured clients pick up repository changes within hours rather than dnf's 48-hour default. For private repositories, the file includes credential placeholders:
 
 ```ini
 username=token
@@ -926,7 +931,7 @@ Dark Zenith sends transactional emails for:
 
 - Account email confirmation and password reset (via `phx.gen.auth`).
 - Collaborator invitations to registered and unregistered users (subject to the registration-disabled exception described under Repository Collaborators).
-- Security notifications to the affected account: password changed or reset, GPG key replaced or removed, and new API key created.
+- Security notifications to the affected account: password changed or reset, account email changed (sent to the previous address), GPG key replaced or removed, and new API key created.
 
 Email delivery is built on Swoosh with a pluggable adapter selected by `MAIL_ADAPTER`. The application code uses a single `DarkZenith.Mailer` module and a thin notifier layer, so swapping providers is a configuration change rather than a code change. `MAIL_ADAPTER` accepts the following short aliases:
 
@@ -981,7 +986,7 @@ RPM files are stored exclusively in Backblaze B2. The app server handles no RPM 
 - Production deployments enable `force_ssl` (TLS redirect plus `Strict-Transport-Security`) at the Phoenix endpoint even behind the reverse proxy; session cookies are `secure`, `http_only`, and `SameSite=Lax`; responses set `X-Content-Type-Options: nosniff`; and web UI responses carry a restrictive, LiveView-compatible `Content-Security-Policy`.
 - Post-login redirect targets are stored server-side and must be local paths; client-supplied absolute URLs are never used as redirect destinations.
 - Request logging never records `Authorization` headers, Basic Auth passwords, token or API key values, GPG key material, or passwords; Phoenix `filter_parameters` covers the password, token, key, and GPG key fields, and URLs are logged without userinfo.
-- Security-relevant actions are recorded in an append-only audit log (see Audit Events), and users receive email notifications for password changes and resets, GPG key replacement or removal, and API key creation.
+- Security-relevant actions are recorded in an append-only audit log (see Audit Events), and users receive email notifications for password changes and resets, account email changes, GPG key replacement or removal, and API key creation.
 - Deleted repository slugs are retired, not freed: only the deleting owner can reuse one, and only an admin can release it, so a deleted repository's URL cannot be taken over to serve packages to clients that still hold its `.repo` file.
 - Authentication is password-only in the initial version; TOTP MFA is a prioritized future consideration (see Future Considerations), a limitation operators should weigh before opening registration or granting `is_admin` on instances exposed to untrusted networks.
 - Accepted risk: collaborator-add responses distinguish registered users (`collaborator`) from unregistered addresses (`invitation`), so a repository owner can learn whether an email has an account. This is inherent to the feature, bounded by the 60/hour collaborator-addition limit, and every probe emails the target, making bulk probing visible.
@@ -998,6 +1003,7 @@ All endpoints are rate limited. The rate limiting strategy differs based on auth
 - **Unauthenticated package downloads** (`GET /repos/:slug/packages/:id/:filename.rpm`): 600 requests per minute per IP address. This bucket applies *in lieu of* the 120/min unauthenticated general bucket for these requests, so large `dnf` transactions against public repositories do not stall mid-install; the endpoint only performs a database lookup and signed-URL generation, so the higher ceiling is cheap for the app server. Authenticated package downloads count against the authenticated general bucket as usual.
 - **Package uploads**: 60 uploads per hour per user, in addition to the authenticated general request limit. In the web preview-and-confirm flow, the preview request (which carries the file transfer) counts against this bucket; the confirmation request does not, though it still counts against the authenticated general bucket.
 - **Collaborator additions** (`POST /api/v1/repos/:slug/collaborators` and the equivalent web action): 60 requests per hour per user, in addition to the authenticated general request limit, bounding the volume of invitation email a single user can trigger.
+- **Account email change requests** (the web settings action that emails a confirmation link to the proposed new address): 10 requests per hour per user, in addition to the authenticated general request limit, bounding the volume of confirmation email a single user can direct at arbitrary addresses.
 
 Every response to a rate-limited endpoint includes `X-RateLimit-Limit` (the ceiling for the bucket that governed the request, in requests per window) and `X-RateLimit-Remaining` (the number of requests still allowed in the current window) so clients can self-throttle without waiting for a rejection. When a rate limit is exceeded, the server additionally responds with **HTTP 429 Too Many Requests** and includes `Retry-After` (a duration in seconds, per RFC 9110) and `X-RateLimit-Reset` (a Unix epoch timestamp in seconds indicating when the limit resets) headers. When more than one bucket applies to a request (for example, package upload endpoints that count against both the per-user general bucket and the per-user upload bucket), the headers reflect the bucket with the smallest remaining allowance. For unauthenticated API and web requests, the 429 response body includes a message encouraging the user to create an account and authenticate for higher limits. Repository-serving endpoints keep the plain-text `rate_limited` body described in the RPM Repository Endpoint section.
 
