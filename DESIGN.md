@@ -282,8 +282,8 @@ Built on `phx.gen.auth` (bcrypt-based session authentication). Passwords follow 
 | `hashed_password` | string | Bcrypt password hash |
 | `is_admin` | boolean | Admin flag — admins can manage all repos and users (default `false`) |
 | `gpg_key_private` | binary | Optional GPG private key, encrypted at rest using the versioned GPG private key encryption envelope |
-| `gpg_key_public` | text | ASCII-armored GPG public key (served at `/repos/:slug/RPM-GPG-KEY`) |
-| `gpg_key_fingerprint` | string | 40-character uppercase hex OpenPGP V4 fingerprint of the stored GPG key (for display/identification) |
+| `gpg_key_public` | text | Optional ASCII-armored GPG public key (served at `/repos/:slug/RPM-GPG-KEY`); null when the user has no GPG key |
+| `gpg_key_fingerprint` | string | Optional 40-character uppercase hex OpenPGP V4 fingerprint of the stored GPG key (for display/identification); null when the user has no GPG key. `gpg_key_private`, `gpg_key_public`, and `gpg_key_fingerprint` are always written and cleared together. |
 | `previous_gpg_key_public` | text | Optional ASCII-armored previous public GPG key, retained while a GPG key replacement is mid-transition so clients can still verify signatures made with the previous key; cleared after affected metadata caches have reached the current revision and every per-package re-sign job for the user's repositories has completed successfully, or immediately when the user's GPG key is removed |
 | `gpg_key_transition_id` | UUID | Active GPG key replacement transition id while `previous_gpg_key_public` is set; cleared in the same transaction that clears `previous_gpg_key_public` (default `null`) |
 | `confirmed_at` | timestamp | Email confirmation time |
@@ -294,7 +294,7 @@ Built on `phx.gen.auth` (bcrypt-based session authentication). Passwords follow 
 
 ### Audit Events
 
-An append-only log of security-relevant actions. Rows are written in the same database transaction as the action they record when one exists; authentication events are recorded immediately after the authentication decision. Application code never updates or deletes audit rows, and the initial version does not prune them.
+An append-only log of security-relevant actions. Rows are written in the same database transaction as the action they record when one exists; authentication events are recorded immediately after the authentication decision. Application code never updates or deletes audit rows, and the initial version does not prune them. The one mutation an audit row can undergo is the clearing of `actor_id` when the actor's account is deleted, and that happens in the database through an `ON DELETE SET NULL` foreign key rather than through an application update.
 
 | Field | Type | Description |
 |---|---|---|
@@ -362,7 +362,7 @@ Dark Zenith generates standard `repodata/` metadata as defined by the RPM reposi
 
 - **`other.xml.gz`**: Contains changelog entries for each package. Only the 10 most recent changelog entries per package (by changelog timestamp) are emitted, matching the `createrepo_c` default, to keep the file small for clients; the full changelog remains on the package row and is served by the web UI and API.
 
-Generated XML is UTF-8. `primary.xml` uses the `http://linux.duke.edu/metadata/common` default namespace and the `http://linux.duke.edu/metadata/rpm` `rpm` namespace. `filelists.xml` uses the `http://linux.duke.edu/metadata/filelists` namespace. `other.xml` uses the `http://linux.duke.edu/metadata/other` namespace. `repomd.xml` uses the `http://linux.duke.edu/metadata/repo` namespace.
+Generated XML is UTF-8. `primary.xml` uses the `http://linux.duke.edu/metadata/common` default namespace and the `http://linux.duke.edu/metadata/rpm` `rpm` namespace. `filelists.xml` uses the `http://linux.duke.edu/metadata/filelists` namespace. `other.xml` uses the `http://linux.duke.edu/metadata/other` namespace. `repomd.xml` uses the `http://linux.duke.edu/metadata/repo` namespace. Each of `primary.xml`, `filelists.xml`, and `other.xml` carries that generation's package count as the `packages` attribute on its root element (`<metadata>`, `<filelists>`, and `<otherdata>` respectively). Package entries in `primary.xml` carry `<checksum type="sha256" pkgid="YES">` holding the package row's `sha256`; entries in `filelists.xml` and `other.xml` are keyed by that same `pkgid` value and repeat the package `name`, `arch`, and `<version epoch= ver= rel=>` element, matching `createrepo_c`.
 
 `repomd.xml` includes a `<revision>` element set to the `metadata_revision` value the generation ran against (the same value stored as the cache row's `source_revision`) and contains one `<data>` entry each for `primary`, `filelists`, and `other`. Each entry uses a fixed `location href` of `repodata/primary.xml.gz`, `repodata/filelists.xml.gz`, or `repodata/other.xml.gz`; `checksum` and `open-checksum` values are lowercase hex SHA-256 digests of the compressed and uncompressed metadata bytes respectively; `size` and `open-size` are byte counts; and `timestamp` is a Unix epoch timestamp in seconds. Metadata generation captures one UTC generation timestamp at the start of each generation run — in the regeneration job, or in the synchronous run at repository creation — truncated to whole seconds, and uses that value for all three `repomd.xml` data entries. Gzip output is deterministic for identical XML input: `mtime` is `0`, no original filename is stored in the gzip header, and the same compression level is used for every generation.
 
@@ -377,7 +377,7 @@ Metadata is regenerated as a background job (via Oban) when packages are added t
 3. The regeneration job reads the current repository `metadata_revision`, then queries all packages in the repository from PostgreSQL in deterministic order by `name`, `epoch`, `version`, `release`, `arch`, and `id`.
 4. XML metadata files are generated in-memory and compressed with gzip.
 5. A new `repomd.xml` is generated with checksums pointing to the current metadata files.
-6. The generated metadata blobs, `repomd.xml`, optional `repomd.xml.asc` signature, and `source_revision` are stored in PostgreSQL keyed by repository.
+6. The generated metadata blobs, `repomd.xml`, optional `repomd.xml.asc` signature, and `source_revision` are stored in PostgreSQL keyed by repository. The write applies only when the generated `source_revision` is greater than or equal to the stored `source_revision`, so a slower job that overlaps a newer one can never move the cache backwards.
 7. Before completing, the job reloads the repository. If `metadata_revision` is greater than the cached `source_revision`, the job enqueues another unique regeneration job so the final cache reflects the latest package set.
 8. The repo endpoint serves metadata directly from the cache once the cache `source_revision` matches the repository's current `metadata_revision`.
 
@@ -385,7 +385,7 @@ Repository creation writes the repository row, generates empty `primary.xml.gz`,
 
 Metadata endpoints return `503 Service Unavailable` with plain text body `metadata_not_ready` and `Retry-After: 5` when the cache row is missing or its `source_revision` is older than the repository's current `metadata_revision`. The endpoint does not generate metadata inline and does not serve stale metadata for an out-of-date revision.
 
-Multiple rapid changes are debounced with an Oban unique job keyed by `repository_id` while the job is available or scheduled. Running jobs are allowed to be followed by a newly queued job, and the `metadata_revision`/`source_revision` check guarantees another job runs until the cache reaches the latest revision. Metadata regeneration and B2 cleanup jobs retry up to 20 attempts with exponential backoff; exhausted jobs remain visible in Oban for admin intervention.
+Multiple rapid changes are debounced with an Oban unique job keyed by `repository_id` while the job is available or scheduled. Running jobs are allowed to be followed by a newly queued job, and the `metadata_revision`/`source_revision` check guarantees another job runs until the cache reaches the latest revision. If `repomd.xml` signing fails for an infrastructure reason during a regeneration job, the job fails without writing the cache row, so the previous cache is left intact and metadata endpoints keep returning `503 metadata_not_ready` for the newer revision until a retry succeeds. Metadata regeneration and B2 cleanup jobs retry up to 20 attempts with exponential backoff; exhausted jobs remain visible in Oban for admin intervention.
 
 Because metadata files are served at fixed `repodata/` paths from a single cache row, a client that fetches `repomd.xml` and the referenced blobs across a regeneration boundary can observe checksum mismatches for that fetch cycle. This transient race is accepted for the initial version: the affected metadata fetch fails, and a retry refetches `repomd.xml` and succeeds against the new consistent generation. Serving checksum-named metadata files with retained previous generations would eliminate the race and is listed under Future Considerations.
 
@@ -393,14 +393,14 @@ Because metadata files are served at fixed `repodata/` paths from a single cache
 
 When a client (e.g., `dnf`) requests an RPM file at `/repos/:slug/packages/:id/:filename.rpm`:
 
-1. Dark Zenith validates access to the repository identified by `:slug`, then validates that `:filename` matches `^[A-Za-z0-9._+~-]+\.rpm$`; non-matching requests are rejected with `400 invalid_request`. It then looks up the package record by `:id` scoped to that repository in PostgreSQL to find the B2 storage key. The `:filename` segment is otherwise cosmetic (ignored for routing) but provides a human-readable filename for download clients.
+1. Dark Zenith validates access to the repository identified by `:slug`, then validates that the final path segment — the `:filename` capture together with its `.rpm` extension — matches `^[A-Za-z0-9._+~-]+\.rpm$`; non-matching requests are rejected with `400 invalid_request`. It then looks up the package record by `:id` scoped to that repository in PostgreSQL to find the B2 storage key. The `:filename` segment is otherwise cosmetic (ignored for routing) but provides a human-readable filename for download clients.
 2. Generates a **signed Backblaze B2 URL** using `B2_SIGNED_URL_TTL` (default **30-minute expiration**). If B2 signed URL generation fails for an infrastructure reason, the endpoint returns `503 storage_unavailable`.
 3. Responds with **HTTP 302 redirect** to the signed URL.
 4. The client downloads the RPM directly from B2.
 
 This keeps RPM file bandwidth off the app server entirely.
 
-Repository-serving endpoints intended for RPM clients (`/repos/:slug/repodata/...`, `/repos/:slug/packages/:id/:filename.rpm`, `/repos/:slug/RPM-GPG-KEY`, and `/repos/:slug/dark-zenith.repo`) use plain-text error responses. On these endpoints, 4xx and 5xx errors such as `400 invalid_request`, `401 unauthenticated`, `403 forbidden`, `404 not_found`, `429 rate_limited`, `503 storage_unavailable`, `503 signing_unavailable`, and `503 metadata_not_ready` return a `text/plain; charset=utf-8` body whose contents are the error code string and nothing else. Web UI routes under `/repos/:slug` keep their normal HTML responses, and `/api/v1/...` endpoints use the JSON `{"error": {...}}` envelope. Successful responses on these repository-serving endpoints use the following `Content-Type` values: `repomd.xml` is served as `application/xml`; `primary.xml.gz`, `filelists.xml.gz`, and `other.xml.gz` as `application/gzip`; and `repomd.xml.asc`, `RPM-GPG-KEY`, and `dark-zenith.repo` as `text/plain; charset=utf-8`.
+Repository-serving endpoints intended for RPM clients (`/repos/:slug/repodata/...`, `/repos/:slug/packages/:id/:filename.rpm`, `/repos/:slug/RPM-GPG-KEY`, and `/repos/:slug/dark-zenith.repo`) use plain-text error responses. On these endpoints, 4xx and 5xx errors such as `400 invalid_request`, `401 unauthenticated`, `403 forbidden`, `404 not_found`, `429 rate_limited`, `503 storage_unavailable`, and `503 metadata_not_ready` return a `text/plain; charset=utf-8` body whose contents are the error code string and nothing else. Web UI routes under `/repos/:slug` keep their normal HTML responses, and `/api/v1/...` endpoints use the JSON `{"error": {...}}` envelope. Successful responses on these repository-serving endpoints use the following `Content-Type` values: `repomd.xml` is served as `application/xml`; `primary.xml.gz`, `filelists.xml.gz`, and `other.xml.gz` as `application/gzip`; and `repomd.xml.asc`, `RPM-GPG-KEY`, and `dark-zenith.repo` as `text/plain; charset=utf-8`.
 
 ### Private Repository Authentication
 
@@ -466,7 +466,7 @@ When creating or editing a repository, the owner can enable two levels of signin
 
 #### Repository metadata signing (`gpg_key_fingerprint` set)
 
-- `repomd.xml` is signed during metadata regeneration using the owner's GPG key.
+- `repomd.xml` is signed during metadata regeneration using the owner's GPG key. Signing produces a detached ASCII-armored signature (`gpg --detach-sign --armor`) over the exact `repomd.xml` bytes stored in the cache row, using the owner's decrypted private key imported into an ephemeral `GNUPGHOME` created under `RPM_UPLOAD_TMPDIR` with `0700` permissions and removed after the attempt, exactly as for RPM signing. `gpg` is invoked with an argument vector, never through a shell.
 - `repomd.xml.asc` is served alongside `repomd.xml`.
 - The owner's public key is served at the repo level.
 
@@ -756,7 +756,7 @@ Resource response shapes:
 - File entries have shape `{"path": "/usr/bin/nginx", "type": "file", "flags": []}`. `type` is `file`, `directory`, or `symlink`. `flags` is an array containing zero or more of `config`, `doc`, `ghost`, `license`, and `readme`.
 - Changelog entries have shape `{"timestamp": "2025-01-15T10:30:00Z", "author": "Packager <packager@example.com>", "text": "Updated to 1.24.0"}`.
 - API key resources have shape `{"id": "<uuid>", "name": "CI read-only", "key_prefix": "dzak_abcdefg", "scopes": ["repo:read"], "expires_at": null, "inserted_at": "...", "updated_at": "..."}`. `POST /api/v1/api_keys` returns the same resource plus `key`, the full plaintext API key; no other response includes `key` or `key_hash`.
-- GPG key resources have shape `{"fingerprint": "0123456789ABCDEF0123456789ABCDEF01234567", "public_key": "-----BEGIN PGP PUBLIC KEY BLOCK-----\n...\n-----END PGP PUBLIC KEY BLOCK-----", "replacement_in_progress": false, "previous_public_key": null, "updated_at": "..."}`. GPG key resources never expose private key material.
+- GPG key resources have shape `{"fingerprint": "0123456789ABCDEF0123456789ABCDEF01234567", "public_key": "-----BEGIN PGP PUBLIC KEY BLOCK-----\n...\n-----END PGP PUBLIC KEY BLOCK-----", "replacement_in_progress": false, "previous_public_key": null, "updated_at": "..."}`. `replacement_in_progress` is `true` exactly while the user's `previous_gpg_key_public` is set, and `previous_public_key` carries that ASCII-armored previous key; both are `false` and `null` otherwise. GPG key resources never expose private key material.
 
 `GET /api/v1/repos/:slug/collaborators` returns collaborators and pending invitations as typed rows in the standard paginated list envelope. Rows are sorted by normalized email ascending, then by `type` (`collaborator` before `invitation`), then by `id` ascending. Collaborator rows have shape `{"type": "collaborator", "id": "<collaborator_id>", "user_id": "<user_id>", "email": "user@example.com", "inserted_at": "..."}`. Invitation rows have shape `{"type": "invitation", "id": "<invitation_id>", "email": "pending@example.com", "invited_by_id": "<user_id>", "expires_at": "...", "inserted_at": "..."}`; `expires_at` is null when invitation expiry is disabled.
 
@@ -882,7 +882,7 @@ gpgcheck=1
 gpgkey=https://<hostname>/repos/:slug/RPM-GPG-KEY
 ```
 
-For repositories without metadata signing, `repo_gpgcheck` is `0`. For repositories whose `rpm_signing_state` is not `enabled`, including repositories still in the `signing` transition, `gpgcheck` is `0`. The `gpgkey` line is included whenever `gpg_key_fingerprint` is configured and is omitted only when no repository key is configured. Every generated file sets `metadata_expire=6h` so configured clients pick up repository changes within hours rather than dnf's 48-hour default. For private repositories, the file includes credential placeholders:
+For repositories without metadata signing, `repo_gpgcheck` is `0`. For repositories whose `rpm_signing_state` is not `enabled`, including repositories still in the `signing` transition, `gpgcheck` is `0`. The `gpgkey` line is included whenever `gpg_key_fingerprint` is configured and is omitted only when no repository key is configured. Generated `baseurl` and `gpgkey` URLs are built from the Phoenix endpoint's configured URL scheme, `PHX_HOST`, and port, so non-default deployments render correct URLs. Every generated file sets `metadata_expire=6h` so configured clients pick up repository changes within hours rather than dnf's 48-hour default. For private repositories, the file includes credential placeholders:
 
 ```ini
 username=token
@@ -954,7 +954,7 @@ Dark Zenith is designed for straightforward deployment:
 - **Mix releases**: Standard Elixir release via `mix release`, producing a self-contained binary.
 - **Docker**: Dockerfile provided for containerized deployment.
 - **Systemd**: Example systemd unit file provided.
-- **Reverse proxy**: Designed to sit behind nginx/caddy for TLS termination.
+- **Reverse proxy**: Designed to sit behind nginx/caddy for TLS termination. The proxy's request body limit must be raised to at least `MAX_RPM_UPLOAD_BYTES` (for example nginx `client_max_body_size`), or uploads are rejected by the proxy before reaching the application. Deployments fronted by Cloudflare must additionally keep `MAX_RPM_UPLOAD_BYTES` within the plan's proxied upload cap (100 MB on Free and Pro).
 - **RPM signing tools**: Deployments that enable RPM signing must have `rpm`, `rpmsign`, and `gpg` available in the runtime environment. These tools parse attacker-supplied RPM files in C, so the example systemd unit confines the application: a dedicated unprivileged user, `NoNewPrivileges=true`, `PrivateTmp=true`, and `ProtectSystem=strict` with write access limited to `RPM_UPLOAD_TMPDIR`; operators not using systemd should apply equivalent confinement. Mounting `RPM_UPLOAD_TMPDIR` on tmpfs keeps uploaded files, signing working copies, and decrypted key material off persistent storage.
 - **Single application node**: The initial version assumes one app node. Web upload previews keep their temporary files on node-local `RPM_UPLOAD_TMPDIR`, and rate-limit buckets live in node-local memory (ETS). Running multiple nodes would require a shared upload workspace (or session affinity) and a shared rate-limit store, and is out of scope for the initial version.
 
