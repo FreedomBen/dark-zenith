@@ -22,11 +22,18 @@ defmodule DarkZenithWeb.Router do
 
   # CSRF protection applies to cookie-authenticated mutating API requests.
   # When an Authorization header is present it is the authoritative credential
-  # and the cookie is ignored, so no CSRF token is required.
+  # and the cookie is ignored; with no session cookie at all there is no
+  # ambient credential to protect (e.g. curl calling the login endpoint).
   defp protect_cookie_authenticated_requests(conn, _opts) do
-    case get_req_header(conn, "authorization") do
-      [] -> Plug.CSRFProtection.call(conn, Plug.CSRFProtection.init([]))
-      _ -> conn
+    cond do
+      get_req_header(conn, "authorization") != [] ->
+        conn
+
+      is_nil(get_session(conn, :user_token)) ->
+        conn
+
+      true ->
+        Plug.CSRFProtection.call(conn, Plug.CSRFProtection.init([]))
     end
   end
 

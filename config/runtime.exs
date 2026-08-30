@@ -20,8 +20,12 @@ if System.get_env("PHX_SERVER") do
   config :dark_zenith, DarkZenithWeb.Endpoint, server: true
 end
 
-config :dark_zenith, DarkZenithWeb.Endpoint,
-  http: [port: String.to_integer(System.get_env("PORT", "4000"))]
+# An explicit PORT wins in every environment; per-environment defaults live in
+# dev.exs/test.exs, and production falls back to 4000 below (DESIGN.md:
+# Configuration).
+if port = System.get_env("PORT") do
+  config :dark_zenith, DarkZenithWeb.Endpoint, http: [port: String.to_integer(port)]
+end
 
 if config_env() == :dev do
   # Reload browser tabs when matching files change.
@@ -109,6 +113,7 @@ if config_env() == :prod do
   config :dark_zenith, DarkZenithWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [
+      port: String.to_integer(System.get_env("PORT") || "4000"),
       # Enable IPv6 and bind on all interfaces.
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
       # See the documentation on https://bandit.hexdocs.pm/Bandit.html#t:options/0

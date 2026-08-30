@@ -79,6 +79,34 @@ defmodule DarkZenithWeb.Api.V1.AuthControllerTest do
       conn = post(conn, ~p"/api/v1/auth/login", %{"email" => "x@example.com"})
       assert %{"error" => %{"code" => "validation_failed"}} = json_response(conn, 422)
     end
+
+    test "works without a CSRF token when no session cookie is present", %{
+      conn: conn,
+      user: user
+    } do
+      # ConnTest normally skips CSRF; disable the skip to exercise the real
+      # pipeline behavior a curl client sees.
+      conn =
+        conn
+        |> put_private(:plug_skip_csrf_protection, false)
+        |> post(~p"/api/v1/auth/login", %{
+          "email" => user.email,
+          "password" => valid_user_password()
+        })
+
+      assert %{"data" => %{"token" => "dzst_" <> _}} = json_response(conn, 200)
+    end
+
+    test "cookie-authenticated mutations require a CSRF token", %{user: user} do
+      conn = log_in_user(build_conn(), user)
+
+      assert_raise Plug.CSRFProtection.InvalidCSRFTokenError, fn ->
+        conn
+        |> put_private(:plug_skip_csrf_protection, false)
+        |> put_req_header("content-type", "application/json")
+        |> post(~p"/api/v1/api_keys", %{"name" => "x", "scopes" => ["repo:read"]})
+      end
+    end
   end
 
   describe "DELETE /api/v1/auth/logout" do

@@ -28,7 +28,7 @@ Then:
 
 ```sh
 mix setup        # deps, database, migrations, assets
-mix phx.server   # http://localhost:4000
+mix phx.server   # http://localhost:4100 (override with PORT)
 mix test         # ExUnit suite
 mix precommit    # warnings-as-errors compile, unused-deps check, format, test
 ```
