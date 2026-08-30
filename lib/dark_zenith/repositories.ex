@@ -30,16 +30,18 @@ defmodule DarkZenith.Repositories do
   then id (DESIGN.md: API Contract Details default ordering).
   """
   def list_visible_repositories(user) do
+    Repo.all(visible_repositories_query(user))
+  end
+
+  @doc "The query behind `list_visible_repositories/1`, for pagination."
+  def visible_repositories_query(user) do
     base = from r in Repository, order_by: [asc: r.slug, asc: r.id]
 
-    query =
-      case user do
-        nil -> from r in base, where: r.is_public
-        %User{is_admin: true} -> base
-        %User{id: user_id} -> from r in base, where: r.is_public or r.user_id == ^user_id
-      end
-
-    Repo.all(query)
+    case user do
+      nil -> from r in base, where: r.is_public
+      %User{is_admin: true} -> base
+      %User{id: user_id} -> from r in base, where: r.is_public or r.user_id == ^user_id
+    end
   end
 
   ## Creation

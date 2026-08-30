@@ -493,11 +493,14 @@ defmodule DarkZenith.Accounts do
   the deterministic tie-breaker (DESIGN.md: API Contract Details ordering).
   """
   def list_api_keys(%User{} = user) do
-    Repo.all(
-      from key in ApiKey,
-        where: key.user_id == ^user.id,
-        order_by: [desc: key.inserted_at, asc: key.id]
-    )
+    Repo.all(api_keys_query(user))
+  end
+
+  @doc "The query behind `list_api_keys/1`, for pagination."
+  def api_keys_query(%User{} = user) do
+    from key in ApiKey,
+      where: key.user_id == ^user.id,
+      order_by: [desc: key.inserted_at, asc: key.id]
   end
 
   @doc """

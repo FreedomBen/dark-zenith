@@ -43,8 +43,11 @@ defmodule DarkZenithWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
+  # Body caps per DESIGN.md API Contract Details: JSON requests accept at most
+  # 1 MiB; multipart is used only for GPG key uploads with a 2 162 688-byte
+  # total cap. RPM payloads never traverse Phoenix (direct-to-B2).
   plug Plug.Parsers,
-    parsers: [:urlencoded, :multipart, :json],
+    parsers: [:urlencoded, {:multipart, length: 2_162_688}, {:json, length: 1_048_576}],
     pass: ["*/*"],
     json_decoder: Phoenix.json_library()
 

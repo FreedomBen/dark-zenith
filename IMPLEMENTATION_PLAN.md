@@ -137,13 +137,13 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 10 — REST API surface (M1 partial, M2 complete)
 
-- [ ] JSON envelope, error codes table, decimal-string bigint contract (API Contract Details)
-- [ ] Strict query/body parsing (unknown fields, duplicate keys, malformed encoding)
-- [ ] Pagination envelope + deterministic orderings; package filters/sorts incl. EVR sort
-- [ ] Auth plugs: bearer precedence, cookie fallback, scope checks, 404 masking, 401/403 split
-- [ ] `POST /auth/login`, `DELETE /auth/logout` (session tokens)
-- [ ] Repos CRUD; packages list/detail/subresources/delete; collaborators; api_keys
-- [ ] Request caps: 1 MiB JSON, GPG multipart caps, `413 payload_too_large`
+- [x] JSON envelope, error codes table, decimal-string bigint contract (API Contract Details)
+- [x] Strict query/body parsing (unknown fields, duplicate keys, malformed encoding)
+- [ ] Pagination envelope + deterministic orderings (done); package filters/sorts incl. EVR sort
+- [x] Auth plugs: bearer precedence, cookie fallback, scope checks, 404 masking, 401/403 split
+- [x] `POST /auth/login`, `DELETE /auth/logout` (session tokens)
+- [ ] Repos CRUD (done); api_keys (done); packages list/detail/subresources/delete; collaborators
+- [x] Request caps: 1 MiB JSON, GPG multipart caps, `413 payload_too_large`
 
 ## Phase 11 — GPG signing (M3)
 

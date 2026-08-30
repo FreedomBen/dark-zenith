@@ -15,6 +15,19 @@ defmodule DarkZenithWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug :fetch_session
+    plug :protect_cookie_authenticated_requests
+    plug DarkZenithWeb.Api.AuthPlug
+  end
+
+  # CSRF protection applies to cookie-authenticated mutating API requests.
+  # When an Authorization header is present it is the authoritative credential
+  # and the cookie is ignored, so no CSRF token is required.
+  defp protect_cookie_authenticated_requests(conn, _opts) do
+    case get_req_header(conn, "authorization") do
+      [] -> Plug.CSRFProtection.call(conn, Plug.CSRFProtection.init([]))
+      _ -> conn
+    end
   end
 
   # Repository-serving endpoints consumed by RPM clients: no CSRF or layout,
@@ -36,6 +49,23 @@ defmodule DarkZenithWeb.Router do
     get "/repodata/:filename", RepoServingController, :repodata
     get "/RPM-GPG-KEY", RepoServingController, :gpg_key
     get "/dark-zenith.repo", RepoServingController, :repo_file
+  end
+
+  scope "/api/v1", DarkZenithWeb.Api.V1 do
+    pipe_through :api
+
+    post "/auth/login", AuthController, :login
+    delete "/auth/logout", AuthController, :logout
+
+    get "/repos", RepoController, :index
+    post "/repos", RepoController, :create
+    get "/repos/:slug", RepoController, :show
+    patch "/repos/:slug", RepoController, :update
+    delete "/repos/:slug", RepoController, :delete
+
+    get "/api_keys", ApiKeyController, :index
+    post "/api_keys", ApiKeyController, :create
+    delete "/api_keys/:id", ApiKeyController, :delete
   end
 
   # Other scopes may use custom stacks.
