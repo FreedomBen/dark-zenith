@@ -2,16 +2,13 @@ defmodule DarkZenithWeb.UserSessionControllerTest do
   use DarkZenithWeb.ConnCase, async: true
 
   import DarkZenith.AccountsFixtures
-  alias DarkZenith.Accounts
 
   setup do
-    %{unconfirmed_user: unconfirmed_user_fixture(), user: user_fixture()}
+    %{user: user_fixture()}
   end
 
-  describe "POST /users/log-in - email and password" do
+  describe "POST /users/log-in" do
     test "logs the user in", %{conn: conn, user: user} do
-      user = set_password(user)
-
       conn =
         post(conn, ~p"/users/log-in", %{
           "user" => %{"email" => user.email, "password" => valid_user_password()}
@@ -19,18 +16,9 @@ defmodule DarkZenithWeb.UserSessionControllerTest do
 
       assert get_session(conn, :user_token)
       assert redirected_to(conn) == ~p"/"
-
-      # Now do a logged in request and assert on the menu
-      conn = get(conn, ~p"/")
-      response = html_response(conn, 200)
-      assert response =~ user.email
-      assert response =~ ~p"/users/settings"
-      assert response =~ ~p"/users/log-out"
     end
 
     test "logs the user in with remember me", %{conn: conn, user: user} do
-      user = set_password(user)
-
       conn =
         post(conn, ~p"/users/log-in", %{
           "user" => %{
@@ -45,8 +33,6 @@ defmodule DarkZenithWeb.UserSessionControllerTest do
     end
 
     test "logs the user in with return to", %{conn: conn, user: user} do
-      user = set_password(user)
-
       conn =
         conn
         |> init_test_session(user_return_to: "/foo/bar")
@@ -61,70 +47,76 @@ defmodule DarkZenithWeb.UserSessionControllerTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Welcome back!"
     end
 
-    test "redirects to login page with invalid credentials", %{conn: conn, user: user} do
+    test "emits error message with invalid credentials", %{conn: conn, user: user} do
       conn =
-        post(conn, ~p"/users/log-in?mode=password", %{
+        post(conn, ~p"/users/log-in", %{
           "user" => %{"email" => user.email, "password" => "invalid_password"}
         })
 
       assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Invalid email or password"
       assert redirected_to(conn) == ~p"/users/log-in"
     end
+
+    test "rejects an unconfirmed user with the same generic message", %{conn: conn} do
+      unconfirmed = unconfirmed_user_fixture()
+
+      conn =
+        post(conn, ~p"/users/log-in", %{
+          "user" => %{"email" => unconfirmed.email, "password" => valid_user_password()}
+        })
+
+      refute get_session(conn, :user_token)
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Invalid email or password"
+      assert redirected_to(conn) == ~p"/users/log-in"
+    end
   end
 
-  describe "POST /users/log-in - magic link" do
-    test "logs the user in", %{conn: conn, user: user} do
-      {token, _hashed_token} = generate_user_magic_link_token(user)
+  describe "POST /users/update-password" do
+    test "updates the user password and resets tokens", %{conn: conn, user: user} do
+      old_token = DarkZenith.Accounts.generate_user_session_token(user)
 
-      conn =
-        post(conn, ~p"/users/log-in", %{
-          "user" => %{"token" => token}
+      new_password_conn =
+        conn
+        |> log_in_user(user)
+        |> post(~p"/users/update-password", %{
+          "user" => %{
+            "email" => user.email,
+            "current_password" => valid_user_password(),
+            "password" => "new valid password",
+            "password_confirmation" => "new valid password"
+          }
         })
 
-      assert get_session(conn, :user_token)
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(new_password_conn) == ~p"/users/settings"
+      assert get_session(new_password_conn, :user_token) != old_token
+      refute DarkZenith.Accounts.get_user_by_session_token(old_token)
 
-      # Now do a logged in request and assert on the menu
-      conn = get(conn, ~p"/")
-      response = html_response(conn, 200)
-      assert response =~ user.email
-      assert response =~ ~p"/users/settings"
-      assert response =~ ~p"/users/log-out"
+      assert Phoenix.Flash.get(new_password_conn.assigns.flash, :info) =~
+               "Password updated successfully"
+
+      assert {:ok, _} = DarkZenith.Accounts.authenticate_user(user.email, "new valid password")
     end
 
-    test "confirms unconfirmed user", %{conn: conn, unconfirmed_user: user} do
-      {token, _hashed_token} = generate_user_magic_link_token(user)
-      refute user.confirmed_at
-
+    test "rejects an invalid current password", %{conn: conn, user: user} do
       conn =
-        post(conn, ~p"/users/log-in", %{
-          "user" => %{"token" => token},
-          "_action" => "confirmed"
+        conn
+        |> log_in_user(user)
+        |> post(~p"/users/update-password", %{
+          "user" => %{
+            "email" => user.email,
+            "current_password" => "wrong password!",
+            "password" => "new valid password",
+            "password_confirmation" => "new valid password"
+          }
         })
 
-      assert get_session(conn, :user_token)
-      assert redirected_to(conn) == ~p"/"
-      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "User confirmed successfully."
-
-      assert Accounts.get_user!(user.id).confirmed_at
-
-      # Now do a logged in request and assert on the menu
-      conn = get(conn, ~p"/")
-      response = html_response(conn, 200)
-      assert response =~ user.email
-      assert response =~ ~p"/users/settings"
-      assert response =~ ~p"/users/log-out"
+      assert redirected_to(conn) == ~p"/users/settings"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Password update failed"
+      assert {:ok, _} = DarkZenith.Accounts.authenticate_user(user.email, valid_user_password())
     end
 
-    test "redirects to login page when magic link is invalid", %{conn: conn} do
-      conn =
-        post(conn, ~p"/users/log-in", %{
-          "user" => %{"token" => "invalid"}
-        })
-
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
-               "The link is invalid or it has expired."
-
+    test "requires authentication", %{conn: conn} do
+      conn = post(conn, ~p"/users/update-password", %{"user" => %{}})
       assert redirected_to(conn) == ~p"/users/log-in"
     end
   end

@@ -10,11 +10,12 @@ defmodule DarkZenith.AccountsFixtures do
   alias DarkZenith.Accounts.Scope
 
   def unique_user_email, do: "user#{System.unique_integer()}@example.com"
-  def valid_user_password, do: "hello world!"
+  def valid_user_password, do: "hello world password!"
 
   def valid_user_attributes(attrs \\ %{}) do
     Enum.into(attrs, %{
-      email: unique_user_email()
+      email: unique_user_email(),
+      password: valid_user_password()
     })
   end
 
@@ -32,13 +33,24 @@ defmodule DarkZenith.AccountsFixtures do
 
     token =
       extract_user_token(fn url ->
-        Accounts.deliver_login_instructions(user, url)
+        Accounts.deliver_user_confirmation_instructions(user, url)
       end)
 
-    {:ok, {user, _expired_tokens}} =
-      Accounts.login_user_by_magic_link(token)
+    {:ok, user} = Accounts.confirm_user(token)
 
     user
+  end
+
+  def admin_fixture(attrs \\ %{}) do
+    user = user_fixture(attrs)
+
+    {1, _} =
+      DarkZenith.Repo.update_all(
+        from(u in Accounts.User, where: u.id == ^user.id),
+        set: [is_admin: true]
+      )
+
+    %{user | is_admin: true}
   end
 
   def user_scope_fixture do
@@ -48,13 +60,6 @@ defmodule DarkZenith.AccountsFixtures do
 
   def user_scope_fixture(user) do
     Scope.for_user(user)
-  end
-
-  def set_password(user) do
-    {:ok, {user, _expired_tokens}} =
-      Accounts.update_user_password(user, %{password: valid_user_password()})
-
-    user
   end
 
   def extract_user_token(fun) do
@@ -70,12 +75,6 @@ defmodule DarkZenith.AccountsFixtures do
       ),
       set: [authenticated_at: authenticated_at]
     )
-  end
-
-  def generate_user_magic_link_token(user) do
-    {encoded_token, user_token} = Accounts.UserToken.build_email_token(user, "login")
-    DarkZenith.Repo.insert!(user_token)
-    {encoded_token, user_token.token}
   end
 
   def offset_user_token(token, amount_to_add, unit) do

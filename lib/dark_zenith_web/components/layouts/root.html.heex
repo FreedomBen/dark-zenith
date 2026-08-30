@@ -50,7 +50,7 @@
           <.link href={~p"/users/log-out"} method="delete">Log out</.link>
         </li>
       <% else %>
-        <li>
+        <li :if={DarkZenith.Accounts.registration_enabled?()}>
           <.link href={~p"/users/register"}>Register</.link>
         </li>
         <li>

@@ -24,6 +24,10 @@ config :dark_zenith, DarkZenithWeb.Endpoint,
   secret_key_base: "X7VaVGDZmih3+i42wNFyWajPS3FrJNC+WCfEl0LKPdwZ4fLYchFg6joJ767rloXD",
   server: false
 
+# Most tests exercise open registration; the disabled default is covered by
+# dedicated tests that override this value.
+config :dark_zenith, registration_enabled: true
+
 # Root key material for token hashing and the GPG-key encryption envelope,
 # mirroring the endpoint secret_key_base above.
 config :dark_zenith,

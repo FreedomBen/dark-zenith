@@ -23,18 +23,6 @@ defmodule DarkZenithWeb.UserLive.SettingsTest do
       assert path == ~p"/users/log-in"
       assert %{"error" => "You must log in to access this page."} = flash
     end
-
-    test "redirects if user is not in sudo mode", %{conn: conn} do
-      {:ok, conn} =
-        conn
-        |> log_in_user(user_fixture(),
-          token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -11, :minute)
-        )
-        |> live(~p"/users/settings")
-        |> follow_redirect(conn, ~p"/users/log-in")
-
-      assert conn.resp_body =~ "You must re-authenticate to access this page."
-    end
   end
 
   describe "update email form" do
@@ -51,12 +39,18 @@ defmodule DarkZenithWeb.UserLive.SettingsTest do
       result =
         lv
         |> form("#email_form", %{
+          "current_password" => valid_user_password(),
           "user" => %{"email" => new_email}
         })
         |> render_submit()
 
       assert result =~ "A link to confirm your email"
       assert Accounts.get_user_by_email(user.email)
+
+      assert DarkZenith.Repo.get_by(Accounts.UserToken,
+               user_id: user.id,
+               context: "change:#{user.email}"
+             )
     end
 
     test "renders errors with invalid data (phx-change)", %{conn: conn} do
@@ -67,6 +61,7 @@ defmodule DarkZenithWeb.UserLive.SettingsTest do
         |> element("#email_form")
         |> render_change(%{
           "action" => "update_email",
+          "current_password" => "invalid",
           "user" => %{"email" => "with spaces"}
         })
 
@@ -74,18 +69,18 @@ defmodule DarkZenithWeb.UserLive.SettingsTest do
       assert result =~ "must have the @ sign and no spaces"
     end
 
-    test "renders errors with invalid data (phx-submit)", %{conn: conn, user: user} do
+    test "renders errors with invalid current password on submit", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/users/settings")
 
       result =
         lv
         |> form("#email_form", %{
-          "user" => %{"email" => user.email}
+          "current_password" => "wrong password!!",
+          "user" => %{"email" => unique_user_email()}
         })
         |> render_submit()
 
-      assert result =~ "Change Email"
-      assert result =~ "did not change"
+      assert result =~ "is not valid"
     end
   end
 
@@ -95,32 +90,21 @@ defmodule DarkZenithWeb.UserLive.SettingsTest do
       %{conn: log_in_user(conn, user), user: user}
     end
 
-    test "updates the user password", %{conn: conn, user: user} do
-      new_password = valid_user_password()
-
+    test "triggers the form action with valid data", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/users/settings")
 
-      form =
-        form(lv, "#password_form", %{
+      result =
+        lv
+        |> form("#password_form", %{
           "user" => %{
-            "email" => user.email,
-            "password" => new_password,
-            "password_confirmation" => new_password
+            "current_password" => valid_user_password(),
+            "password" => "new valid password",
+            "password_confirmation" => "new valid password"
           }
         })
+        |> render_submit()
 
-      render_submit(form)
-
-      new_password_conn = follow_trigger_action(form, conn)
-
-      assert redirected_to(new_password_conn) == ~p"/users/settings"
-
-      assert get_session(new_password_conn, :user_token) != get_session(conn, :user_token)
-
-      assert Phoenix.Flash.get(new_password_conn.assigns.flash, :info) =~
-               "Password updated successfully"
-
-      assert Accounts.get_user_by_email_and_password(user.email, new_password)
+      assert result =~ "phx-trigger-action"
     end
 
     test "renders errors with invalid data (phx-change)", %{conn: conn} do
@@ -131,7 +115,7 @@ defmodule DarkZenithWeb.UserLive.SettingsTest do
         |> element("#password_form")
         |> render_change(%{
           "user" => %{
-            "password" => "too short",
+            "password" => "short",
             "password_confirmation" => "does not match"
           }
         })
@@ -141,22 +125,22 @@ defmodule DarkZenithWeb.UserLive.SettingsTest do
       assert result =~ "does not match password"
     end
 
-    test "renders errors with invalid data (phx-submit)", %{conn: conn} do
+    test "renders errors with invalid current password on submit", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/users/settings")
 
       result =
         lv
         |> form("#password_form", %{
           "user" => %{
-            "password" => "too short",
-            "password_confirmation" => "does not match"
+            "current_password" => "wrong password!!",
+            "password" => "new valid password",
+            "password_confirmation" => "new valid password"
           }
         })
         |> render_submit()
 
-      assert result =~ "Save Password"
-      assert result =~ "should be at least 12 character(s)"
-      assert result =~ "does not match password"
+      assert result =~ "is not valid"
+      refute result =~ "phx-trigger-action=\"true\""
     end
   end
 

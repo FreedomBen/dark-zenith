@@ -6,9 +6,10 @@ defmodule DarkZenith.Accounts.UserToken do
   @hash_algorithm :sha256
   @rand_size 32
 
-  # It is very important to keep the magic link token expiry short,
+  # It is very important to keep the reset password token expiry short,
   # since someone with access to the email may take over the account.
-  @magic_link_validity_in_minutes 15
+  @confirm_validity_in_days 7
+  @reset_password_validity_in_days 1
   @change_email_validity_in_days 7
   @session_validity_in_days 14
 
@@ -100,23 +101,27 @@ defmodule DarkZenith.Accounts.UserToken do
   @doc """
   Checks if the token is valid and returns its underlying lookup query.
 
-  If found, the query returns a tuple of the form `{user, token}`.
+  If found, the query returns the user the token belongs to.
 
   The given token is valid if it matches its hashed counterpart in the
-  database. This function also checks whether the token has expired. The context
-  of a magic link token is always "login".
+  database and the user email has not changed. This function also checks
+  if the token is being used within a certain period, depending on the
+  context: "confirm" tokens are valid for #{@confirm_validity_in_days} days and
+  "reset_password" tokens for #{@reset_password_validity_in_days} day.
   """
-  def verify_magic_link_token_query(token) do
+  def verify_email_token_query(token, context)
+      when context in ["confirm", "reset_password"] do
     case Base.url_decode64(token, padding: false) do
       {:ok, decoded_token} ->
         hashed_token = :crypto.hash(@hash_algorithm, decoded_token)
+        days = days_for_context(context)
 
         query =
-          from token in by_token_and_context_query(hashed_token, "login"),
+          from token in by_token_and_context_query(hashed_token, context),
             join: user in assoc(token, :user),
-            where: token.inserted_at > ago(^@magic_link_validity_in_minutes, "minute"),
+            where: token.inserted_at > ago(^days, "day"),
             where: token.sent_to == user.email,
-            select: {user, token}
+            select: user
 
         {:ok, query}
 
@@ -124,6 +129,9 @@ defmodule DarkZenith.Accounts.UserToken do
         :error
     end
   end
+
+  defp days_for_context("confirm"), do: @confirm_validity_in_days
+  defp days_for_context("reset_password"), do: @reset_password_validity_in_days
 
   @doc """
   Checks if the token is valid and returns its underlying lookup query.

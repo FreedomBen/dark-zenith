@@ -11,39 +11,25 @@ defmodule DarkZenithWeb.UserLive.Login do
         <div class="text-center">
           <.header>
             <p>Log in</p>
-            <:subtitle>
-              <%= if @current_scope do %>
-                You need to reauthenticate to perform sensitive actions on your account.
-              <% else %>
-                Don't have an account? <.link
-                  navigate={~p"/users/register"}
-                  class="font-semibold text-brand hover:underline"
-                  phx-no-format
-                >Sign up</.link> for an account now.
-              <% end %>
+            <:subtitle :if={@registration_enabled}>
+              Don't have an account? <.link
+                navigate={~p"/users/register"}
+                class="font-semibold text-brand hover:underline"
+                phx-no-format
+              >Sign up</.link> for an account now.
             </:subtitle>
           </.header>
-        </div>
-
-        <div :if={local_mail_adapter?()} class="alert alert-info">
-          <.icon name="hero-information-circle" class="size-6 shrink-0" />
-          <div>
-            <p>You are running the local mail adapter.</p>
-            <p>
-              To see sent emails, visit <.link href="/dev/mailbox" class="underline">the mailbox page</.link>.
-            </p>
-          </div>
         </div>
 
         <.form
           :let={f}
           for={@form}
-          id="login_form_magic"
+          id="login_form"
           action={~p"/users/log-in"}
-          phx-submit="submit_magic"
+          phx-submit="submit"
+          phx-trigger-action={@trigger_submit}
         >
           <.input
-            readonly={!!@current_scope}
             field={f[:email]}
             type="email"
             label="Email"
@@ -52,36 +38,13 @@ defmodule DarkZenithWeb.UserLive.Login do
             required
             phx-mounted={JS.focus()}
           />
-          <.button class="btn btn-primary w-full">
-            Log in with email <span aria-hidden="true">→</span>
-          </.button>
-        </.form>
-
-        <div class="divider">or</div>
-
-        <.form
-          :let={f}
-          for={@form}
-          id="login_form_password"
-          action={~p"/users/log-in"}
-          phx-submit="submit_password"
-          phx-trigger-action={@trigger_submit}
-        >
-          <.input
-            readonly={!!@current_scope}
-            field={f[:email]}
-            type="email"
-            label="Email"
-            autocomplete="username"
-            spellcheck="false"
-            required
-          />
           <.input
             field={@form[:password]}
             type="password"
             label="Password"
             autocomplete="current-password"
             spellcheck="false"
+            required
           />
           <.button class="btn btn-primary w-full" name={@form[:remember_me].name} value="true">
             Log in and stay logged in <span aria-hidden="true">→</span>
@@ -90,6 +53,12 @@ defmodule DarkZenithWeb.UserLive.Login do
             Log in only this time
           </.button>
         </.form>
+
+        <div class="text-center text-sm space-x-2">
+          <.link href={~p"/users/reset-password"} class="link">Forgot your password?</.link>
+          <span>·</span>
+          <.link href={~p"/users/confirm"} class="link">Resend confirmation email</.link>
+        </div>
       </div>
     </Layouts.app>
     """
@@ -97,38 +66,19 @@ defmodule DarkZenithWeb.UserLive.Login do
 
   @impl true
   def mount(_params, _session, socket) do
-    email =
-      Phoenix.Flash.get(socket.assigns.flash, :email) ||
-        get_in(socket.assigns, [:current_scope, Access.key(:user), Access.key(:email)])
-
+    email = Phoenix.Flash.get(socket.assigns.flash, :email)
     form = to_form(%{"email" => email}, as: "user")
 
-    {:ok, assign(socket, form: form, trigger_submit: false)}
+    {:ok,
+     assign(socket,
+       form: form,
+       trigger_submit: false,
+       registration_enabled: Accounts.registration_enabled?()
+     )}
   end
 
   @impl true
-  def handle_event("submit_password", _params, socket) do
+  def handle_event("submit", _params, socket) do
     {:noreply, assign(socket, :trigger_submit, true)}
-  end
-
-  def handle_event("submit_magic", %{"user" => %{"email" => email}}, socket) do
-    if user = Accounts.get_user_by_email(email) do
-      Accounts.deliver_login_instructions(
-        user,
-        &url(~p"/users/log-in/#{&1}")
-      )
-    end
-
-    info =
-      "If your email is in our system, you will receive instructions for logging in shortly."
-
-    {:noreply,
-     socket
-     |> put_flash(:info, info)
-     |> push_navigate(to: ~p"/users/log-in")}
-  end
-
-  defp local_mail_adapter? do
-    Application.get_env(:dark_zenith, DarkZenith.Mailer)[:adapter] == Swoosh.Adapters.Local
   end
 end

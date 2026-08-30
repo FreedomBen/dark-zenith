@@ -4,6 +4,8 @@ defmodule DarkZenithWeb.UserLive.RegistrationTest do
   import Phoenix.LiveViewTest
   import DarkZenith.AccountsFixtures
 
+  alias DarkZenith.Accounts
+
   describe "Registration page" do
     test "renders registration page", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/users/register")
@@ -17,7 +19,7 @@ defmodule DarkZenithWeb.UserLive.RegistrationTest do
         conn
         |> log_in_user(user_fixture())
         |> live(~p"/users/register")
-        |> follow_redirect(conn, ~p"/")
+        |> follow_redirect(conn, "/users/settings")
 
       assert {:ok, _conn} = result
     end
@@ -28,15 +30,16 @@ defmodule DarkZenithWeb.UserLive.RegistrationTest do
       result =
         lv
         |> element("#registration_form")
-        |> render_change(user: %{"email" => "with spaces"})
+        |> render_change(user: %{"email" => "with spaces", "password" => "short"})
 
       assert result =~ "Register"
       assert result =~ "must have the @ sign and no spaces"
+      assert result =~ "should be at least 12 character"
     end
   end
 
   describe "register user" do
-    test "creates account but does not log in", %{conn: conn} do
+    test "creates an unconfirmed account and delivers confirmation instructions", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/users/register")
 
       email = unique_user_email()
@@ -46,19 +49,29 @@ defmodule DarkZenithWeb.UserLive.RegistrationTest do
         render_submit(form)
         |> follow_redirect(conn, ~p"/users/log-in")
 
-      assert html =~
-               ~r/An email was sent to .*, please access it to confirm your account/
+      assert html =~ "please access it to confirm your account"
+
+      user = Accounts.get_user_by_email(email)
+      assert user
+      assert is_nil(user.confirmed_at)
+
+      # The user cannot log in until confirmation.
+      assert {:error, :invalid_credentials} =
+               Accounts.authenticate_user(email, valid_user_password())
+
+      # A confirmation token was created.
+      assert DarkZenith.Repo.get_by(Accounts.UserToken, user_id: user.id, context: "confirm")
     end
 
     test "renders errors for duplicated email", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/users/register")
+      %{email: email} = user_fixture()
 
-      user = user_fixture(%{email: "test@email.com"})
+      {:ok, lv, _html} = live(conn, ~p"/users/register")
 
       result =
         lv
         |> form("#registration_form",
-          user: %{"email" => user.email}
+          user: %{"email" => email, "password" => valid_user_password()}
         )
         |> render_submit()
 
@@ -66,17 +79,10 @@ defmodule DarkZenithWeb.UserLive.RegistrationTest do
     end
   end
 
-  describe "registration navigation" do
-    test "redirects to login page when the Log in button is clicked", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/users/register")
-
-      {:ok, _login_live, login_html} =
-        lv
-        |> element("main a", "Log in")
-        |> render_click()
-        |> follow_redirect(conn, ~p"/users/log-in")
-
-      assert login_html =~ "Log in"
+  describe "registration links" do
+    test "the login page links to registration when enabled", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/users/log-in")
+      assert html =~ ~p"/users/register"
     end
   end
 end

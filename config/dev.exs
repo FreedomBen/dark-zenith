@@ -14,6 +14,9 @@ config :dark_zenith, DarkZenith.Repo,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
 
+# Open registration in development for convenience.
+config :dark_zenith, registration_enabled: true
+
 # Root key material for token hashing and the GPG-key encryption envelope
 # (DESIGN.md: Token storage; GPG private key encryption). Mirrors the endpoint
 # secret_key_base so domain code does not depend on the web layer.

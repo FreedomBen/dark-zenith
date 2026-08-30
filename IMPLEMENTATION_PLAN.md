@@ -39,9 +39,9 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 2 — Accounts foundation (M1)
 
-- [ ] `mix phx.gen.auth` (bcrypt) baseline; confirm password rules (min 12 / max 72) (Users)
-- [ ] Confirmed-only login on web path (User Lifecycle)
-- [ ] Users table extensions: `is_admin`, `storage_bytes`, GPG columns (nullable, unused until Phase 11)
+- [x] `mix phx.gen.auth` (bcrypt) baseline; confirm password rules (min 12 / max 72) (Users)
+- [x] Confirmed-only login on web path (User Lifecycle)
+- [x] Users table extensions: `is_admin`, `storage_bytes`, GPG columns (nullable, unused until Phase 11)
 - [ ] Session tokens table + `dzst_` issuance/validation, 24 h expiry, hourly cleanup (Session Tokens)
 - [ ] API keys table + `dzak_` issuance/validation, scopes canonicalization, `MAX_USER_API_KEYS`
       quota under user-row lock (API Keys)

@@ -24,6 +24,10 @@ config :dark_zenith,
   ecto_repos: [DarkZenith.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true]
 
+# Whether new account registration is open (DESIGN.md: REGISTRATION_ENABLED,
+# default false). Overridden per environment and by runtime.exs in production.
+config :dark_zenith, registration_enabled: false
+
 # Background jobs (DESIGN.md: Oban runs metadata regeneration, upload/re-sign
 # processing, B2 cleanup, and email delivery). The rpm_processing queue
 # concurrency is overridden at runtime by RPM_PROCESSING_CONCURRENCY.

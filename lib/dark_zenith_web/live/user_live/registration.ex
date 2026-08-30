@@ -32,6 +32,14 @@ defmodule DarkZenithWeb.UserLive.Registration do
             required
             phx-mounted={JS.focus()}
           />
+          <.input
+            field={@form[:password]}
+            type="password"
+            label="Password"
+            autocomplete="new-password"
+            spellcheck="false"
+            required
+          />
 
           <.button phx-disable-with="Creating account..." class="btn btn-primary w-full">
             Create an account
@@ -43,15 +51,19 @@ defmodule DarkZenithWeb.UserLive.Registration do
   end
 
   @impl true
-  def mount(_params, _session, %{assigns: %{current_scope: %{user: user}}} = socket)
-      when not is_nil(user) do
-    {:ok, redirect(socket, to: DarkZenithWeb.UserAuth.signed_in_path(socket))}
-  end
-
   def mount(_params, _session, socket) do
-    changeset = Accounts.change_user_email(%User{}, %{}, validate_unique: false)
+    unless Accounts.registration_enabled?() do
+      raise DarkZenithWeb.NotFoundError
+    end
 
-    {:ok, assign_form(socket, changeset), temporary_assigns: [form: nil]}
+    case socket.assigns.current_scope do
+      %{user: user} when not is_nil(user) ->
+        {:ok, redirect(socket, to: DarkZenithWeb.UserAuth.signed_in_path(socket))}
+
+      _ ->
+        changeset = Accounts.change_user_registration(%User{})
+        {:ok, assign_form(socket, changeset), temporary_assigns: [form: nil]}
+    end
   end
 
   @impl true
@@ -59,9 +71,9 @@ defmodule DarkZenithWeb.UserLive.Registration do
     case Accounts.register_user(user_params) do
       {:ok, user} ->
         {:ok, _} =
-          Accounts.deliver_login_instructions(
+          Accounts.deliver_user_confirmation_instructions(
             user,
-            &url(~p"/users/log-in/#{&1}")
+            &url(~p"/users/confirm/#{&1}")
           )
 
         {:noreply,
@@ -73,12 +85,12 @@ defmodule DarkZenithWeb.UserLive.Registration do
          |> push_navigate(to: ~p"/users/log-in")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign_form(socket, changeset)}
+        {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
     end
   end
 
   def handle_event("validate", %{"user" => user_params}, socket) do
-    changeset = Accounts.change_user_email(%User{}, user_params, validate_unique: false)
+    changeset = Accounts.change_user_registration(%User{}, user_params)
     {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
   end
 

@@ -1,8 +1,6 @@
 defmodule DarkZenithWeb.UserLive.Settings do
   use DarkZenithWeb, :live_view
 
-  on_mount {DarkZenithWeb.UserAuth, :require_sudo_mode}
-
   alias DarkZenith.Accounts
 
   @impl true
@@ -23,6 +21,17 @@ defmodule DarkZenithWeb.UserLive.Settings do
           label="Email"
           autocomplete="username"
           spellcheck="false"
+          required
+        />
+        <.input
+          field={@email_form[:current_password]}
+          name="current_password"
+          id="current_password_for_email"
+          type="password"
+          label="Current password"
+          autocomplete="current-password"
+          spellcheck="false"
+          value={@email_form_current_password}
           required
         />
         <.button variant="primary" phx-disable-with="Changing...">Change Email</.button>
@@ -61,6 +70,17 @@ defmodule DarkZenithWeb.UserLive.Settings do
           autocomplete="new-password"
           spellcheck="false"
         />
+        <.input
+          field={@password_form[:current_password]}
+          name="user[current_password]"
+          type="password"
+          label="Current password"
+          id="current_password_for_password"
+          autocomplete="current-password"
+          spellcheck="false"
+          value={@current_password}
+          required
+        />
         <.button variant="primary" phx-disable-with="Saving...">
           Save Password
         </.button>
@@ -92,7 +112,9 @@ defmodule DarkZenithWeb.UserLive.Settings do
       socket
       |> assign(:current_email, user.email)
       |> assign(:email_form, to_form(email_changeset))
+      |> assign(:email_form_current_password, nil)
       |> assign(:password_form, to_form(password_changeset))
+      |> assign(:current_password, nil)
       |> assign(:trigger_submit, false)
 
     {:ok, socket}
@@ -100,7 +122,7 @@ defmodule DarkZenithWeb.UserLive.Settings do
 
   @impl true
   def handle_event("validate_email", params, socket) do
-    %{"user" => user_params} = params
+    %{"current_password" => password, "user" => user_params} = params
 
     email_form =
       socket.assigns.current_scope.user
@@ -108,26 +130,25 @@ defmodule DarkZenithWeb.UserLive.Settings do
       |> Map.put(:action, :validate)
       |> to_form()
 
-    {:noreply, assign(socket, email_form: email_form)}
+    {:noreply, assign(socket, email_form: email_form, email_form_current_password: password)}
   end
 
   def handle_event("update_email", params, socket) do
-    %{"user" => user_params} = params
+    %{"current_password" => password, "user" => user_params} = params
     user = socket.assigns.current_scope.user
-    true = Accounts.sudo_mode?(user)
 
-    case Accounts.change_user_email(user, user_params) do
-      %{valid?: true} = changeset ->
+    case Accounts.apply_user_email(user, password, user_params) do
+      {:ok, applied_user} ->
         Accounts.deliver_user_update_email_instructions(
-          Ecto.Changeset.apply_action!(changeset, :insert),
+          applied_user,
           user.email,
           &url(~p"/users/settings/confirm-email/#{&1}")
         )
 
         info = "A link to confirm your email change has been sent to the new address."
-        {:noreply, socket |> put_flash(:info, info)}
+        {:noreply, socket |> put_flash(:info, info) |> assign(email_form_current_password: nil)}
 
-      changeset ->
+      {:error, changeset} ->
         {:noreply, assign(socket, :email_form, to_form(changeset, action: :insert))}
     end
   end
@@ -141,15 +162,23 @@ defmodule DarkZenithWeb.UserLive.Settings do
       |> Map.put(:action, :validate)
       |> to_form()
 
-    {:noreply, assign(socket, password_form: password_form)}
+    {:noreply,
+     assign(socket,
+       password_form: password_form,
+       current_password: user_params["current_password"]
+     )}
   end
 
   def handle_event("update_password", params, socket) do
     %{"user" => user_params} = params
     user = socket.assigns.current_scope.user
-    true = Accounts.sudo_mode?(user)
 
-    case Accounts.change_user_password(user, user_params) do
+    changeset =
+      user
+      |> Accounts.change_user_password(user_params, hash_password: false)
+      |> DarkZenith.Accounts.User.validate_current_password(user_params["current_password"])
+
+    case changeset do
       %{valid?: true} = changeset ->
         {:noreply, assign(socket, trigger_submit: true, password_form: to_form(changeset))}
 

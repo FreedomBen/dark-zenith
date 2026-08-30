@@ -66,7 +66,10 @@ defmodule DarkZenithWeb.Router do
       on_mount: [{DarkZenithWeb.UserAuth, :mount_current_scope}] do
       live "/users/register", UserLive.Registration, :new
       live "/users/log-in", UserLive.Login, :new
-      live "/users/log-in/:token", UserLive.Confirmation, :new
+      live "/users/confirm", UserLive.ConfirmationInstructions, :new
+      live "/users/confirm/:token", UserLive.Confirmation, :edit
+      live "/users/reset-password", UserLive.ForgotPassword, :new
+      live "/users/reset-password/:token", UserLive.ResetPassword, :edit
     end
 
     post "/users/log-in", UserSessionController, :create

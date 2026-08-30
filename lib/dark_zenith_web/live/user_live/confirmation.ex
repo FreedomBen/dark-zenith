@@ -9,63 +9,18 @@ defmodule DarkZenithWeb.UserLive.Confirmation do
     <Layouts.app flash={@flash} current_scope={@current_scope}>
       <div class="mx-auto max-w-sm">
         <div class="text-center">
-          <.header>Welcome {@user.email}</.header>
+          <.header>Confirm account</.header>
         </div>
 
-        <.form
-          :if={!@user.confirmed_at}
-          for={@form}
-          id="confirmation_form"
-          phx-mounted={JS.focus_first()}
-          phx-submit="submit"
-          action={~p"/users/log-in?_action=confirmed"}
-          phx-trigger-action={@trigger_submit}
-        >
+        <.form for={@form} id="confirmation_form" phx-submit="confirm_account">
           <input type="hidden" name={@form[:token].name} value={@form[:token].value} />
-          <.button
-            name={@form[:remember_me].name}
-            value="true"
-            phx-disable-with="Confirming..."
-            class="btn btn-primary w-full"
-          >
-            Confirm and stay logged in
-          </.button>
-          <.button phx-disable-with="Confirming..." class="btn btn-primary btn-soft w-full mt-2">
-            Confirm and log in only this time
+          <.button phx-disable-with="Confirming..." class="btn btn-primary w-full">
+            Confirm my account
           </.button>
         </.form>
 
-        <.form
-          :if={@user.confirmed_at}
-          for={@form}
-          id="login_form"
-          phx-submit="submit"
-          phx-mounted={JS.focus_first()}
-          action={~p"/users/log-in"}
-          phx-trigger-action={@trigger_submit}
-        >
-          <input type="hidden" name={@form[:token].name} value={@form[:token].value} />
-          <%= if @current_scope do %>
-            <.button phx-disable-with="Logging in..." class="btn btn-primary w-full">
-              Log in
-            </.button>
-          <% else %>
-            <.button
-              name={@form[:remember_me].name}
-              value="true"
-              phx-disable-with="Logging in..."
-              class="btn btn-primary w-full"
-            >
-              Keep me logged in on this device
-            </.button>
-            <.button phx-disable-with="Logging in..." class="btn btn-primary btn-soft w-full mt-2">
-              Log me in only this time
-            </.button>
-          <% end %>
-        </.form>
-
-        <p :if={!@user.confirmed_at} class="alert alert-outline mt-8">
-          Tip: If you prefer passwords, you can enable them in the user settings.
+        <p class="text-center mt-4">
+          <.link href={~p"/users/log-in"} class="link">Log in</.link>
         </p>
       </div>
     </Layouts.app>
@@ -74,21 +29,37 @@ defmodule DarkZenithWeb.UserLive.Confirmation do
 
   @impl true
   def mount(%{"token" => token}, _session, socket) do
-    if user = Accounts.get_user_by_magic_link_token(token) do
-      form = to_form(%{"token" => token}, as: "user")
-
-      {:ok, assign(socket, user: user, form: form, trigger_submit: false),
-       temporary_assigns: [form: nil]}
-    else
-      {:ok,
-       socket
-       |> put_flash(:error, "Magic link is invalid or it has expired.")
-       |> push_navigate(to: ~p"/users/log-in")}
-    end
+    form = to_form(%{"token" => token}, as: "user")
+    {:ok, assign(socket, form: form), temporary_assigns: [form: nil]}
   end
 
+  # Do not log in the user after confirmation to avoid a
+  # leaked token giving the user access to the account.
   @impl true
-  def handle_event("submit", %{"user" => params}, socket) do
-    {:noreply, assign(socket, form: to_form(params, as: "user"), trigger_submit: true)}
+  def handle_event("confirm_account", %{"user" => %{"token" => token}}, socket) do
+    case Accounts.confirm_user(token) do
+      {:ok, _user} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "User confirmed successfully.")
+         |> redirect(to: ~p"/users/log-in")}
+
+      {:error, :invalid_token} ->
+        # If there is a current user and the account was already confirmed,
+        # then odds are that the confirmation link was already visited, either
+        # by some automation or by the user themselves, so we redirect without
+        # a warning message.
+        case socket.assigns do
+          %{current_scope: %{user: %{confirmed_at: confirmed_at}}}
+          when not is_nil(confirmed_at) ->
+            {:noreply, redirect(socket, to: ~p"/")}
+
+          %{} ->
+            {:noreply,
+             socket
+             |> put_flash(:error, "User confirmation link is invalid or it has expired.")
+             |> redirect(to: ~p"/")}
+        end
+    end
   end
 end

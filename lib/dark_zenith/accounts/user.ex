@@ -8,6 +8,7 @@ defmodule DarkZenith.Accounts.User do
     field :email, :string
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
+    field :current_password, :string, virtual: true, redact: true
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
 
@@ -23,6 +24,20 @@ defmodule DarkZenith.Accounts.User do
     field :previous_gpg_key_public, :string
 
     timestamps(type: :utc_datetime)
+  end
+
+  @doc """
+  A user changeset for registration, validating email and password together.
+
+  See `email_changeset/3` and `password_changeset/3` for the applied rules and
+  supported options.
+  """
+  def registration_changeset(user, attrs, opts \\ []) do
+    user
+    |> cast(attrs, [:email, :password])
+    |> validate_email(opts)
+    |> validate_confirmation(:password, message: "does not match password")
+    |> validate_password(opts)
   end
 
   @doc """
@@ -116,6 +131,20 @@ defmodule DarkZenith.Accounts.User do
       |> delete_change(:password)
     else
       changeset
+    end
+  end
+
+  @doc """
+  Validates the current password, adding a `:current_password` error to the
+  changeset when it does not match.
+  """
+  def validate_current_password(changeset, password) do
+    changeset = cast(changeset, %{current_password: password}, [:current_password])
+
+    if valid_password?(changeset.data, password) do
+      changeset
+    else
+      add_error(changeset, :current_password, "is not valid")
     end
   end
 
