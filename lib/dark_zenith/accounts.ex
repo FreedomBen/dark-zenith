@@ -6,7 +6,8 @@ defmodule DarkZenith.Accounts do
   import Ecto.Query, warn: false
   alias DarkZenith.Repo
 
-  alias DarkZenith.Accounts.{User, UserToken, UserNotifier}
+  alias DarkZenith.Accounts.{SessionToken, User, UserToken, UserNotifier}
+  alias DarkZenith.Crypto
 
   @doc """
   Whether new account registration is open (DESIGN.md: `REGISTRATION_ENABLED`,
@@ -321,14 +322,65 @@ defmodule DarkZenith.Accounts do
     :ok
   end
 
+  ## API session tokens (dzst_)
+
+  @doc """
+  Creates a short-lived API session token for the user (DESIGN.md: Session
+  Tokens). Returns `{plaintext, token}`; the plaintext is shown only once.
+  """
+  def create_session_token(user) do
+    {plaintext, token} = SessionToken.build(user)
+    {plaintext, Repo.insert!(token)}
+  end
+
+  @doc """
+  Gets the user owning a valid, unexpired API session token, or nil.
+  """
+  def get_user_by_api_session_token(plaintext) when is_binary(plaintext) do
+    token_hash = Crypto.token_hash(plaintext)
+    now = DateTime.utc_now(:second)
+
+    Repo.one(
+      from token in SessionToken,
+        join: user in assoc(token, :user),
+        where: token.token_hash == ^token_hash and token.expires_at > ^now,
+        select: user
+    )
+  end
+
+  @doc """
+  Deletes the API session token matching the presented plaintext.
+  Returns `:ok` when a token was deleted, `:error` otherwise.
+  """
+  def delete_session_token(plaintext) when is_binary(plaintext) do
+    token_hash = Crypto.token_hash(plaintext)
+
+    case Repo.delete_all(from(t in SessionToken, where: t.token_hash == ^token_hash)) do
+      {1, _} -> :ok
+      {0, _} -> :error
+    end
+  end
+
+  @doc """
+  Deletes every expired API session token (hourly cleanup job).
+  """
+  def delete_expired_session_tokens do
+    now = DateTime.utc_now(:second)
+    Repo.delete_all(from(t in SessionToken, where: t.expires_at <= ^now))
+  end
+
   ## Token helper
 
+  # Used by password change/reset and confirmation. Deletes the user's web
+  # session/email tokens and their API session tokens in the same operation
+  # (DESIGN.md: Session Tokens — API keys deliberately survive).
   defp update_user_and_delete_all_tokens(changeset) do
     Repo.transact(fn ->
       with {:ok, user} <- Repo.update(changeset) do
         tokens_to_expire = Repo.all_by(UserToken, user_id: user.id)
 
         Repo.delete_all(from(t in UserToken, where: t.id in ^Enum.map(tokens_to_expire, & &1.id)))
+        Repo.delete_all(from(t in SessionToken, where: t.user_id == ^user.id))
 
         {:ok, {user, tokens_to_expire}}
       end

@@ -37,7 +37,11 @@ config :dark_zenith, Oban,
   queues: [default: 10, rpm_processing: 2, metadata: 10, cleanup: 10, mailers: 20],
   plugins: [
     {Oban.Plugins.Pruner, max_age: 604_800},
-    {Oban.Plugins.Lifeline, rescue_after: :timer.minutes(30)}
+    {Oban.Plugins.Lifeline, rescue_after: :timer.minutes(30)},
+    {Oban.Plugins.Cron,
+     crontab: [
+       {"0 * * * *", DarkZenith.Workers.SessionTokenCleanup}
+     ]}
   ]
 
 # Configure the endpoint

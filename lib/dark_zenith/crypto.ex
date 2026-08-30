@@ -24,6 +24,18 @@ defmodule DarkZenith.Crypto do
     token_hash(secret_key_base(), full_token_string)
   end
 
+  @doc """
+  Generates a new bearer token for the given prefix (`"dzak_"` or `"dzst_"`):
+  32 cryptographically secure random bytes encoded as unpadded base64url.
+
+  Returns `{full_token_string, token_hash}`; only the hash may be stored.
+  """
+  def generate_token(prefix) when prefix in ["dzak_", "dzst_"] do
+    secret = 32 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
+    full = prefix <> secret
+    {full, token_hash(full)}
+  end
+
   @doc "The configured secret key base for this node."
   def secret_key_base do
     Application.fetch_env!(:dark_zenith, :secret_key_base)
