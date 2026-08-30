@@ -39,4 +39,4 @@ Pull requests should include a short summary, test results or an explanation whe
 
 ## Agent-Specific Instructions
 
-Do not read `TODO.md` or other TODO files. Do not create or switch branches, commit, or push unless explicitly instructed. Always update documentation when code changes affect documented behavior.
+Do not read `TODO.md` or other TODO files. Do not create or switch branches or push unless explicitly instructed. Always update documentation when code changes affect documented behavior.
