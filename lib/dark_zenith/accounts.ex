@@ -6,7 +6,7 @@ defmodule DarkZenith.Accounts do
   import Ecto.Query, warn: false
   alias DarkZenith.Repo
 
-  alias DarkZenith.Accounts.{SessionToken, User, UserToken, UserNotifier}
+  alias DarkZenith.Accounts.{ApiKey, SessionToken, User, UserToken, UserNotifier}
   alias DarkZenith.Crypto
 
   @doc """
@@ -367,6 +367,122 @@ defmodule DarkZenith.Accounts do
   def delete_expired_session_tokens do
     now = DateTime.utc_now(:second)
     Repo.delete_all(from(t in SessionToken, where: t.expires_at <= ^now))
+  end
+
+  ## API keys (dzak_)
+
+  @doc """
+  Creates a scoped API key (DESIGN.md: API Keys).
+
+  Returns `{:ok, {plaintext, api_key}}` — the plaintext is shown only once —
+  `{:error, changeset}` for validation failures, or `{:error, :quota_exceeded}`
+  when the new row would exceed `MAX_USER_API_KEYS`. The transaction locks the
+  user row so concurrent creates and deletes serialize; every stored row counts
+  toward the quota, expired rows included, and admins are not exempt.
+  """
+  def create_api_key(%User{} = user, attrs) do
+    changeset = ApiKey.create_changeset(%ApiKey{user_id: user.id}, attrs)
+
+    if changeset.valid? do
+      {plaintext, key_hash} = Crypto.generate_token("dzak_")
+
+      changeset =
+        changeset
+        |> Ecto.Changeset.put_change(:key_hash, key_hash)
+        |> Ecto.Changeset.put_change(:key_prefix, String.slice(plaintext, 0, 12))
+
+      Repo.transact(fn ->
+        lock_user_row!(user.id)
+        count = Repo.aggregate(from(k in ApiKey, where: k.user_id == ^user.id), :count)
+
+        if count + 1 > max_user_api_keys() do
+          {:error, :quota_exceeded}
+        else
+          with {:ok, api_key} <- Repo.insert(changeset) do
+            {:ok, {plaintext, api_key}}
+          end
+        end
+      end)
+    else
+      {:error, %{changeset | action: :insert}}
+    end
+  end
+
+  @doc """
+  Authenticates an API key credential. Expired keys are rejected exactly like
+  unknown ones. Returns `{:ok, {user, api_key}}` or `{:error, :invalid}`.
+  """
+  def fetch_api_key_user(plaintext) when is_binary(plaintext) do
+    key_hash = Crypto.token_hash(plaintext)
+
+    result =
+      Repo.one(
+        from key in ApiKey,
+          join: user in assoc(key, :user),
+          where: key.key_hash == ^key_hash,
+          select: {user, key}
+      )
+
+    case result do
+      {user, %ApiKey{} = key} ->
+        if ApiKey.expired?(key), do: {:error, :invalid}, else: {:ok, {user, key}}
+
+      nil ->
+        {:error, :invalid}
+    end
+  end
+
+  @doc """
+  Lists the user's API keys, expired rows included, newest first with id as
+  the deterministic tie-breaker (DESIGN.md: API Contract Details ordering).
+  """
+  def list_api_keys(%User{} = user) do
+    Repo.all(
+      from key in ApiKey,
+        where: key.user_id == ^user.id,
+        order_by: [desc: key.inserted_at, asc: key.id]
+    )
+  end
+
+  @doc """
+  Deletes one of the user's API keys by id. Locks the user row so deletion
+  serializes with quota-checked creation. Returns `:ok` or `:error` when the
+  key does not exist or belongs to another user.
+  """
+  def delete_api_key(%User{} = user, id) do
+    {:ok, result} =
+      Repo.transact(fn ->
+        lock_user_row!(user.id)
+
+        case Repo.delete_all(from(k in ApiKey, where: k.id == ^id and k.user_id == ^user.id)) do
+          {1, _} -> {:ok, :ok}
+          {0, _} -> {:ok, :error}
+        end
+      end)
+
+    result
+  end
+
+  @doc """
+  Deletes every API key belonging to the user (the password-reset page's
+  one-click revoke-all action).
+  """
+  def revoke_all_api_keys(%User{} = user) do
+    {:ok, result} =
+      Repo.transact(fn ->
+        lock_user_row!(user.id)
+        {:ok, Repo.delete_all(from(k in ApiKey, where: k.user_id == ^user.id))}
+      end)
+
+    result
+  end
+
+  defp max_user_api_keys do
+    Application.get_env(:dark_zenith, :max_user_api_keys, 100)
+  end
+
+  defp lock_user_row!(user_id) do
+    Repo.one!(from(u in User, where: u.id == ^user_id, lock: "FOR UPDATE", select: u.id))
   end
 
   ## Token helper

@@ -94,6 +94,14 @@ if config_env() == :prod do
       password: System.get_env("ADMIN_PASSWORD")
     ]
 
+  max_user_api_keys =
+    case Integer.parse(System.get_env("MAX_USER_API_KEYS") || "100") do
+      {value, ""} when value >= 1 -> value
+      _ -> raise "MAX_USER_API_KEYS must be a positive integer"
+    end
+
+  config :dark_zenith, max_user_api_keys: max_user_api_keys
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :dark_zenith, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
