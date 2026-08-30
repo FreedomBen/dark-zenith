@@ -56,16 +56,16 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 3 — Repositories domain (M1)
 
-- [ ] Repositories table with counters and signing fields (Data Model — Repositories)
-- [ ] Slug reservations: conditional claim/revive, retire on delete, admin release
+- [x] Repositories table with counters and signing fields (Data Model — Repositories)
+- [x] Slug reservations: conditional claim/revive, retire on delete, admin release
       (Slug Reservations)
-- [ ] Repository creation transaction: quota, slug claim, empty metadata cache row
+- [x] Repository creation transaction: quota, slug claim, empty metadata cache row
       (`source_revision = 0`) (Metadata Generation & Storage)
-- [ ] Repository metadata cache table (Repository Metadata Cache)
-- [ ] Repository update rules (immutable slug, fingerprint/sign_rpms validation matrix)
-      (REST API — PATCH)
-- [ ] Repository deletion transaction (hard delete, cancel intents/items, retire slug)
-      (Package Upload & Processing)
+- [x] Repository metadata cache table (Repository Metadata Cache)
+- [x] Repository update rules (immutable slug, fingerprint/sign_rpms validation matrix;
+      enable-on-non-empty needs Phase 11 transitions) (REST API — PATCH)
+- [x] Repository deletion transaction (hard delete, retire slug; intent/item cancelation
+      joins in Phases 9/11) (Package Upload & Processing)
 - [ ] Collaborators + invitations tables, quota, idempotent add, conversion on
       registration/email-change, expiry cleanup (Repository Collaborators; Collaborator Invitations)
 - [ ] Authorization module: owner/collaborator/admin/public matrix (Authorization)
