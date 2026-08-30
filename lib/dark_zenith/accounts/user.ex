@@ -11,6 +11,17 @@ defmodule DarkZenith.Accounts.User do
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
 
+    field :is_admin, :boolean, default: false
+    field :storage_bytes, :integer, default: 0
+
+    field :gpg_key_private, :binary, redact: true
+    field :gpg_key_public, :string
+    field :gpg_key_fingerprint, :string
+    field :gpg_signing_fingerprint, :string
+    field :gpg_key_expires_at, :utc_datetime
+    field :gpg_key_expiry_notified_days, {:array, :integer}, default: []
+    field :previous_gpg_key_public, :string
+
     timestamps(type: :utc_datetime)
   end
 
