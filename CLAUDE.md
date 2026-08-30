@@ -7,21 +7,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Commit after making changes.
 - Use a TDD (Test-Driven Development) approach when writing code.  You don't need to write tests for tests.
 
-## Repository status: design phase
+## Repository status: implementation in progress
 
-There is **no code yet**. The repository currently holds the spec and supporting files only:
+Implementation of `DESIGN.md` has begun (Phoenix 1.8 app scaffolded at the repo root).
+Key files:
 
-- `DESIGN.md` — the product/architecture spec, ~256 KB; the source of truth for everything below
-- `AGENTS.md` — conventions for coding agents (planned Phoenix layout, naming, commit style); keep it consistent with this file when conventions change
+- `DESIGN.md` — the product/architecture spec; the source of truth for everything below
+- `IMPLEMENTATION_PLAN.md` — phased checklist tracking implementation progress; check items off as they complete
+- `AGENTS.md` — conventions for coding agents plus generated Phoenix 1.8 guidance; keep it consistent with this file when conventions change
+- `README.md` — dev setup (podman database container on port 55432) and common commands
 - `LICENSE` — AGPLv3 or later
 - `TODO.md` — human-only; do not read or modify
-- `.gitignore`, `.claude/` (includes a small checked-in project memory under `.claude/memory/`)
+- `.claude/` — includes a small checked-in project memory under `.claude/memory/`
 
-All recent commits have been DESIGN.md refinements (see `git log`). Until implementation begins, "working on this repo" means editing `DESIGN.md`. Use the `/review-doc DESIGN.md` skill for spec reviews — that has been the established workflow.
+Build/test commands: `mix setup`, `mix test`, `mix precommit` (see `README.md`/`AGENTS.md`).
+Dev/test PostgreSQL runs in the `dark-zenith-pg` podman container on `127.0.0.1:55432`
+(`podman start dark-zenith-pg` if it exists; creation command in `README.md`).
 
-There are no build, test, or lint commands to run yet. Do not invent `mix`/`npm`/etc. scaffolding unless the user explicitly asks to start implementation.
+Use the `/review-doc DESIGN.md` skill for spec reviews — that remains the workflow for
+spec changes, which still precede code changes when behavior is being (re)defined.
 
-## What Dark Zenith will be (per DESIGN.md)
+## What Dark Zenith is (per DESIGN.md)
 
 An Elixir/Phoenix application that serves a fully-functional RPM (dnf) package repository:
 

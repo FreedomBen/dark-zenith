@@ -23,10 +23,10 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 0 — Scaffolding (M1)
 
-- [ ] Phoenix app at repo root (`mix phx.new`, LiveView, `--binary-id` for UUID PKs)
-- [ ] PostgreSQL for dev/test (podman container `dark-zenith-pg`, port 5432)
-- [ ] `mix test` green on the pristine scaffold
-- [ ] Merge `.gitignore`, add `.tool-versions`, update `AGENTS.md`/`CLAUDE.md` repo-status sections
+- [x] Phoenix app at repo root (`mix phx.new`, LiveView, `--binary-id` for UUID PKs)
+- [x] PostgreSQL for dev/test (podman container `dark-zenith-pg`, host port 55432)
+- [x] `mix test` green on the pristine scaffold
+- [x] Merge `.gitignore`, add `.tool-versions`, update `AGENTS.md`/`CLAUDE.md` repo-status sections
 - [ ] Add Oban + core dependency baseline and app configuration
 
 ## Phase 1 — Crypto and token primitives (M1)
