@@ -153,43 +153,8 @@ defmodule DarkZenithWeb.RepoServingController do
   defp metadata_body(cache, "filelists.xml.gz"), do: {"application/gzip", cache.filelists_xml_gz}
   defp metadata_body(cache, "other.xml.gz"), do: {"application/gzip", cache.other_xml_gz}
 
-  ## .repo rendering
-
   defp render_repo_file(repository) do
-    base = DarkZenithWeb.Endpoint.url()
-
-    credentials =
-      if repository.is_public do
-        []
-      else
-        ["username=token", "password=<api-key>"]
-      end
-
-    repo_gpgcheck = if repository.gpg_key_fingerprint, do: "1", else: "0"
-    gpgcheck = if repository.rpm_signing_state == "enabled", do: "1", else: "0"
-
-    gpgkey =
-      if repository.gpg_key_fingerprint do
-        ["gpgkey=#{base}/repos/#{repository.slug}/RPM-GPG-KEY"]
-      else
-        []
-      end
-
-    lines =
-      [
-        "[dark-zenith-#{repository.slug}]",
-        "name=Dark Zenith - #{repository.name}",
-        "baseurl=#{base}/repos/#{repository.slug}/"
-      ] ++
-        credentials ++
-        [
-          "enabled=1",
-          "metadata_expire=6h",
-          "repo_gpgcheck=#{repo_gpgcheck}",
-          "gpgcheck=#{gpgcheck}"
-        ] ++ gpgkey
-
-    Enum.join(lines, "\n") <> "\n"
+    DarkZenith.Repositories.RepoFile.render(repository, DarkZenithWeb.Endpoint.url())
   end
 
   ## Response helpers

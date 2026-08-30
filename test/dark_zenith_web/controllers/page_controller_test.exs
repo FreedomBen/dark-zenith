@@ -1,8 +1,12 @@
 defmodule DarkZenithWeb.PageControllerTest do
-  use DarkZenithWeb.ConnCase
+  use DarkZenithWeb.ConnCase, async: true
 
-  test "GET /", %{conn: conn} do
+  test "GET / renders the landing page with a repositories link", %{conn: conn} do
     conn = get(conn, ~p"/")
-    assert html_response(conn, 200) =~ "Peace of mind from prototype to production"
+    html = html_response(conn, 200)
+
+    assert html =~ "Dark Zenith"
+    assert html =~ "RPM package repository"
+    assert html =~ ~p"/repos"
   end
 end

@@ -41,6 +41,19 @@ defmodule DarkZenithWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+
+    live_session :repositories_authenticated,
+      on_mount: [{DarkZenithWeb.UserAuth, :require_authenticated}] do
+      # /repos/new precedes /repos/:slug; the slug "new" is reserved.
+      live "/repos/new", RepositoryLive.New, :new
+      live "/repos/:slug/settings", RepositoryLive.Settings, :edit
+    end
+
+    live_session :repositories_public,
+      on_mount: [{DarkZenithWeb.UserAuth, :mount_current_scope}] do
+      live "/repos", RepositoryLive.Index, :index
+      live "/repos/:slug", RepositoryLive.Show, :show
+    end
   end
 
   scope "/repos/:slug", DarkZenithWeb do
