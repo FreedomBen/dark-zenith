@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Agent Instructions
 
 - Commit after making changes.
+- Use a TDD (Test-Driven Development) approach when writing code.  You don't need to write tests for tests.
 
 ## Repository status: design phase
 

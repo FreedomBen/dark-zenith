@@ -3,6 +3,7 @@
 ## Agent Instructions
 
 - Commit after making changes.
+- Use a TDD (Test-Driven Development) approach when writing code.  You don't need to write tests for tests.
 
 ## Project Structure & Module Organization
 
