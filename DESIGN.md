@@ -1369,5 +1369,6 @@ These features are out of scope for the initial version but may be added later:
 - **Webhook notifications**: Notify external systems when packages are added/updated.
 - **Multi-arch mirroring**: Proxy/cache packages from upstream repositories.
 - **Metrics/analytics**: Download counts, popular packages, bandwidth usage dashboards.
+- **Weak dependencies**: Extract and emit `rpm:recommends`, `rpm:suggests`, `rpm:enhances`, and `rpm:supplements` in `primary.xml` as `createrepo_c` does, with matching stored collections, counts, and API subresources. The initial version stores only the four hard dependency lists, so weak dependencies are absent from generated metadata and dnf does not auto-install recommended packages; installs still resolve correctly.
 - **RPM groups/comps.xml**: Support for package groups and environment definitions.
 - **Module metadata (modules.yaml)**: Support for DNF modularity streams.
