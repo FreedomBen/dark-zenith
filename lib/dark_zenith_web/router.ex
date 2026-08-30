@@ -17,10 +17,25 @@ defmodule DarkZenithWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # Repository-serving endpoints consumed by RPM clients: no CSRF or layout,
+  # session fetched only for optional browser-cookie authentication.
+  pipeline :repo_serving do
+    plug :fetch_session
+    plug DarkZenithWeb.Plugs.RepoServingAuth
+  end
+
   scope "/", DarkZenithWeb do
     pipe_through :browser
 
     get "/", PageController, :home
+  end
+
+  scope "/repos/:slug", DarkZenithWeb do
+    pipe_through :repo_serving
+
+    get "/repodata/:filename", RepoServingController, :repodata
+    get "/RPM-GPG-KEY", RepoServingController, :gpg_key
+    get "/dark-zenith.repo", RepoServingController, :repo_file
   end
 
   # Other scopes may use custom stacks.

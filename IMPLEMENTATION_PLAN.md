@@ -106,12 +106,12 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 7 — Repo-serving endpoints (M1)
 
-- [ ] `/repos/:slug/repodata/*` from cache, `503 metadata_not_ready` + `Retry-After: 5`
-- [ ] Plain-text error bodies, content types, HEAD support, query-string tolerance
+- [x] `/repos/:slug/repodata/*` from cache, `503 metadata_not_ready` + `Retry-After: 5`
+- [x] Plain-text error bodies, content types, HEAD support, query-string tolerance
       (RPM File Downloads; RPM Repository Endpoint)
-- [ ] Caching headers + strong ETag/If-None-Match matrix, `Vary` (Caching headers)
-- [ ] Basic/Bearer auth, anonymous challenge, masking rules (Private Repository Authentication)
-- [ ] `dark-zenith.repo` endpoint (+ `RPM-GPG-KEY` completes in Phase 11) (.repo File Endpoint)
+- [x] Caching headers + strong ETag/If-None-Match matrix, `Vary` (Caching headers)
+- [x] Basic/Bearer auth, anonymous challenge, masking rules (Private Repository Authentication)
+- [x] `dark-zenith.repo` endpoint (+ `RPM-GPG-KEY` completes in Phase 11) (.repo File Endpoint)
 - [ ] Package download 302 to signed B2 URL for exact version (needs Phase 8)
 
 ## Phase 8 — B2 / S3 client (M2)
