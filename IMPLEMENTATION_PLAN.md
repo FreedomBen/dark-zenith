@@ -47,12 +47,12 @@ wins. Checklist items reference spec sections rather than restating their rules.
       quota under user-row lock (API Keys)
 - [x] Password change/reset deletes session tokens; API keys survive (Session Tokens)
 - [x] Bootstrap admin on first boot from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (Initial Setup)
-- [ ] `DarkZenith.Release.promote_admin/1` with the shared admin advisory lock (Initial Setup)
-- [ ] Admin-invariant advisory lock: admin-flag mutations, admin deletes, last-admin guarantee
-      (User Lifecycle)
+- [x] `DarkZenith.Release.promote_admin/1` with the shared admin advisory lock (Initial Setup)
+- [x] Admin-invariant advisory lock: admin-flag mutations, last-admin guarantee (admin
+      deletes arrive with user deletion in Phase 3+) (User Lifecycle)
 - [ ] Normalized-email advisory lock shared by registration/provisioning/email-change/invitations
       (User Lifecycle)
-- [ ] Audit events table + append-only recorder (Audit Events)
+- [x] Audit events table + append-only recorder (Audit Events)
 
 ## Phase 3 — Repositories domain (M1)
 

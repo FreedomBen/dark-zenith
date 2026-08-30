@@ -369,6 +369,62 @@ defmodule DarkZenith.Accounts do
     Repo.delete_all(from(t in SessionToken, where: t.expires_at <= ^now))
   end
 
+  ## Admin flag management
+
+  @doc """
+  Grants or revokes `is_admin` on another user (DESIGN.md: User Lifecycle).
+
+  Runs under the shared admin-invariant advisory lock: the transaction reloads
+  the acting user and target, requires the actor still to be a confirmed
+  admin, rejects a self-target, and proves that at least one confirmed admin
+  remains after the mutation. The change is audited in the same transaction.
+  """
+  def set_admin_flag(%User{} = actor, target_id, value) when is_boolean(value) do
+    Repo.transact(fn ->
+      DarkZenith.Accounts.Bootstrap.acquire_admin_invariant_lock!()
+
+      reloaded_actor = Repo.get(User, actor.id)
+
+      cond do
+        is_nil(reloaded_actor) or not reloaded_actor.is_admin or
+            is_nil(reloaded_actor.confirmed_at) ->
+          {:error, :not_admin}
+
+        actor.id == target_id ->
+          {:error, :cannot_target_self}
+
+        true ->
+          case Repo.get(User, target_id) do
+            nil ->
+              {:error, :user_not_found}
+
+            %User{} = target ->
+              if value == false and not another_confirmed_admin_remains?(target.id) do
+                {:error, :last_admin}
+              else
+                target = target |> Ecto.Changeset.change(is_admin: value) |> Repo.update!()
+
+                DarkZenith.Audit.record!(
+                  if(value, do: "admin.grant_admin", else: "admin.revoke_admin"),
+                  actor: reloaded_actor,
+                  target: {:user, target.id},
+                  metadata: %{"email" => target.email}
+                )
+
+                {:ok, target}
+              end
+          end
+      end
+    end)
+  end
+
+  defp another_confirmed_admin_remains?(excluded_user_id) do
+    Repo.exists?(
+      from u in User,
+        where: u.is_admin and not is_nil(u.confirmed_at) and u.id != ^excluded_user_id
+    )
+  end
+
   ## API keys (dzak_)
 
   @doc """
