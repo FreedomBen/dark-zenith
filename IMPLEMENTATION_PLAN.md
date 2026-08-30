@@ -27,7 +27,7 @@ wins. Checklist items reference spec sections rather than restating their rules.
 - [x] PostgreSQL for dev/test (podman container `dark-zenith-pg`, host port 55432)
 - [x] `mix test` green on the pristine scaffold
 - [x] Merge `.gitignore`, add `.tool-versions`, update `AGENTS.md`/`CLAUDE.md` repo-status sections
-- [ ] Add Oban + core dependency baseline and app configuration
+- [x] Add Oban + core dependency baseline and app configuration
 
 ## Phase 1 — Crypto and token primitives (M1)
 

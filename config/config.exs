@@ -11,6 +11,18 @@ config :dark_zenith,
   ecto_repos: [DarkZenith.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true]
 
+# Background jobs (DESIGN.md: Oban runs metadata regeneration, upload/re-sign
+# processing, B2 cleanup, and email delivery). The rpm_processing queue
+# concurrency is overridden at runtime by RPM_PROCESSING_CONCURRENCY.
+config :dark_zenith, Oban,
+  engine: Oban.Engines.Basic,
+  repo: DarkZenith.Repo,
+  queues: [default: 10, rpm_processing: 2, metadata: 10, cleanup: 10, mailers: 20],
+  plugins: [
+    {Oban.Plugins.Pruner, max_age: 604_800},
+    {Oban.Plugins.Lifeline, rescue_after: :timer.minutes(30)}
+  ]
+
 # Configure the endpoint
 config :dark_zenith, DarkZenithWeb.Endpoint,
   url: [host: "localhost"],

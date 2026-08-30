@@ -21,6 +21,10 @@ config :dark_zenith, DarkZenithWeb.Endpoint,
   secret_key_base: "X7VaVGDZmih3+i42wNFyWajPS3FrJNC+WCfEl0LKPdwZ4fLYchFg6joJ767rloXD",
   server: false
 
+# Oban: insert jobs without executing them; tests assert on enqueued jobs
+# or drain queues explicitly.
+config :dark_zenith, Oban, testing: :manual
+
 # In test we don't send emails
 config :dark_zenith, DarkZenith.Mailer, adapter: Swoosh.Adapters.Test
 
