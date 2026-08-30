@@ -10,6 +10,7 @@ defmodule DarkZenith.Application do
     children = [
       DarkZenithWeb.Telemetry,
       DarkZenith.Repo,
+      DarkZenith.Accounts.Bootstrap,
       {Oban, Application.fetch_env!(:dark_zenith, Oban)},
       {DNSCluster, query: Application.get_env(:dark_zenith, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: DarkZenith.PubSub},

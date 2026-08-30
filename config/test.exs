@@ -28,6 +28,9 @@ config :dark_zenith, DarkZenithWeb.Endpoint,
 # dedicated tests that override this value.
 config :dark_zenith, registration_enabled: true
 
+# Tests drive the bootstrap functions directly rather than at app boot.
+config :dark_zenith, bootstrap_admin_on_boot: false
+
 # Root key material for token hashing and the GPG-key encryption envelope,
 # mirroring the endpoint secret_key_base above.
 config :dark_zenith,

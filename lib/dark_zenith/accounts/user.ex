@@ -60,6 +60,9 @@ defmodule DarkZenith.Accounts.User do
   defp validate_email(changeset, opts) do
     changeset =
       changeset
+      # Emails are trimmed and normalized to lowercase before validation and
+      # storage (DESIGN.md: API Contract Details; User Lifecycle).
+      |> update_change(:email, &(&1 |> String.trim() |> String.downcase()))
       |> validate_required([:email])
       |> validate_format(:email, ~r/^[^@,;\s]+@[^@,;\s]+$/,
         message: "must have the @ sign and no spaces"

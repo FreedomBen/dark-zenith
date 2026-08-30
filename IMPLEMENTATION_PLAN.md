@@ -46,7 +46,7 @@ wins. Checklist items reference spec sections rather than restating their rules.
 - [ ] API keys table + `dzak_` issuance/validation, scopes canonicalization, `MAX_USER_API_KEYS`
       quota under user-row lock (API Keys)
 - [ ] Password change/reset deletes session tokens; API keys survive (Session Tokens)
-- [ ] Bootstrap admin on first boot from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (Initial Setup)
+- [x] Bootstrap admin on first boot from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (Initial Setup)
 - [ ] `DarkZenith.Release.promote_admin/1` with the shared admin advisory lock (Initial Setup)
 - [ ] Admin-invariant advisory lock: admin-flag mutations, admin deletes, last-admin guarantee
       (User Lifecycle)

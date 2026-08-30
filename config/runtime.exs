@@ -88,6 +88,12 @@ if config_env() == :prod do
   config :dark_zenith,
     registration_enabled: System.get_env("REGISTRATION_ENABLED") in ~w(true 1)
 
+  config :dark_zenith,
+    bootstrap_admin: [
+      email: System.get_env("ADMIN_EMAIL"),
+      password: System.get_env("ADMIN_PASSWORD")
+    ]
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :dark_zenith, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
