@@ -21,6 +21,11 @@ config :dark_zenith, DarkZenithWeb.Endpoint,
   secret_key_base: "X7VaVGDZmih3+i42wNFyWajPS3FrJNC+WCfEl0LKPdwZ4fLYchFg6joJ767rloXD",
   server: false
 
+# Root key material for token hashing and the GPG-key encryption envelope,
+# mirroring the endpoint secret_key_base above.
+config :dark_zenith,
+  secret_key_base: "X7VaVGDZmih3+i42wNFyWajPS3FrJNC+WCfEl0LKPdwZ4fLYchFg6joJ767rloXD"
+
 # Oban: insert jobs without executing them; tests assert on enqueued jobs
 # or drain queues explicitly.
 config :dark_zenith, Oban, testing: :manual

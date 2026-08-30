@@ -70,6 +70,21 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
+  # SECRET_KEY_BASE is also the root key material for token hashing and the
+  # GPG-key encryption envelope; PREVIOUS_SECRET_KEY_BASE supports the
+  # documented rotation window (DESIGN.md: Configuration; GPG private key
+  # encryption). Both are raw UTF-8 bytes, validated before boot proceeds.
+  previous_secret_key_base = System.get_env("PREVIOUS_SECRET_KEY_BASE")
+
+  case DarkZenith.Crypto.validate_secret_key_bases(secret_key_base, previous_secret_key_base) do
+    :ok -> :ok
+    {:error, reason} -> raise "invalid SECRET_KEY_BASE configuration: #{reason}"
+  end
+
+  config :dark_zenith,
+    secret_key_base: secret_key_base,
+    previous_secret_key_base: previous_secret_key_base
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :dark_zenith, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")

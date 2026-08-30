@@ -31,11 +31,11 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 1 — Crypto and token primitives (M1)
 
-- [ ] `SECRET_KEY_BASE` byte rules and validation (Configuration; GPG private key encryption)
-- [ ] HMAC-SHA-256 token hashing helper for `dzak_`/`dzst_` values (Token storage)
-- [ ] GPG private-key encryption envelope `v1`/`v2` with the spec's fixed vectors
+- [x] `SECRET_KEY_BASE` byte rules and validation (Configuration; GPG private key encryption)
+- [x] HMAC-SHA-256 token hashing helper for `dzak_`/`dzst_` values (Token storage)
+- [x] GPG private-key encryption envelope `v1`/`v2` with the spec's fixed vectors
       (GPG private key encryption) — including AAD/user binding and tamper tests
-- [ ] Decrypt fallback to `PREVIOUS_SECRET_KEY_BASE` (re-encryption job itself is Phase 11)
+- [x] Decrypt fallback to `PREVIOUS_SECRET_KEY_BASE` (re-encryption job itself is Phase 11)
 
 ## Phase 2 — Accounts foundation (M1)
 

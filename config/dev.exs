@@ -14,6 +14,12 @@ config :dark_zenith, DarkZenith.Repo,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
 
+# Root key material for token hashing and the GPG-key encryption envelope
+# (DESIGN.md: Token storage; GPG private key encryption). Mirrors the endpoint
+# secret_key_base so domain code does not depend on the web layer.
+config :dark_zenith,
+  secret_key_base: "iZXa64mMwQFKaq2gyY3jB2o16Ul9Pk8MVoNfX2A7ijW6oql/FA8xyvJg8jo/19l0"
+
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #
