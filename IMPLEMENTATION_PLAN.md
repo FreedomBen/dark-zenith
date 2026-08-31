@@ -184,10 +184,10 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 14 — Web UI (M1 partial, M2/M3 complete)
 
-- [ ] Landing, repo list/detail, setup instructions done; package list/detail/version pages
-      pending (Web Interface)
+- [x] Landing, repo list/detail, setup instructions; package list/detail/version pages
+      (searchable/sortable table, lazy-loaded collection tabs) (Web Interface)
 - [x] Repo create/settings/delete and collaborator management
-- [ ] Upload flow LiveView (direct-to-B2, preview/confirm)
+- [x] Upload flow LiveView (direct-to-B2 via the DirectUpload hook, preview/confirm)
 - [ ] Account: API keys, GPG key management, auth pages incl. reset-page API-key revocation
 - [ ] HTML escaping guarantees; `url` as the only RPM-derived hyperlink
 

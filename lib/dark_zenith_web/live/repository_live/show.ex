@@ -21,13 +21,9 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
             <.link navigate={~p"/repos/#{@repository.slug}/settings"} class="btn btn-ghost">
               Settings
             </.link>
-            <button
-              class="btn btn-primary"
-              disabled
-              title="Package upload arrives with the upload pipeline"
-            >
+            <.link navigate={~p"/repos/#{@repository.slug}/upload"} class="btn btn-primary">
               Upload RPM
-            </button>
+            </.link>
           </div>
         </div>
 
@@ -68,8 +64,83 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
 
         <section>
           <h2 class="text-lg font-semibold mb-2">Packages</h2>
-          <div class="text-base-content/60 text-sm py-8 text-center border border-dashed border-base-300 rounded-lg">
-            No packages yet.
+
+          <form phx-change="search_packages" class="mb-3 flex gap-2">
+            <input
+              type="text"
+              name="q"
+              value={@package_q}
+              placeholder="Search name or summary"
+              phx-debounce="300"
+              class="input input-bordered input-sm grow"
+            />
+            <select name="sort" class="select select-bordered select-sm w-44">
+              <option value="" selected={@package_sort == nil}>Name</option>
+              <option value="version" selected={@package_sort == "version"}>Version (EVR)</option>
+              <option value="arch" selected={@package_sort == "arch"}>Arch</option>
+              <option value="-inserted_at" selected={@package_sort == "-inserted_at"}>
+                Newest
+              </option>
+            </select>
+          </form>
+
+          <div :if={@packages == []} class="text-base-content/60 text-sm py-8 text-center border border-dashed border-base-300 rounded-lg">
+            No packages{if @package_q != "", do: " match", else: " yet"}.
+          </div>
+
+          <div :if={@packages != []} class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>EVR</th>
+                  <th>Arch</th>
+                  <th>Summary</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={package <- @packages} id={"package-#{package.id}"}>
+                  <td>
+                    <.link
+                      navigate={~p"/repos/#{@repository.slug}/packages/#{package.name}"}
+                      class="link"
+                    >
+                      {package.name}
+                    </.link>
+                  </td>
+                  <td class="font-mono">
+                    <.link
+                      navigate={~p"/repos/#{@repository.slug}/package-versions/#{package.id}"}
+                      class="link"
+                    >
+                      {DarkZenith.Packages.display_evr(package)}
+                    </.link>
+                  </td>
+                  <td>{package.arch}</td>
+                  <td class="max-w-xs truncate">{package.summary}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div :if={@package_pages > 1} class="mt-2 flex gap-2 items-center text-sm">
+              <button
+                :if={@package_page > 1}
+                class="btn btn-sm"
+                phx-click="package_page"
+                phx-value-page={@package_page - 1}
+              >
+                Previous
+              </button>
+              <span>page {@package_page} of {@package_pages}</span>
+              <button
+                :if={@package_page < @package_pages}
+                class="btn btn-sm"
+                phx-click="package_page"
+                phx-value-page={@package_page + 1}
+              >
+                Next
+              </button>
+            </div>
           </div>
         </section>
       </div>
@@ -95,7 +166,10 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
          |> assign(
            :authenticated_repo_file,
            RepoFile.render(repository, base_url, credentials: :with_placeholders)
-         )}
+         )
+         |> assign(:package_q, "")
+         |> assign(:package_sort, nil)
+         |> load_packages(1)}
 
       is_nil(user) ->
         # Anonymous requests for private and nonexistent slugs redirect to the
@@ -108,6 +182,47 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
       true ->
         raise DarkZenithWeb.NotFoundError
     end
+  end
+
+  @valid_sorts ~w(version -version arch -arch inserted_at -inserted_at name -name)
+
+  @impl true
+  def handle_event("search_packages", params, socket) do
+    sort = if params["sort"] in @valid_sorts, do: params["sort"], else: nil
+
+    {:noreply,
+     socket
+     |> assign(:package_q, String.slice(params["q"] || "", 0, 256))
+     |> assign(:package_sort, sort)
+     |> load_packages(1)}
+  end
+
+  def handle_event("package_page", %{"page" => page}, socket) do
+    {:noreply, load_packages(socket, String.to_integer(page))}
+  end
+
+  @per_page 50
+
+  defp load_packages(socket, page) do
+    repository = socket.assigns.repository
+    q = String.trim(socket.assigns.package_q)
+
+    sort =
+      case socket.assigns.package_sort do
+        nil -> nil
+        "-" <> field -> {String.to_existing_atom(field), :desc}
+        field -> {String.to_existing_atom(field), :asc}
+      end
+
+    query =
+      DarkZenith.Packages.list_query(repository.id, q: if(q == "", do: nil, else: q), sort: sort)
+
+    {packages, total} = DarkZenithWeb.Api.Pagination.paginate(query, page, @per_page)
+
+    socket
+    |> assign(:packages, packages)
+    |> assign(:package_page, page)
+    |> assign(:package_pages, div(total + @per_page - 1, @per_page))
   end
 
   defp accessible?(repository, user) do

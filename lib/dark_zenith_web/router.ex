@@ -54,12 +54,15 @@ defmodule DarkZenithWeb.Router do
       # /repos/new precedes /repos/:slug; the slug "new" is reserved.
       live "/repos/new", RepositoryLive.New, :new
       live "/repos/:slug/settings", RepositoryLive.Settings, :edit
+      live "/repos/:slug/upload", RepositoryLive.Upload, :new
     end
 
     live_session :repositories_public,
       on_mount: [{DarkZenithWeb.UserAuth, :mount_current_scope}] do
       live "/repos", RepositoryLive.Index, :index
       live "/repos/:slug", RepositoryLive.Show, :show
+      live "/repos/:slug/packages/:name", PackageLive.Show, :show
+      live "/repos/:slug/package-versions/:id", PackageLive.Version, :show
     end
   end
 

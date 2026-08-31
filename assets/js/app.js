@@ -23,13 +23,49 @@ import "phoenix_html"
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/dark_zenith"
+
+// Direct-to-B2 upload (DESIGN.md: Upload RPM). The selected File goes
+// straight to the presigned URL; the user agent supplies the signed
+// Content-Length, and the CORS-exposed x-amz-version-id header completes
+// the intent. RPM bytes never touch Phoenix.
+const DirectUpload = {
+  mounted() {
+    const input = this.el.querySelector("input[type=file]")
+    input.addEventListener("change", () => {
+      const file = input.files[0]
+      if (!file) return
+      this.file = file
+      this.pushEvent("select_file", {name: file.name, size: file.size})
+    })
+    this.handleEvent("start_upload", ({url}) => this.put(url))
+  },
+  async put(url) {
+    try {
+      const resp = await fetch(url, {
+        method: "PUT",
+        headers: {"Content-Type": "application/x-rpm"},
+        body: this.file,
+      })
+      if (resp.ok) {
+        const versionId = resp.headers.get("x-amz-version-id")
+        if (versionId) {
+          this.pushEvent("uploaded", {version_id: versionId})
+          return
+        }
+      }
+      this.pushEvent("upload_failed", {status: resp.status})
+    } catch (_error) {
+      this.pushEvent("upload_failed", {status: 0})
+    }
+  },
+}
 import topbar from "../vendor/topbar"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  hooks: {...colocatedHooks, DirectUpload},
 })
 
 // Show progress bar on live navigation and form submits

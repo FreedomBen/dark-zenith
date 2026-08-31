@@ -90,6 +90,31 @@ defmodule DarkZenith.Packages do
     from p in query, order_by: ^[{direction, dynamic([p], field(p, ^field))}, asc: dynamic([p], p.id)]
   end
 
+  @doc """
+  All builds of one package name in a repository, EVR-descending then arch
+  (the Package Detail page listing).
+  """
+  def builds_for_name(%Repository{id: repository_id}, name) do
+    Repo.all(
+      from p in Package,
+        where: p.repository_id == ^repository_id and p.name == ^name,
+        order_by: [
+          desc: fragment("ROW(?, ?, ?)::dark_zenith_rpm_evr", p.epoch, p.version, p.release),
+          asc: p.arch,
+          asc: p.id
+        ]
+    )
+  end
+
+  @doc "The EVR display string: `epoch:version-release` only when epoch is nonzero."
+  def display_evr(package) do
+    if package.epoch == 0 do
+      "#{package.version}-#{package.release}"
+    else
+      "#{package.epoch}:#{package.version}-#{package.release}"
+    end
+  end
+
   ## Deletion
 
   @doc """
