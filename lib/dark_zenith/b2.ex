@@ -147,6 +147,24 @@ defmodule DarkZenith.B2 do
   end
 
   @doc """
+  Streams one exact object version to a local file (mode 0600). Returns
+  `:ok`, `{:error, :not_found}`, or `{:error, :storage_unavailable}`.
+  """
+  def download_to_file(%Config{} = config, key, version_id, dest_path) do
+    File.touch!(dest_path)
+    File.chmod!(dest_path, 0o600)
+
+    case request(config, :get, key,
+           query: [{"versionId", version_id}],
+           into: File.stream!(dest_path)
+         ) do
+      {:ok, %Req.Response{status: 200}} -> :ok
+      {:ok, %Req.Response{status: 404}} -> {:error, :not_found}
+      _other -> {:error, :storage_unavailable}
+    end
+  end
+
+  @doc """
   Permanently deletes one exact object version (never by key alone, which
   would create a delete marker). An already-absent version is success.
   """
@@ -208,6 +226,12 @@ defmodule DarkZenith.B2 do
         now: DateTime.utc_now()
       )
 
+    into_opts =
+      case Keyword.get(opts, :into) do
+        nil -> []
+        into -> [into: into]
+      end
+
     [
       method: method,
       url: url,
@@ -218,6 +242,7 @@ defmodule DarkZenith.B2 do
       retry: false,
       decode_body: false
     ]
+    |> Keyword.merge(into_opts)
     |> Keyword.merge(config.req_options)
     |> Req.request()
   end

@@ -64,3 +64,12 @@ config :phoenix,
 # TRANSACTION ISOLATION LEVEL is rejected by PostgreSQL; the regeneration
 # job skips it in test.
 config :dark_zenith, metadata_snapshot_isolation: false
+
+# B2 requests in test go through the Req.Test stub plug.
+config :dark_zenith, :b2,
+  key_id: "test-key-id",
+  application_key: "test-secret",
+  bucket: "dz-bucket",
+  endpoint: "https://s3.test.invalid",
+  region: "test-region",
+  req_options: [plug: {Req.Test, DarkZenith.B2Stub}, retry: false]

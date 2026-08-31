@@ -41,7 +41,10 @@ config :dark_zenith, Oban,
     {Oban.Plugins.Cron,
      crontab: [
        {"0 * * * *", DarkZenith.Workers.SessionTokenCleanup},
-       {"0 * * * *", DarkZenith.Workers.InvitationCleanup}
+       {"0 * * * *", DarkZenith.Workers.InvitationCleanup},
+       {"* * * * *", DarkZenith.Workers.UploadLeaseSweep},
+       {"*/15 * * * *", DarkZenith.Workers.UploadWaitingCleanup},
+       {"0 * * * *", DarkZenith.Workers.UploadTerminalCleanup}
      ]}
   ]
 

@@ -144,6 +144,23 @@ if config_env() == :prod do
     config :dark_zenith, rpm_upload_tmpdir: tmpdir
   end
 
+  max_rpm_upload_bytes =
+    case Integer.parse(System.get_env("MAX_RPM_UPLOAD_BYTES") || "536870912") do
+      {value, ""} when value >= 1 and value <= 5_368_709_120 -> value
+      _ -> raise "MAX_RPM_UPLOAD_BYTES must be an integer from 1 through 5368709120"
+    end
+
+  config :dark_zenith, max_rpm_upload_bytes: max_rpm_upload_bytes
+
+  # 0 disables the per-user storage quota.
+  max_user_storage_bytes =
+    case Integer.parse(System.get_env("MAX_USER_STORAGE_BYTES") || "53687091200") do
+      {value, ""} when value >= 0 -> value
+      _ -> raise "MAX_USER_STORAGE_BYTES must be a non-negative integer"
+    end
+
+  config :dark_zenith, max_user_storage_bytes: max_user_storage_bytes
+
   # B2 storage settings: all five are required together once any is set.
   b2_vars = ~w(B2_KEY_ID B2_APPLICATION_KEY B2_BUCKET B2_ENDPOINT B2_REGION)
   b2_values = Enum.map(b2_vars, &System.get_env/1)
