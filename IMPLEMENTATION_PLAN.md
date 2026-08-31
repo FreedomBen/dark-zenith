@@ -224,6 +224,32 @@ wins. Checklist items reference spec sections rather than restating their rules.
       public flow and, via DZ_GATE_* env, the repo_gpgcheck-signed and Basic-auth private
       flows; run it against a staging deployment before release
 
+## Phase 17 — Server-side GPG key generation (post-M4 feature)
+
+Spec: DESIGN.md "Server-side key generation" (GPG Signing), plus the generation additions
+under Key replacement and revocation, Web Interface, REST API, Rate Limiting, Audit
+Events, Email Delivery, and Security Considerations.
+
+- [ ] `DarkZenith.Gpg.generate_key_pair/2`: batch quick-generation in an ephemeral
+      `GNUPGHOME` (sign-usage V4 primary, no passphrase, no expiry, snapshot-email UID),
+      armored export, allowlisted algorithms with `ed25519` default
+- [ ] `Accounts.generate_gpg_key/2`: generated pair through the identical
+      validation/storage/replacement pipeline as upload; one-time private-key return;
+      `gpg_key.generate` audit for a first key, generated-flag metadata on
+      `gpg_key.replace_start`; existing upload/replace notification emails
+- [ ] `POST /api/v1/gpg_key/generation`: optional JSON body (`algorithm` only), 200/202
+      wrapped data objects carrying the one-time `private_key`, PUT-equivalent 409/422/503
+      semantics
+- [ ] `POST /api/v1/gpg_key/revocation` strategy `replace_with_generated_key` (JSON-only,
+      optional `algorithm`, wrapped 202 body)
+- [ ] Rate limiting: generation route + LiveView generate event in the `gpg_key_mutation`
+      bucket; add the missing web revocation-strategy events to the same bucket
+- [ ] Settings LiveView: generate form with algorithm select, one-time private-key display
+      with download link and never-again warning
+- [ ] Tests proving the security invariants: private key returned exactly once and only in
+      generation responses, envelope-encrypted at rest, absent from resources/audit
+      metadata, full validation pipeline applied to generated pairs
+
 ## Cross-cutting requirements to keep in every phase
 
 - Background Retry Policy for every durable job (Architecture)
