@@ -5,8 +5,8 @@ package repositories. Phoenix renders all web pages (LiveView) and repository me
 (`repomd.xml`, `primary.xml.gz`, …); RPM files live in Backblaze B2 and are served to
 clients via time-limited signed URLs, so the app server never streams RPM bytes.
 
-The product and architecture contract is `DESIGN.md`. Implementation progress is
-tracked in `IMPLEMENTATION_PLAN.md`.
+The product and architecture contract is `docs/DESIGN.md`. Implementation progress is
+tracked in `docs/IMPLEMENTATION_PLAN.md`.
 
 ## Development setup
 

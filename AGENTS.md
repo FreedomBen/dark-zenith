@@ -7,8 +7,8 @@
 
 ## Project Structure & Module Organization
 
-The project contract lives in `DESIGN.md`; keep it aligned with any implementation
-decisions. `IMPLEMENTATION_PLAN.md` sequenced the initial build and every item is now
+The project contract lives in `docs/DESIGN.md`; keep it aligned with any implementation
+decisions. `docs/IMPLEMENTATION_PLAN.md` sequenced the initial build and every item is now
 checked off — treat it as the record of what exists and keep checking off (or adding)
 items if scope grows. `LICENSE` declares AGPL-3.0-or-later.
 
@@ -39,7 +39,7 @@ Update this section whenever commands are added, renamed, or removed.
 ## Coding Style & Naming Conventions
 
 Use standard Elixir formatting via `mix format`. Prefer clear domain names that match
-`DESIGN.md`, such as `Repository`, `Package`, `ApiKey`, and `CollaboratorInvitation`.
+`docs/DESIGN.md`, such as `Repository`, `Package`, `ApiKey`, and `CollaboratorInvitation`.
 Use snake_case for variables, functions, database columns, and migration names; use
 PascalCase for modules.
 
@@ -50,7 +50,7 @@ If Makefiles are added, default `PREFIX` to `/usr/local` and keep `make help` ac
 
 Write tests for every code change. Place tests under `test/` with filenames ending in
 `_test.exs`. Cover authorization, metadata generation, signed URL behavior, upload
-flows, and API error responses because these are core product contracts. `DESIGN.md`
+flows, and API error responses because these are core product contracts. `docs/DESIGN.md`
 frequently names required test cases explicitly — implement those alongside the feature.
 
 ## Commit & Pull Request Guidelines
