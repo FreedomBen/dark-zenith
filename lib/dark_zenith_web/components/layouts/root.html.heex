@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
     <.live_title default="DarkZenith" phx-no-format>{assigns[:page_title]}</.live_title>
+    <link rel="icon" href={~p"/favicon.ico"} sizes="any" />
+    <link rel="icon" href={~p"/favicon.svg"} type="image/svg+xml" />
+    <link rel="apple-touch-icon" href={~p"/apple-touch-icon.png"} />
     <link
       rel="preload"
       as="font"
@@ -27,33 +30,44 @@
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
   </head>
-  <body>
-    <ul class="menu menu-horizontal w-full relative z-10 flex items-center gap-4 px-4 sm:px-6 lg:px-8 justify-end">
-      <%= if @current_scope do %>
+  <body class="flex min-h-svh flex-col">
+    <header class="flex h-14 items-center justify-between gap-4 border-b border-base-content/10 px-4 sm:px-6 lg:px-8">
+      <a href={~p"/"} class="flex items-center gap-2.5">
+        <.zenith_mark class="size-6" />
+        <span class="hidden font-display text-sm font-medium tracking-[0.16em] sm:inline">
+          DARK ZENITH
+        </span>
+      </a>
+      <ul class="menu menu-horizontal relative z-10 flex items-center gap-4 px-0">
+        <%= if @current_scope do %>
+          <li>
+            {@current_scope.user.email}
+          </li>
+          <li :if={@current_scope.user.is_admin}>
+            <.link href={~p"/admin"}>Admin</.link>
+          </li>
+          <li>
+            <.link href={~p"/users/settings"}>Settings</.link>
+          </li>
+          <li>
+            <.link href={~p"/users/log-out"} method="delete">Log out</.link>
+          </li>
+        <% else %>
+          <li :if={DarkZenith.Accounts.registration_enabled?()}>
+            <.link href={~p"/users/register"}>Register</.link>
+          </li>
+          <li>
+            <.link href={~p"/users/log-in"}>Log in</.link>
+          </li>
+        <% end %>
         <li>
-          {@current_scope.user.email}
+          <.theme_toggle />
         </li>
-        <li :if={@current_scope.user.is_admin}>
-          <.link href={~p"/admin"}>Admin</.link>
-        </li>
-        <li>
-          <.link href={~p"/users/settings"}>Settings</.link>
-        </li>
-        <li>
-          <.link href={~p"/users/log-out"} method="delete">Log out</.link>
-        </li>
-      <% else %>
-        <li :if={DarkZenith.Accounts.registration_enabled?()}>
-          <.link href={~p"/users/register"}>Register</.link>
-        </li>
-        <li>
-          <.link href={~p"/users/log-in"}>Log in</.link>
-        </li>
-      <% end %>
-      <li>
-        <.theme_toggle />
-      </li>
-    </ul>
-    {@inner_content}
+      </ul>
+    </header>
+    <div class="flex-1">
+      {@inner_content}
+    </div>
+    <.app_footer />
   </body>
 </html>

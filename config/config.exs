@@ -28,6 +28,10 @@ config :dark_zenith,
 # default false). Overridden per environment and by runtime.exs in production.
 config :dark_zenith, registration_enabled: false
 
+# Corresponding source of the running code, linked from the web UI footer
+# (DESIGN.md: SOURCE_URL, AGPL §13). Overridden by runtime.exs in production.
+config :dark_zenith, source_url: "https://github.com/FreedomBen/dark-zenith"
+
 # Background jobs (DESIGN.md: Oban runs metadata regeneration, upload/re-sign
 # processing, B2 cleanup, and email delivery). The rpm_processing queue
 # concurrency is overridden at runtime by RPM_PROCESSING_CONCURRENCY.

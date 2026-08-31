@@ -326,8 +326,8 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
 - [x] U1 — Foundations: self-hosted fonts (+ licenses), `night`/`day` daisyUI themes
       replacing the stock pair, dark-default theme JS (moved to external
       `assets/js/theme.js` for the strict CSP), topbar recolor
-- [ ] U2 — Identity: `zenith_mark` component, wordmark, favicon set, footer (needs
-      `SOURCE_URL` spec note in `DESIGN.md`)
+- [x] U2 — Identity: `zenith_mark` component, wordmark, favicon set, footer
+      (`SOURCE_URL` specified in `DESIGN.md`)
 - [ ] U3 — Shell: top nav (logo, links, account dropdown, mobile menu), `Layouts.app`
       width system, breadcrumbs component
 - [ ] U4 — Components: command block with copy, table conventions, badges, empty states,

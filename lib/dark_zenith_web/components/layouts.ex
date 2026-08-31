@@ -95,6 +95,58 @@ defmodule DarkZenithWeb.Layouts do
   end
 
   @doc """
+  Renders the Zenith Reticle mark (docs/DESIGN_UI.md — Identity): a horizon ring
+  with cardinal ticks in `currentColor` and the zenith star in the primary token.
+
+  ## Examples
+
+      <Layouts.zenith_mark class="size-6" />
+  """
+  attr :class, :string, default: "size-6"
+
+  def zenith_mark(assigns) do
+    ~H"""
+    <svg viewBox="0 0 24 24" fill="none" class={@class} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5" />
+      <path
+        d="M12 1.5v3M22.5 12h-3M12 22.5v-3M1.5 12h3"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+      />
+      <path
+        d="M12 7 Q12.8 11.2 17 12 Q12.8 12.8 12 17 Q11.2 12.8 7 12 Q11.2 11.2 12 7 Z"
+        fill="var(--color-primary)"
+      />
+    </svg>
+    """
+  end
+
+  @doc """
+  Renders the app footer (docs/DESIGN_UI.md — App shell): mark, name, and version
+  on the left; the AGPL §13 corresponding-source link and license on the right.
+  """
+  def app_footer(assigns) do
+    assigns = assign(assigns, version: version(), source_url: DarkZenith.source_url())
+
+    ~H"""
+    <footer class="mt-auto flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-base-content/10 px-4 py-4 text-sm text-base-content/60 sm:px-6 lg:px-8">
+      <span class="flex items-center gap-2">
+        <.zenith_mark class="size-4" /> Dark Zenith v{@version}
+      </span>
+      <span class="flex items-center gap-4">
+        <a href={@source_url} class="underline-offset-2 hover:text-base-content hover:underline">
+          Source
+        </a>
+        <span>AGPL-3.0-or-later</span>
+      </span>
+    </footer>
+    """
+  end
+
+  defp version, do: to_string(Application.spec(:dark_zenith, :vsn))
+
+  @doc """
   Provides dark vs light theme toggle based on themes defined in app.css.
 
   See <head> in root.html.heex which applies the theme before page load.

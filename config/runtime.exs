@@ -92,6 +92,10 @@ if config_env() == :prod do
   config :dark_zenith,
     registration_enabled: System.get_env("REGISTRATION_ENABLED") in ~w(true 1)
 
+  if source_url = System.get_env("SOURCE_URL") do
+    config :dark_zenith, source_url: source_url
+  end
+
   config :dark_zenith,
     bootstrap_admin: [
       email: System.get_env("ADMIN_EMAIL"),
