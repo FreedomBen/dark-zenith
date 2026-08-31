@@ -312,8 +312,18 @@ defmodule DarkZenith.B2 do
       %{
         key: text(element, ~c"./Key"),
         version_id: text(element, ~c"./VersionId"),
-        delete_marker?: delete_marker?
+        delete_marker?: delete_marker?,
+        last_modified: parse_time(text(element, ~c"./LastModified"))
       }
+    end
+  end
+
+  defp parse_time(""), do: nil
+
+  defp parse_time(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> datetime
+      _other -> nil
     end
   end
 

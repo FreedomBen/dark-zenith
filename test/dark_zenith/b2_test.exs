@@ -245,7 +245,7 @@ defmodule DarkZenith.B2Test do
               <?xml version="1.0" encoding="UTF-8"?>
               <ListVersionsResult>
                 <IsTruncated>false</IsTruncated>
-                <Version><Key>repos/c</Key><VersionId>4_zv3</VersionId></Version>
+                <Version><Key>repos/c</Key><VersionId>4_zv3</VersionId><LastModified>2026-08-30T10:00:00.000Z</LastModified></Version>
                 <DeleteMarker><Key>repos/d</Key><VersionId>4_zv4</VersionId></DeleteMarker>
               </ListVersionsResult>
               """
@@ -259,10 +259,15 @@ defmodule DarkZenith.B2Test do
       assert {:ok, entries} = B2.list_all_object_versions(config(), "repos/")
 
       assert entries == [
-               %{key: "repos/a", version_id: "4_zv1", delete_marker?: false},
-               %{key: "repos/b", version_id: "4_zv2", delete_marker?: false},
-               %{key: "repos/c", version_id: "4_zv3", delete_marker?: false},
-               %{key: "repos/d", version_id: "4_zv4", delete_marker?: true}
+               %{key: "repos/a", version_id: "4_zv1", delete_marker?: false, last_modified: nil},
+               %{key: "repos/b", version_id: "4_zv2", delete_marker?: false, last_modified: nil},
+               %{
+                 key: "repos/c",
+                 version_id: "4_zv3",
+                 delete_marker?: false,
+                 last_modified: ~U[2026-08-30 10:00:00.000Z]
+               },
+               %{key: "repos/d", version_id: "4_zv4", delete_marker?: true, last_modified: nil}
              ]
     end
 

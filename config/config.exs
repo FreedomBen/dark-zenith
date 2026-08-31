@@ -44,7 +44,9 @@ config :dark_zenith, Oban,
        {"0 * * * *", DarkZenith.Workers.InvitationCleanup},
        {"* * * * *", DarkZenith.Workers.UploadLeaseSweep},
        {"*/15 * * * *", DarkZenith.Workers.UploadWaitingCleanup},
-       {"0 * * * *", DarkZenith.Workers.UploadTerminalCleanup}
+       {"0 * * * *", DarkZenith.Workers.UploadTerminalCleanup},
+       {"30 * * * *", DarkZenith.Workers.StagingReconciler},
+       {"0 3 * * *", DarkZenith.Workers.FinalReconciler}
      ]}
   ]
 

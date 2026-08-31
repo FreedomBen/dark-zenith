@@ -275,9 +275,13 @@ defmodule DarkZenith.Repositories do
 
   @doc """
   Hard-deletes a repository in one transaction (DESIGN.md: Package Upload &
-  Processing — repository deletion): locks the owner, repository, and live
-  slug reservation in the global order, retires the reservation with the final
-  display name, and removes the repository and its metadata cache.
+  Processing — repository deletion): records every package and staged
+  version, locks the owner, repository, package rows, upload intents,
+  reservations, and live slug reservation in the global order, removes the
+  repository and its dependents (fencing workers through the deleted
+  durable state), decrements the owner's `storage_bytes`, retires the slug
+  with the final display name, and enqueues idempotent version-aware B2
+  cleanup for every final and staging object.
   """
   def delete_repository(%User{} = actor, %Repository{} = repository) do
     with :ok <- authorize_manage(actor, repository) do
@@ -290,10 +294,50 @@ defmodule DarkZenith.Repositories do
               {:ok, {:error, :not_found}}
 
             %Repository{} = current ->
+              packages =
+                Repo.all(
+                  from p in DarkZenith.Packages.Package,
+                    where: p.repository_id == ^current.id,
+                    order_by: [asc: p.id],
+                    lock: "FOR UPDATE",
+                    select: %{
+                      storage_path: p.storage_path,
+                      storage_version_id: p.storage_version_id,
+                      size_package: p.size_package
+                    }
+                )
+
+              intents =
+                Repo.all(
+                  from i in DarkZenith.Uploads.Intent,
+                    where: i.repository_id == ^current.id,
+                    order_by: [asc: i.id],
+                    lock: "FOR UPDATE",
+                    select: %{staging_path: i.staging_path}
+                )
+
+              Repo.all(
+                from r in DarkZenith.Storage.Reservation,
+                  where: r.repository_id == ^current.id,
+                  order_by: [asc: r.id],
+                  lock: "FOR UPDATE",
+                  select: r.id
+              )
+
               reservation =
                 Repo.one!(
                   from(s in SlugReservation, where: s.slug == ^current.slug, lock: "FOR UPDATE")
                 )
+
+              stored_bytes = packages |> Enum.map(& &1.size_package) |> Enum.sum()
+
+              if stored_bytes > 0 do
+                {1, _} =
+                  Repo.update_all(
+                    from(u in User, where: u.id == ^current.user_id),
+                    inc: [storage_bytes: -stored_bytes]
+                  )
+              end
 
               now = DateTime.utc_now(:second)
 
@@ -308,6 +352,9 @@ defmodule DarkZenith.Repositories do
                   ]
                 )
 
+              # Dependent packages, collaborators, invitations, the metadata
+              # cache, upload intents, and reservations delete through their
+              # foreign keys; workers are fenced by the removed durable rows.
               Repo.delete!(current)
 
               Audit.record!("repository.delete",
@@ -315,6 +362,21 @@ defmodule DarkZenith.Repositories do
                 target: {:repository, current.id},
                 metadata: %{"slug" => current.slug, "name" => current.name}
               )
+
+              for package <- packages do
+                %{
+                  storage_path: package.storage_path,
+                  version_id: package.storage_version_id
+                }
+                |> DarkZenith.Workers.FinalVersionCleanup.new()
+                |> Oban.insert!()
+              end
+
+              for intent <- intents do
+                %{staging_path: intent.staging_path}
+                |> DarkZenith.Workers.StagingCleanup.new()
+                |> Oban.insert!()
+              end
 
               {:ok, :ok}
           end

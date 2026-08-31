@@ -365,6 +365,48 @@ defmodule DarkZenith.RepositoriesTest do
     end
   end
 
+  describe "delete_repository/2 with packages and uploads" do
+    use Oban.Testing, repo: DarkZenith.Repo
+
+    test "cleans up storage accounting and enqueues version-aware cleanup" do
+      owner = user_fixture()
+      repo = repository_fixture(owner)
+
+      package =
+        DarkZenith.PackagesFixtures.insert_package_from_rpm!(
+          repo,
+          DarkZenith.RpmFixtures.v4_binary(),
+          %{storage_version_id: "4_zfinal"}
+        )
+
+      DarkZenith.PackagesFixtures.sync_repository_metadata_state!(repo)
+
+      {:ok, intent, _} =
+        DarkZenith.Uploads.create_intent(owner, repo, %{
+          filename: "pending.rpm",
+          size: 500,
+          mode: "api"
+        })
+
+      assert :ok = Repositories.delete_repository(owner, repo)
+
+      refute Repo.get(DarkZenith.Packages.Package, package.id)
+      refute Repo.get(DarkZenith.Uploads.Intent, intent.id)
+      refute Repo.get(DarkZenith.Storage.Reservation, intent.reservation_id)
+      assert Repo.get!(DarkZenith.Accounts.User, owner.id).storage_bytes == 0
+
+      assert_enqueued(
+        worker: DarkZenith.Workers.FinalVersionCleanup,
+        args: %{storage_path: package.storage_path, version_id: "4_zfinal"}
+      )
+
+      assert_enqueued(
+        worker: DarkZenith.Workers.StagingCleanup,
+        args: %{staging_path: intent.staging_path}
+      )
+    end
+  end
+
   describe "release_retired_slug/2" do
     test "an admin can release a retired slug for general reuse" do
       owner = user_fixture()
