@@ -1,7 +1,9 @@
 # Local development stack (`podman compose up -d --build`): the released app
 # plus PostgreSQL and MinIO, with MinIO standing in for Backblaze B2 so
 # everything works offline. All values below are development-only; nothing
-# here is a secret. Everything is published on 127.0.0.1 only.
+# here is a secret. PostgreSQL and MinIO are published on 127.0.0.1 only;
+# the app is published on all interfaces (0.0.0.0) so other machines can
+# reach it.
 #
 # The app shares MinIO's network namespace so that presigned object URLs
 # (http://localhost:9000/...) reach MinIO identically from inside the app,
@@ -39,7 +41,7 @@ services:
     ports:
       - "127.0.0.1:9000:9000" # S3 API (B2_ENDPOINT)
       - "127.0.0.1:9001:9001" # MinIO web console
-      - "127.0.0.1:4200:4200" # the app (shares this network namespace)
+      - "4200:4200" # the app (shares this network namespace), on all interfaces
     volumes:
       - minio-data:/data
 

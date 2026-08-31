@@ -43,11 +43,17 @@ cloud credentials needed:
 podman compose up -d --build
 ```
 
-| Service    | Where                                                            |
-| ---------- | ---------------------------------------------------------------- |
-| App        | http://localhost:4200 (`admin@example.com` / `darkzenith-admin-dev`) |
-| MinIO S3   | http://localhost:9000 (`minioadmin` / `minioadmin`; console on 9001) |
-| PostgreSQL | 127.0.0.1:55433                                                  |
+| Service    | Where                                                                |
+| ---------- | -------------------------------------------------------------------- |
+| App        | http://localhost:4200, published on all interfaces (`admin@example.com` / `darkzenith-admin-dev`) |
+| MinIO S3   | http://localhost:9000 (`minioadmin` / `minioadmin`; console on 9001), 127.0.0.1 only |
+| PostgreSQL | 127.0.0.1:55433                                                      |
+
+The app port is the only one published beyond localhost, so the stack (with its
+well-known dev credentials) is reachable from your network while it runs. Note
+that package downloads redirect to presigned MinIO URLs on
+`http://localhost:9000`, so downloads only resolve from the machine running the
+stack.
 
 This stack is independent of the `dark-zenith-pg` container above (its own
 database on 55433, its own volumes) so it can run alongside `mix phx.server`.
