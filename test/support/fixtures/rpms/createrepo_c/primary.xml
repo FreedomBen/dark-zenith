@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata xmlns="http://linux.duke.edu/metadata/common" xmlns:rpm="http://linux.duke.edu/metadata/rpm" packages="2">
+<package type="rpm">
+  <name>dz-fixture</name>
+  <arch>noarch</arch>
+  <version epoch="2" ver="1.2.3" rel="4"/>
+  <checksum type="sha256" pkgid="YES">f87d2b28742d8d41a8aa1550234bdf65c4382a25b2336bdb89b95996a84006da</checksum>
+  <summary>Dark Zenith parser fixture package — ünïcode ok</summary>
+  <description>Fixture package for the Dark Zenith pure-Elixir RPM parser.
+It carries every dependency class, files, and changelog entries.
+
+Second paragraph with a tab:	and ünïcode.</description>
+  <packager></packager>
+  <url>https://example.com/dz-fixture</url>
+  <time file="1788138684" build="1787200000"/>
+  <size package="8145" installed="48" archive="588"/>
+  <location href="dz-fixture-v4.rpm"/>
+  <format>
+    <rpm:license>MIT</rpm:license>
+    <rpm:vendor>Dark Zenith Test Vendor</rpm:vendor>
+    <rpm:group>Development/Testing</rpm:group>
+    <rpm:buildhost>dz-fixture-builder</rpm:buildhost>
+    <rpm:sourcerpm>dz-fixture-1.2.3-4.src.rpm</rpm:sourcerpm>
+    <rpm:header-range start="4504" end="7977"/>
+    <rpm:provides>
+      <rpm:entry name="dz-capability" flags="EQ" epoch="0" ver="9.9"/>
+      <rpm:entry name="dz-fixture" flags="EQ" epoch="2" ver="1.2.3" rel="4"/>
+      <rpm:entry name="dz-fixture-alias"/>
+    </rpm:provides>
+    <rpm:requires>
+      <rpm:entry name="(dz-alt-a or dz-alt-b)"/>
+      <rpm:entry name="/usr/bin/sh"/>
+      <rpm:entry name="dz-data"/>
+      <rpm:entry name="dz-lib" flags="GE" epoch="0" ver="1.0"/>
+      <rpm:entry name="dz-post-tool" pre="1"/>
+      <rpm:entry name="dz-pre-tool" pre="1"/>
+    </rpm:requires>
+    <rpm:conflicts>
+      <rpm:entry name="dz-old" flags="LT" epoch="0" ver="1.0"/>
+    </rpm:conflicts>
+    <rpm:obsoletes>
+      <rpm:entry name="dz-legacy" flags="LE" epoch="0" ver="0.5"/>
+    </rpm:obsoletes>
+    <rpm:suggests>
+      <rpm:entry name="dz-maybe"/>
+    </rpm:suggests>
+    <rpm:enhances>
+      <rpm:entry name="dz-extra" flags="EQ" epoch="0" ver="3.1"/>
+    </rpm:enhances>
+    <rpm:recommends>
+      <rpm:entry name="dz-nice" flags="GE" epoch="0" ver="2.0"/>
+    </rpm:recommends>
+    <rpm:supplements>
+      <rpm:entry name="dz-parent"/>
+    </rpm:supplements>
+    <file>/usr/bin/dz-fixture</file>
+  </format>
+</package>
+<package type="rpm">
+  <name>dz-minimal</name>
+  <arch>noarch</arch>
+  <version epoch="0" ver="0.1" rel="1"/>
+  <checksum type="sha256" pkgid="YES">65a1118b4965be6ee9a456fe4270964f44c470610dc6f367bbe7169556f5bcf8</checksum>
+  <summary>Minimal fixture</summary>
+  <description>Minimal.</description>
+  <packager></packager>
+  <url></url>
+  <time file="1788138684" build="1787200000"/>
+  <size package="6077" installed="0" archive="124"/>
+  <location href="dz-minimal-v4.rpm"/>
+  <format>
+    <rpm:license>MIT</rpm:license>
+    <rpm:vendor></rpm:vendor>
+    <rpm:group>Unspecified</rpm:group>
+    <rpm:buildhost>dz-fixture-builder</rpm:buildhost>
+    <rpm:sourcerpm>dz-minimal-0.1-1.src.rpm</rpm:sourcerpm>
+    <rpm:header-range start="4504" end="6033"/>
+    <rpm:provides>
+      <rpm:entry name="dz-minimal" flags="EQ" epoch="0" ver="0.1" rel="1"/>
+    </rpm:provides>
+  </format>
+</package>
+</metadata>

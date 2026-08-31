@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<otherdata xmlns="http://linux.duke.edu/metadata/other" packages="2">
+<package pkgid="f87d2b28742d8d41a8aa1550234bdf65c4382a25b2336bdb89b95996a84006da" name="dz-fixture" arch="noarch">
+  <version epoch="2" ver="1.2.3" rel="4"/>
+  <changelog author="Fixture Author &lt;fixtures@example.com&gt; - 2:1.2.2-1" date="1787572800">- First changelog entry</changelog>
+  <changelog author="Fixture Author &lt;fixtures@example.com&gt; - 2:1.2.3-4" date="1787659200">- Second changelog entry with ünïcode</changelog>
+</package>
+<package pkgid="65a1118b4965be6ee9a456fe4270964f44c470610dc6f367bbe7169556f5bcf8" name="dz-minimal" arch="noarch">
+  <version epoch="0" ver="0.1" rel="1"/>
+</package>
+</otherdata>

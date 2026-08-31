@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<filelists xmlns="http://linux.duke.edu/metadata/filelists" packages="2">
+<package pkgid="f87d2b28742d8d41a8aa1550234bdf65c4382a25b2336bdb89b95996a84006da" name="dz-fixture" arch="noarch">
+  <version epoch="2" ver="1.2.3" rel="4"/>
+  <file>/usr/bin/dz-fixture</file>
+  <file type="dir">/usr/share/dz-fixture</file>
+  <file>/usr/share/dz-fixture/data.txt</file>
+</package>
+<package pkgid="65a1118b4965be6ee9a456fe4270964f44c470610dc6f367bbe7169556f5bcf8" name="dz-minimal" arch="noarch">
+  <version epoch="0" ver="0.1" rel="1"/>
+</package>
+</filelists>
