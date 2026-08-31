@@ -124,10 +124,21 @@ if config_env() == :prod do
 
   config :dark_zenith, invitation_expiry_days: invitation_expiry_days
 
+# 0 disables the per-user repository limit. The upper bound on
+  # MAX_REPOSITORY_PACKAGES also caps the single-transaction work of
+  # repository-local signing enablement (DESIGN.md: Configuration).
+  max_user_repositories =
+    case Integer.parse(System.get_env("MAX_USER_REPOSITORIES") || "100") do
+      {value, ""} when value >= 0 -> value
+      _ -> raise "MAX_USER_REPOSITORIES must be a non-negative integer"
+    end
+
+  config :dark_zenith, max_user_repositories: max_user_repositories
+
   max_repository_packages =
     case Integer.parse(System.get_env("MAX_REPOSITORY_PACKAGES") || "10000") do
-      {value, ""} when value >= 1 -> value
-      _ -> raise "MAX_REPOSITORY_PACKAGES must be a positive integer"
+      {value, ""} when value >= 1 and value <= 1_000_000 -> value
+      _ -> raise "MAX_REPOSITORY_PACKAGES must be an integer from 1 through 1000000"
     end
 
   config :dark_zenith, max_repository_packages: max_repository_packages
@@ -150,11 +161,28 @@ if config_env() == :prod do
 
   rpm_tool_timeout_seconds =
     case Integer.parse(System.get_env("RPM_TOOL_TIMEOUT_SECONDS") || "1800") do
-      {value, ""} when value >= 1 -> value
-      _ -> raise "RPM_TOOL_TIMEOUT_SECONDS must be a positive integer"
+      {value, ""} when value >= 60 and value <= 7200 -> value
+      _ -> raise "RPM_TOOL_TIMEOUT_SECONDS must be an integer from 60 through 7200"
     end
 
   config :dark_zenith, rpm_tool_timeout_seconds: rpm_tool_timeout_seconds
+
+  # Paths to the native RPM verification/signing tools (DESIGN.md:
+  # Configuration; Deployment — RPM verification and signing tools).
+  config :dark_zenith,
+    rpmkeys_path: System.get_env("RPMKEYS_PATH") || "rpmkeys",
+    rpmsign_path: System.get_env("RPMSIGN_PATH") || "rpmsign",
+    gpg_path: System.get_env("GPG_PATH") || "gpg"
+
+  # Per-node concurrency for the shared upload/re-sign queue; merges into the
+  # compile-time Oban queue list.
+  rpm_processing_concurrency =
+    case Integer.parse(System.get_env("RPM_PROCESSING_CONCURRENCY") || "2") do
+      {value, ""} when value >= 1 and value <= 64 -> value
+      _ -> raise "RPM_PROCESSING_CONCURRENCY must be an integer from 1 through 64"
+    end
+
+  config :dark_zenith, Oban, queues: [rpm_processing: rpm_processing_concurrency]
 
   if tmpdir = System.get_env("RPM_UPLOAD_TMPDIR") do
     config :dark_zenith, rpm_upload_tmpdir: tmpdir
@@ -262,7 +290,7 @@ if config_env() == :prod do
 
   # Public URL used in generated links and the browser-upload CORS origin
   # (DESIGN.md: Configuration). PHX_SCHEME=http supports local deployments.
-  host = System.get_env("PHX_HOST") || "example.com"
+  host = System.get_env("PHX_HOST") || "localhost"
 
   url_scheme =
     case System.get_env("PHX_SCHEME") || "https" do
