@@ -139,8 +139,19 @@ defmodule DarkZenith.Accounts do
       {:error, :already_confirmed}
     else
       {encoded_token, user_token} = UserToken.build_email_token(user, "confirm")
-      Repo.insert!(user_token)
-      UserNotifier.deliver_confirmation_instructions(user, confirmation_url_fun.(encoded_token))
+
+      {:ok, result} =
+        Repo.transact(fn ->
+          Repo.insert!(user_token)
+
+          {:ok,
+           UserNotifier.deliver_confirmation_instructions(
+             user,
+             confirmation_url_fun.(encoded_token)
+           )}
+        end)
+
+      result
     end
   end
 
@@ -175,8 +186,19 @@ defmodule DarkZenith.Accounts do
   def deliver_user_reset_password_instructions(%User{} = user, reset_password_url_fun)
       when is_function(reset_password_url_fun, 1) do
     {encoded_token, user_token} = UserToken.build_email_token(user, "reset_password")
-    Repo.insert!(user_token)
-    UserNotifier.deliver_reset_password_instructions(user, reset_password_url_fun.(encoded_token))
+
+    {:ok, result} =
+      Repo.transact(fn ->
+        Repo.insert!(user_token)
+
+        {:ok,
+         UserNotifier.deliver_reset_password_instructions(
+           user,
+           reset_password_url_fun.(encoded_token)
+         )}
+      end)
+
+    result
   end
 
   @doc """
@@ -200,7 +222,15 @@ defmodule DarkZenith.Accounts do
   def reset_user_password(user, attrs) do
     user
     |> User.password_changeset(attrs)
-    |> update_user_and_delete_all_tokens()
+    |> update_user_and_delete_all_tokens(fn updated ->
+      UserNotifier.deliver_password_changed(updated)
+
+      DarkZenith.Audit.record!("auth.password_reset",
+        actor: updated,
+        target: {:user, updated.id},
+        metadata: %{}
+      )
+    end)
   end
 
   ## Settings
@@ -260,6 +290,8 @@ defmodule DarkZenith.Accounts do
            {_count, _result} <-
              Repo.delete_all(from(UserToken, where: [user_id: ^user.id, context: ^context])),
            :ok <- DarkZenith.Collaborators.convert_invitations_for_user(user) do
+        UserNotifier.deliver_email_changed(previous_email, user.email)
+
         DarkZenith.Audit.record!("auth.email_change",
           actor: user,
           target: {:user, user.id},
@@ -306,7 +338,15 @@ defmodule DarkZenith.Accounts do
     user
     |> User.password_changeset(attrs)
     |> User.validate_current_password(password)
-    |> update_user_and_delete_all_tokens()
+    |> update_user_and_delete_all_tokens(fn updated ->
+      UserNotifier.deliver_password_changed(updated)
+
+      DarkZenith.Audit.record!("auth.password_change",
+        actor: updated,
+        target: {:user, updated.id},
+        metadata: %{}
+      )
+    end)
   end
 
   ## Session
@@ -343,8 +383,15 @@ defmodule DarkZenith.Accounts do
       when is_function(update_email_url_fun, 1) do
     {encoded_token, user_token} = UserToken.build_email_token(user, "change:#{current_email}")
 
-    Repo.insert!(user_token)
-    UserNotifier.deliver_update_email_instructions(user, update_email_url_fun.(encoded_token))
+    {:ok, result} =
+      Repo.transact(fn ->
+        Repo.insert!(user_token)
+
+        {:ok,
+         UserNotifier.deliver_update_email_instructions(user, update_email_url_fun.(encoded_token))}
+      end)
+
+    result
   end
 
   @doc """
@@ -488,6 +535,7 @@ defmodule DarkZenith.Accounts do
           {:error, :quota_exceeded}
         else
           with {:ok, api_key} <- Repo.insert(changeset) do
+            UserNotifier.deliver_api_key_created(user, api_key.name)
             {:ok, {plaintext, api_key}}
           end
         end
@@ -582,13 +630,15 @@ defmodule DarkZenith.Accounts do
   # Used by password change/reset and confirmation. Deletes the user's web
   # session/email tokens and their API session tokens in the same operation
   # (DESIGN.md: Session Tokens — API keys deliberately survive).
-  defp update_user_and_delete_all_tokens(changeset) do
+  defp update_user_and_delete_all_tokens(changeset, side_effects \\ fn _user -> :ok end) do
     Repo.transact(fn ->
       with {:ok, user} <- Repo.update(changeset) do
         tokens_to_expire = Repo.all_by(UserToken, user_id: user.id)
 
         Repo.delete_all(from(t in UserToken, where: t.id in ^Enum.map(tokens_to_expire, & &1.id)))
         Repo.delete_all(from(t in SessionToken, where: t.user_id == ^user.id))
+
+        side_effects.(user)
 
         {:ok, {user, tokens_to_expire}}
       end

@@ -169,11 +169,11 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 12 — Email delivery (M2)
 
-- [ ] Swoosh mailer + `MAIL_ADAPTER` alias mapping, boot validation (Email Delivery)
+- [x] Swoosh mailer + `MAIL_ADAPTER` alias mapping, boot validation (Email Delivery)
 - [x] Oban-backed delivery with per-notification generation fencing
       (Repository Collaborators; Collaborator Invitations)
-- [ ] phx.gen.auth mail (confirmation/reset/email change) through the same worker path
-- [ ] Security notification mails (password/email/GPG/API-key events)
+- [x] phx.gen.auth mail (confirmation/reset/email change) through the same worker path
+- [ ] Security notification mails (password/email/API-key done; GPG events join Phase 11)
 
 ## Phase 13 — Rate limiting (M4)
 

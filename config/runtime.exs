@@ -200,6 +200,49 @@ if config_env() == :prod do
 
   config :dark_zenith, b2_upload_url_ttl: b2_upload_url_ttl
 
+  # Outbound mail (DESIGN.md: Email Delivery). Unknown aliases refuse boot.
+  mail_adapter_alias = System.get_env("MAIL_ADAPTER") || "zepto"
+  mail_adapter = DarkZenith.Mail.adapter_for(mail_adapter_alias)
+
+  mail_from_address =
+    System.get_env("MAIL_FROM_ADDRESS") ||
+      raise "MAIL_FROM_ADDRESS is required for outbound notifications"
+
+  config :dark_zenith, :mail_from,
+         {System.get_env("MAIL_FROM_NAME") || "Dark Zenith", mail_from_address}
+
+  case mail_adapter_alias do
+    "zepto" ->
+      api_key =
+        System.get_env("ZEPTO_API_KEY") ||
+          raise "ZEPTO_API_KEY is required when MAIL_ADAPTER=zepto"
+
+      config :dark_zenith, DarkZenith.Mailer, adapter: mail_adapter, api_key: api_key
+      config :swoosh, :api_client, Swoosh.ApiClient.Req
+
+    "smtp" ->
+      relay = System.get_env("SMTP_HOST") || raise "SMTP_HOST is required when MAIL_ADAPTER=smtp"
+
+      port =
+        case Integer.parse(System.get_env("SMTP_PORT") || "587") do
+          {value, ""} when value in 1..65_535 -> value
+          _ -> raise "SMTP_PORT must be a port number"
+        end
+
+      config :dark_zenith, DarkZenith.Mailer,
+        adapter: mail_adapter,
+        relay: relay,
+        port: port,
+        username: System.get_env("SMTP_USERNAME"),
+        password: System.get_env("SMTP_PASSWORD"),
+        ssl: System.get_env("SMTP_SSL") in ~w(true 1),
+        tls: :if_available,
+        auth: :if_available
+
+    "local" ->
+      config :dark_zenith, DarkZenith.Mailer, adapter: mail_adapter
+  end
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :dark_zenith, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
