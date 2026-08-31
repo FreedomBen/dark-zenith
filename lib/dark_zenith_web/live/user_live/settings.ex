@@ -175,7 +175,59 @@ defmodule DarkZenithWeb.UserLive.Settings do
             <summary class="cursor-pointer">Public key</summary>
             <pre class="bg-base-200 rounded-lg p-3 text-xs overflow-x-auto">{@gpg.public_key}</pre>
           </details>
+
+          <div :if={@gpg.transition} class="alert alert-info block space-y-1" id="gpg-transition">
+            <p class="font-semibold">{transition_title(@gpg.transition)}</p>
+            <p class="text-xs">
+              Status: {@gpg.transition.status}<span :if={@gpg.transition.resume_status}>
+                (resumes {@gpg.transition.resume_status})</span>
+              · Repositories updated: {@gpg_progress.repos_done}/{@gpg_progress.repos_total}
+              · Packages processed: {@gpg_progress.items_done}/{@gpg_progress.items_total}
+            </p>
+            <p :if={@gpg.replacement_in_progress and @gpg.previous_public_key} class="text-xs">
+              Both the previous and new public keys are served until re-signing completes.
+            </p>
+            <p
+              :if={@gpg.transition.status == "failed"}
+              class="text-error text-xs"
+              id="gpg-transition-failed"
+            >
+              Failed with {@gpg.transition.last_error_code}. An administrator can reset the
+              transition from the admin signing-transitions view.
+            </p>
+          </div>
+
+          <div
+            :if={@gpg.transition == nil and gpg_in_use?(@gpg_usage)}
+            class="space-y-2"
+            id="gpg-removal-strategies"
+          >
+            <p class="text-sm">
+              This key is used by {@gpg_usage.metadata_signed} metadata-signed and
+              {@gpg_usage.rpm_signed} RPM-signed repositories. Removing it requires an
+              explicit strategy (or upload a replacement key pair below):
+            </p>
+            <button
+              :if={@gpg_usage.rpm_signed == 0}
+              id="revoke-clear-metadata"
+              class="btn btn-warning btn-sm"
+              phx-click="revoke_clear_metadata"
+              data-confirm="Clear metadata signing on all your repositories and remove the key?"
+            >
+              Clear metadata signing everywhere
+            </button>
+            <button
+              id="revoke-delete-packages"
+              class="btn btn-error btn-sm"
+              phx-click="revoke_delete_packages"
+              data-confirm="Delete every package in your RPM-signed repositories, disable signing, and remove the key? This cannot be undone."
+            >
+              Delete signed packages and remove the key
+            </button>
+          </div>
+
           <button
+            :if={@gpg.transition == nil and not gpg_in_use?(@gpg_usage)}
             id="remove-gpg-key"
             class="btn btn-error btn-sm"
             phx-click="remove_gpg_key"
@@ -185,10 +237,18 @@ defmodule DarkZenithWeb.UserLive.Settings do
           </button>
         </div>
 
-        <.form :if={@gpg == nil} for={@gpg_form} id="upload_gpg_key_form" phx-submit="upload_gpg_key">
+        <.form
+          :if={@gpg == nil or @gpg.transition == nil}
+          for={@gpg_form}
+          id="upload_gpg_key_form"
+          phx-submit="upload_gpg_key"
+        >
           <p class="text-sm text-base-content/70 mb-2">
-            Upload a dedicated repository-signing key pair. Passphrase-protected keys are
-            rejected.
+            {if @gpg,
+              do: "Upload a new key pair to start a durable key replacement: " <>
+                "affected repositories and packages are re-signed in the background.",
+              else: "Upload a dedicated repository-signing key pair."} Passphrase-protected
+            keys are rejected.
           </p>
           <.input field={@gpg_form[:public_key]} type="textarea" label="ASCII-armored public key" required />
           <.input
@@ -198,7 +258,7 @@ defmodule DarkZenithWeb.UserLive.Settings do
             required
           />
           <.button phx-disable-with="Validating..." class="btn btn-primary mt-2">
-            Upload key pair
+            {if @gpg, do: "Replace key pair", else: "Upload key pair"}
           </.button>
         </.form>
       </section>
@@ -259,7 +319,7 @@ defmodule DarkZenithWeb.UserLive.Settings do
     socket
     |> assign(:api_keys, Accounts.list_api_keys(user))
     |> assign(:key_form, to_form(%{"name" => ""}, as: "api_key"))
-    |> assign(:gpg, Accounts.get_gpg_key_info(user))
+    |> assign_gpg_sections(user)
     |> assign(:gpg_form, to_form(%{"public_key" => "", "private_key" => ""}, as: "gpg"))
   end
 
@@ -365,6 +425,24 @@ defmodule DarkZenithWeb.UserLive.Settings do
         {:noreply,
          socket |> reload_account_sections() |> put_flash(:info, "GPG key uploaded.")}
 
+      {:accepted, _transition} ->
+        {:noreply,
+         socket
+         |> reload_account_sections()
+         |> put_flash(
+           :info,
+           "Key replacement started: repositories and packages are being re-signed."
+         )}
+
+      {:error, :transition_in_progress} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Another key transition is unresolved (or a repository is mid re-sign); " <>
+             "wait for it to finish."
+         )}
+
       {:error, :validation_failed} ->
         {:noreply,
          put_flash(
@@ -373,10 +451,6 @@ defmodule DarkZenithWeb.UserLive.Settings do
            "That key pair was rejected: it must be a matching, passphrase-free V4 signing key " <>
              "with an allowed algorithm and at least 30 days before expiry."
          )}
-
-      {:error, :replacement_not_implemented} ->
-        {:noreply,
-         put_flash(socket, :error, "Key replacement is not available yet; remove the key first.")}
 
       {:error, _infra} ->
         {:noreply, put_flash(socket, :error, "Key validation infrastructure is unavailable.")}
@@ -390,17 +464,30 @@ defmodule DarkZenithWeb.UserLive.Settings do
       :ok ->
         {:noreply, socket |> reload_account_sections() |> put_flash(:info, "GPG key removed.")}
 
-      {:error, :in_use} ->
+      {:error, {:in_use, _counts}} ->
         {:noreply,
-         put_flash(
-           socket,
+         socket
+         |> reload_account_sections()
+         |> put_flash(
            :error,
-           "The key is still used by your repositories: clear metadata signing on them first."
+           "The key is still used by your repositories: choose a removal strategy."
          )}
+
+      {:error, :transition_in_progress} ->
+        {:noreply,
+         put_flash(socket, :error, "A key transition is already removing or replacing this key.")}
 
       {:error, :not_found} ->
         {:noreply, reload_account_sections(socket)}
     end
+  end
+
+  def handle_event("revoke_clear_metadata", _params, socket) do
+    start_removal(socket, "clear_metadata_signing")
+  end
+
+  def handle_event("revoke_delete_packages", _params, socket) do
+    start_removal(socket, "delete_signed_packages")
   end
 
   def handle_event("update_password", params, socket) do
@@ -420,4 +507,65 @@ defmodule DarkZenithWeb.UserLive.Settings do
         {:noreply, assign(socket, password_form: to_form(changeset, action: :insert))}
     end
   end
+
+  defp start_removal(socket, strategy) do
+    user = socket.assigns.current_scope.user
+
+    case DarkZenith.SigningTransitions.UserWide.start_removal(user, strategy) do
+      {:accepted, _transition} ->
+        {:noreply,
+         socket
+         |> reload_account_sections()
+         |> put_flash(:info, "Key removal started: repositories are being updated.")}
+
+      {:error, :in_use} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Clearing metadata signing requires disabling RPM signing everywhere first."
+         )}
+
+      {:error, :transition_in_progress} ->
+        {:noreply,
+         put_flash(socket, :error, "Another key transition is already unresolved.")}
+
+      {:error, :not_found} ->
+        {:noreply, reload_account_sections(socket)}
+    end
+  end
+
+  defp assign_gpg_sections(socket, user) do
+    gpg = Accounts.get_gpg_key_info(user)
+
+    usage =
+      if gpg,
+        do: DarkZenith.SigningTransitions.UserWide.affected_repository_counts(user.id)
+
+    progress =
+      if gpg && gpg.transition do
+        repos = DarkZenith.SigningTransitions.repository_counts(gpg.transition.id)
+        items = DarkZenith.SigningTransitions.item_counts(gpg.transition.id)
+
+        %{
+          repos_done: repos["applied"] + repos["satisfied_deleted"],
+          repos_total: repos |> Map.values() |> Enum.sum(),
+          items_done: items["succeeded"] + items["canceled"],
+          items_total: items |> Map.values() |> Enum.sum()
+        }
+      end
+
+    socket
+    |> assign(:gpg, gpg)
+    |> assign(:gpg_usage, usage)
+    |> assign(:gpg_progress, progress)
+  end
+
+  defp gpg_in_use?(nil), do: false
+  defp gpg_in_use?(usage), do: usage.metadata_signed > 0 or usage.rpm_signed > 0
+
+  defp transition_title(%{kind: "replace_gpg_key"}), do: "Key replacement in progress"
+  defp transition_title(%{kind: "clear_metadata_signing"}), do: "Metadata signing removal in progress"
+  defp transition_title(%{kind: "delete_signed_packages"}), do: "Signed-package deletion in progress"
+  defp transition_title(_), do: "Key transition in progress"
 end

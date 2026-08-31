@@ -711,4 +711,206 @@ defmodule DarkZenith.SigningTransitions do
   end
 
   def admin_reset_items(%User{}, _transition_id, _item_ids), do: {:error, :forbidden}
+
+  @doc "Transitions for the admin view, unresolved first, newest first."
+  def admin_list_transitions do
+    Repo.all(
+      from t in Transition,
+        order_by: [
+          asc: t.status in ["completed", "canceled"],
+          desc: t.inserted_at,
+          asc: t.id
+        ]
+    )
+  end
+
+  @doc """
+  Restores a failed transition to its recorded `resume_status` with a fresh
+  attempt budget and schedules the next phase batch and affected
+  regeneration jobs (DESIGN.md: Admin — Signing transitions).
+  """
+  def admin_reset_phase(%User{is_admin: true} = actor, transition_id) do
+    now = DateTime.utc_now(:second)
+
+    {:ok, result} =
+      Repo.transact(fn ->
+        transition =
+          Repo.one(from t in Transition, where: t.id == ^transition_id, lock: "FOR UPDATE")
+
+        cond do
+          is_nil(transition) ->
+            {:ok, {:error, :not_found}}
+
+          transition.status != "failed" ->
+            {:ok, {:error, :not_failed}}
+
+          true ->
+            resume = transition.resume_status
+            batch_phase? = resume in ["preparing", "activating", "finalizing"]
+
+            {1, _} =
+              Repo.update_all(
+                from(t in Transition, where: t.id == ^transition_id),
+                set: [
+                  status: resume,
+                  resume_status: nil,
+                  last_error_code: nil,
+                  phase_attempts: 0,
+                  phase_next_attempt_at: if(batch_phase?, do: now),
+                  updated_at: now
+                ]
+              )
+
+            Audit.record!("signing_transition.phase_reset",
+              actor: actor,
+              target: {:signing_transition, transition_id},
+              metadata: %{
+                "resume_status" => resume,
+                "prior_attempts" => transition.phase_attempts
+              }
+            )
+
+            {:ok, {:ok, transition, resume, batch_phase?}}
+        end
+      end)
+
+    with {:ok, transition, resume, batch_phase?} <- result do
+      if batch_phase? do
+        %{transition_id: transition_id}
+        |> DarkZenith.Workers.SigningPhase.new()
+        |> Oban.insert!()
+      else
+        # An active resume: item work continues; give affected
+        # regeneration a fresh budget too.
+        DarkZenith.SigningTransitions.UserWide.enqueue_item_jobs(transition_id)
+        enqueue_stale_snapshot_regeneration(transition_id)
+
+        if transition.kind == "enable_rpm_signing" && resume == "active" &&
+             transition.repository_id do
+          DarkZenith.Repodata.enqueue_regeneration(transition.repository_id)
+        end
+
+        check_completion(transition_id)
+      end
+
+      :ok
+    end
+  end
+
+  def admin_reset_phase(%User{}, _transition_id), do: {:error, :forbidden}
+
+  defp enqueue_stale_snapshot_regeneration(transition_id) do
+    repository_ids =
+      Repo.all(
+        from sr in TransitionRepository,
+          join: r in Repository,
+          on: r.id == sr.repository_id,
+          left_join: c in MetadataCache,
+          on: c.repository_id == r.id,
+          where:
+            sr.transition_id == ^transition_id and sr.application_status == "applied" and
+              (is_nil(c.source_revision) or c.source_revision != r.metadata_revision),
+          select: r.id
+      )
+
+    Enum.each(repository_ids, &DarkZenith.Repodata.enqueue_regeneration/1)
+  end
+
+  @doc """
+  Cancels a transition where the flow permits it: a repository-local enable
+  (disabling signing on the repository), a pre-swap replacement, or a
+  removal that has not started applying. A post-swap replacement offers
+  only reset/resume.
+  """
+  def admin_cancel_transition(%User{is_admin: true} = actor, transition_id) do
+    now = DateTime.utc_now(:second)
+
+    {:ok, result} =
+      Repo.transact(fn ->
+        # Global lock order: owner row before the transition row.
+        user_id =
+          Repo.one(from t in Transition, where: t.id == ^transition_id, select: t.user_id)
+
+        if user_id do
+          Repo.one(from u in User, where: u.id == ^user_id, lock: "FOR UPDATE")
+        end
+
+        transition =
+          Repo.one(from t in Transition, where: t.id == ^transition_id, lock: "FOR UPDATE")
+
+        case cancelability(transition) do
+          {:error, reason} ->
+            {:ok, {:error, reason}}
+
+          {:ok, mode} ->
+            apply_admin_cancel!(transition, mode, now)
+
+            Audit.record!("signing_transition.cancel",
+              actor: actor,
+              target: {:signing_transition, transition_id},
+              metadata: %{"kind" => transition.kind, "status" => transition.status}
+            )
+
+            {:ok, :ok}
+        end
+      end)
+
+    result
+  end
+
+  def admin_cancel_transition(%User{}, _transition_id), do: {:error, :forbidden}
+
+  defp cancelability(nil), do: {:error, :not_found}
+
+  defp cancelability(%Transition{status: status}) when status in ["completed", "canceled"],
+    do: {:error, :not_cancelable}
+
+  defp cancelability(%Transition{kind: "enable_rpm_signing"}), do: {:ok, :enable}
+
+  defp cancelability(%Transition{kind: "replace_gpg_key"} = transition) do
+    phase =
+      if transition.status == "failed", do: transition.resume_status, else: transition.status
+
+    # Once the key swap has committed, ending the replacement would strand
+    # previous_gpg_key_public and split repositories across two keys.
+    if phase == "preparing", do: {:ok, :user_wide}, else: {:error, :not_cancelable}
+  end
+
+  defp cancelability(%Transition{} = transition) do
+    phase =
+      if transition.status == "failed", do: transition.resume_status, else: transition.status
+
+    if phase == "preparing", do: {:ok, :user_wide}, else: {:error, :not_cancelable}
+  end
+
+  defp apply_admin_cancel!(transition, :enable, now) do
+    cancel_transition!(transition)
+
+    if transition.repository_id do
+      {_count, _} =
+        Repo.update_all(
+          from(r in Repository,
+            where: r.id == ^transition.repository_id and r.signing_transition_id == ^transition.id
+          ),
+          set: [
+            sign_rpms: false,
+            rpm_signing_state: "disabled",
+            signing_transition_id: nil,
+            updated_at: now
+          ]
+        )
+    end
+  end
+
+  defp apply_admin_cancel!(transition, :user_wide, now) do
+    cancel_transition!(transition)
+
+    {_count, _} =
+      Repo.update_all(
+        from(u in User,
+          where: u.id == ^transition.user_id and u.gpg_key_transition_id == ^transition.id
+        ),
+        set: [gpg_key_transition_id: nil, updated_at: now]
+      )
+  end
 end

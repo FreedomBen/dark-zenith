@@ -97,3 +97,89 @@ defmodule DarkZenithWeb.UserLive.SettingsAccountTest do
     end
   end
 end
+
+defmodule DarkZenithWeb.UserLive.SettingsGpgTransitionsTest do
+  # Not async: overrides the signing implementation.
+  use DarkZenithWeb.ConnCase, async: false
+
+  import Phoenix.LiveViewTest
+  import DarkZenith.AccountsFixtures
+  import DarkZenith.GpgFixtures
+
+  alias DarkZenith.Accounts
+  alias DarkZenith.Accounts.User
+  alias DarkZenith.Repositories
+
+  setup %{conn: conn} do
+    Application.put_env(:dark_zenith, :signing_impl, DarkZenith.SigningStub)
+    on_exit(fn -> Application.delete_env(:dark_zenith, :signing_impl) end)
+
+    pair = generate_key_pair()
+    user = user_fixture()
+    {:ok, user} = Accounts.upsert_gpg_key(user, pair.public, pair.private)
+    %{conn: log_in_user(conn, user), user: user, pair: pair}
+  end
+
+  test "replacing the key from settings starts the transition and shows progress", ctx do
+    {:ok, _} =
+      Repositories.create_repository(ctx.user, %{
+        slug: "set-gpg-#{System.unique_integer([:positive])}",
+        name: "S",
+        gpg_key_fingerprint: ctx.pair.fingerprint
+      })
+
+    pair2 = generate_key_pair()
+    {:ok, lv, html} = live(ctx.conn, ~p"/users/settings")
+    assert html =~ "Replace key pair"
+
+    lv
+    |> form("#upload_gpg_key_form",
+      gpg: %{"public_key" => pair2.public, "private_key" => pair2.private}
+    )
+    |> render_submit()
+
+    html = render(lv)
+    assert html =~ "Key replacement in progress"
+    assert html =~ "id=\"gpg-transition\""
+
+    # The current key stays displayed until the swap.
+    assert html =~ ctx.pair.fingerprint
+    assert DarkZenith.Repo.get!(User, ctx.user.id).gpg_key_fingerprint == ctx.pair.fingerprint
+  end
+
+  test "an in-use key offers the removal strategies", ctx do
+    {:ok, _} =
+      Repositories.create_repository(ctx.user, %{
+        slug: "set-use-#{System.unique_integer([:positive])}",
+        name: "U",
+        gpg_key_fingerprint: ctx.pair.fingerprint
+      })
+
+    {:ok, lv, html} = live(ctx.conn, ~p"/users/settings")
+    assert html =~ "id=\"gpg-removal-strategies\""
+    assert html =~ "revoke-clear-metadata"
+    refute html =~ "id=\"remove-gpg-key\""
+
+    lv |> element("#revoke-clear-metadata") |> render_click()
+
+    html = render(lv)
+    assert html =~ "Metadata signing removal in progress"
+
+    user = DarkZenith.Repo.get!(User, ctx.user.id)
+    assert user.gpg_key_transition_id
+  end
+
+  test "RPM-signed repositories hide the clear-metadata strategy", ctx do
+    {:ok, _} =
+      Repositories.create_repository(ctx.user, %{
+        slug: "set-rpm-#{System.unique_integer([:positive])}",
+        name: "R",
+        gpg_key_fingerprint: ctx.pair.fingerprint,
+        sign_rpms: true
+      })
+
+    {:ok, _lv, html} = live(ctx.conn, ~p"/users/settings")
+    refute html =~ "revoke-clear-metadata"
+    assert html =~ "revoke-delete-packages"
+  end
+end

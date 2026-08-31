@@ -15,6 +15,9 @@ defmodule DarkZenithWeb.AdminComponents do
         Slug reservations
       </.link>
       <.link navigate={~p"/admin/jobs"} class={nav_class(@active, "jobs")}>Background jobs</.link>
+      <.link navigate={~p"/admin/transitions"} class={nav_class(@active, "transitions")}>
+        Signing transitions
+      </.link>
     </nav>
     """
   end

@@ -175,3 +175,136 @@ defmodule DarkZenithWeb.AdminLiveTest do
     end
   end
 end
+
+defmodule DarkZenithWeb.AdminTransitionsLiveTest do
+  use DarkZenithWeb.ConnCase, async: true
+
+  import Ecto.Query
+  import Phoenix.LiveViewTest
+  import DarkZenith.AccountsFixtures
+
+  alias DarkZenith.Accounts.User
+  alias DarkZenith.Repo
+  alias DarkZenith.SigningTransitions.{Item, Transition}
+  alias DarkZenith.Workers.SigningPhase
+
+  setup %{conn: conn} do
+    admin = admin_fixture()
+    %{conn: log_in_user(conn, admin), admin: admin}
+  end
+
+  defp failed_user_wide!(owner, attrs \\ %{}) do
+    transition =
+      Repo.insert!(
+        struct!(
+          %Transition{
+            kind: "replace_gpg_key",
+            user_id: owner.id,
+            status: "failed",
+            resume_status: "preparing",
+            last_error_code: "database_unavailable",
+            phase_attempts: 20
+          },
+          attrs
+        )
+      )
+
+    {1, _} =
+      Repo.update_all(
+        from(u in User, where: u.id == ^owner.id),
+        set: [gpg_key_transition_id: transition.id]
+      )
+
+    transition
+  end
+
+  test "lists transitions with phase state and resets a failed phase", ctx do
+    owner = user_fixture()
+    transition = failed_user_wide!(owner)
+
+    {:ok, lv, html} = live(ctx.conn, ~p"/admin/transitions")
+    assert html =~ "replace_gpg_key"
+    assert html =~ "database_unavailable"
+
+    lv |> element("#reset-phase-#{transition.id}") |> render_click()
+
+    reset = Repo.get!(Transition, transition.id)
+    assert reset.status == "preparing"
+    assert reset.phase_attempts == 0
+    assert reset.resume_status == nil
+    assert reset.phase_next_attempt_at
+
+    worker_name = Oban.Worker.to_string(SigningPhase)
+
+    assert Repo.exists?(
+             from(j in Oban.Job,
+               where: j.worker == ^worker_name and j.state in ["available", "scheduled"]
+             )
+           )
+  end
+
+  test "cancel clears a pre-swap replacement but refuses a post-swap one", ctx do
+    owner = user_fixture()
+    pre = failed_user_wide!(owner)
+
+    {:ok, lv, _html} = live(ctx.conn, ~p"/admin/transitions")
+    lv |> element("#cancel-#{pre.id}") |> render_click()
+
+    assert Repo.get!(Transition, pre.id).status == "canceled"
+    assert Repo.get!(User, owner.id).gpg_key_transition_id == nil
+
+    owner2 = user_fixture()
+
+    post =
+      failed_user_wide!(owner2, %{
+        resume_status: "activating",
+        last_error_code: "storage_unavailable"
+      })
+
+    {:ok, lv, _html} = live(ctx.conn, ~p"/admin/transitions")
+    html = lv |> element("#cancel-#{post.id}") |> render_click()
+
+    assert html =~ "cannot be canceled"
+    assert Repo.get!(Transition, post.id).status == "failed"
+    assert Repo.get!(User, owner2.id).gpg_key_transition_id == post.id
+  end
+
+  test "inspect shows items and resets the failed ones", ctx do
+    owner = user_fixture()
+
+    transition =
+      failed_user_wide!(owner, %{
+        kind: "delete_signed_packages",
+        resume_status: "active"
+      })
+
+    now = DateTime.utc_now(:second)
+
+    item =
+      Repo.insert!(%Item{
+        transition_id: transition.id,
+        repository_id: Ecto.UUID.generate(),
+        package_id: Ecto.UUID.generate(),
+        expected_storage_path: "repos/x/packages/p/w/x.rpm",
+        expected_storage_version_id: "4_zx",
+        status: "failed",
+        attempts: 20,
+        last_error_code: "storage_unavailable",
+        completed_at: now
+      })
+
+    {:ok, lv, _html} = live(ctx.conn, ~p"/admin/transitions")
+    html = lv |> element("#inspect-#{transition.id}") |> render_click()
+    assert html =~ "1 failed"
+    assert html =~ item.package_id
+
+    lv |> element("#reset-failed-items") |> render_click()
+
+    reset = Repo.get!(Item, item.id)
+    assert reset.status == "pending"
+    assert reset.attempts == 0
+
+    # No failed items remain, so the transition resumes active.
+    assert Repo.get!(Transition, transition.id).status == "active"
+  end
+end
