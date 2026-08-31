@@ -15,8 +15,8 @@ defmodule DarkZenithWeb.AdminLive.Jobs do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-5xl space-y-6">
+    <Layouts.app flash={@flash} current_scope={@current_scope} width={:data}>
+      <div class="space-y-6">
         <.header>
           Background jobs
           <:subtitle><DarkZenithWeb.AdminComponents.admin_nav active="jobs" /></:subtitle>

@@ -19,8 +19,8 @@ defmodule DarkZenithWeb.PackageLive.Version do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-3xl space-y-8">
+    <Layouts.app flash={@flash} current_scope={@current_scope} width={:data}>
+      <div class="space-y-8">
         <.header>
           {@package.name} {Packages.display_evr(@package)}
           <:subtitle>

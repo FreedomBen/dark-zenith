@@ -7,8 +7,8 @@ defmodule DarkZenithWeb.RepositoryLive.New do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-xl">
+    <Layouts.app flash={@flash} current_scope={@current_scope} width={:prose}>
+      <div>
         <.header>
           Create Repository
           <:subtitle>The slug becomes the repository URL and cannot be changed later</:subtitle>

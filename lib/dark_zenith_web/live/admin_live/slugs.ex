@@ -11,8 +11,8 @@ defmodule DarkZenithWeb.AdminLive.Slugs do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-4xl space-y-6">
+    <Layouts.app flash={@flash} current_scope={@current_scope} width={:data}>
+      <div class="space-y-6">
         <.header>
           Slug reservations
           <:subtitle><DarkZenithWeb.AdminComponents.admin_nav active="slugs" /></:subtitle>

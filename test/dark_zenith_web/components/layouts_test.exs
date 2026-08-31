@@ -1,6 +1,7 @@
 defmodule DarkZenithWeb.LayoutsTest do
   use DarkZenithWeb.ConnCase, async: true
 
+  import Phoenix.Component
   import Phoenix.LiveViewTest
 
   alias DarkZenithWeb.Layouts
@@ -17,6 +18,59 @@ defmodule DarkZenithWeb.LayoutsTest do
 
     test "accepts a sizing class" do
       assert render_component(&Layouts.zenith_mark/1, class: "size-4") =~ ~s(class="size-4")
+    end
+  end
+
+  describe "app/1" do
+    test "maps widths to the spec's max widths and vertical rhythm" do
+      for {width, class} <- [data: "max-w-7xl", prose: "max-w-3xl", narrow: "max-w-md"] do
+        assigns = %{width: width}
+
+        html =
+          rendered_to_string(~H"""
+          <Layouts.app flash={%{}} width={@width}>content</Layouts.app>
+          """)
+
+        assert html =~ class
+        assert html =~ "py-8"
+        assert html =~ "space-y-8"
+      end
+    end
+
+    test "defaults to the prose width" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <Layouts.app flash={%{}}>content</Layouts.app>
+        """)
+
+      assert html =~ "max-w-3xl"
+    end
+  end
+
+  describe "breadcrumbs/1" do
+    test "renders mono segments, muted separators, and an unlinked current segment" do
+      assigns = %{
+        segments: [
+          {"Repositories", "/repos"},
+          {"tools", "/repos/tools"},
+          {"htop-3.4.1-1.fc44.x86_64", nil}
+        ]
+      }
+
+      html =
+        rendered_to_string(~H"""
+        <Layouts.breadcrumbs segments={@segments} />
+        """)
+
+      assert html =~ ~s(aria-label="Breadcrumb")
+      assert html =~ "font-mono"
+      assert html =~ ~s(href="/repos")
+      assert html =~ ~s(href="/repos/tools")
+      assert html =~ ~s(aria-current="page")
+      refute html =~ ~r|<a[^>]*>\s*htop|
+      assert length(Regex.scan(~r/aria-hidden/, html)) == 2
     end
   end
 

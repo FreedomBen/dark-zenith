@@ -328,7 +328,7 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
       `assets/js/theme.js` for the strict CSP), topbar recolor
 - [x] U2 — Identity: `zenith_mark` component, wordmark, favicon set, footer
       (`SOURCE_URL` specified in `DESIGN.md`)
-- [ ] U3 — Shell: top nav (logo, links, account dropdown, mobile menu), `Layouts.app`
+- [x] U3 — Shell: top nav (logo, links, account dropdown, mobile menu), `Layouts.app`
       width system, breadcrumbs component
 - [ ] U4 — Components: command block with copy, table conventions, badges, empty states,
       reticle spinner, confirmation dialogs (type-to-confirm repo delete)

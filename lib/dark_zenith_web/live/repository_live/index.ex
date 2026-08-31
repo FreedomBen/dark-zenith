@@ -6,8 +6,8 @@ defmodule DarkZenithWeb.RepositoryLive.Index do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-3xl">
+    <Layouts.app flash={@flash} current_scope={@current_scope} width={:data}>
+      <div>
         <div class="flex items-center justify-between mb-6">
           <.header>
             Repositories

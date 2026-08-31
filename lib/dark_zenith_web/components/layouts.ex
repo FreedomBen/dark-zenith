@@ -20,7 +20,7 @@ defmodule DarkZenithWeb.Layouts do
 
   ## Examples
 
-      <Layouts.app flash={@flash}>
+      <Layouts.app flash={@flash} width={:data}>
         <h1>Content</h1>
       </Layouts.app>
 
@@ -31,17 +31,57 @@ defmodule DarkZenithWeb.Layouts do
     default: nil,
     doc: "the current [scope](https://phoenix.hexdocs.pm/scopes.html)"
 
+  attr :width, :atom,
+    default: :prose,
+    values: [:data, :prose, :narrow],
+    doc: "page column width (docs/DESIGN_UI.md — Layout system)"
+
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-2xl space-y-4">
+    <main class="px-4 py-8 sm:px-6 lg:px-8">
+      <div class={["mx-auto space-y-8", width_class(@width)]}>
         {render_slot(@inner_block)}
       </div>
     </main>
 
     <.flash_group flash={@flash} />
+    """
+  end
+
+  defp width_class(:data), do: "max-w-7xl"
+  defp width_class(:prose), do: "max-w-3xl"
+  defp width_class(:narrow), do: "max-w-md"
+
+  @doc """
+  Breadcrumb line for data pages (docs/DESIGN_UI.md — Breadcrumbs): path
+  segments in Plex Mono, separators muted, current segment unlinked.
+
+  ## Examples
+
+      <Layouts.breadcrumbs segments={[{"Repositories", ~p"/repos"}, {@repo.slug, nil}]} />
+  """
+  attr :segments, :list,
+    required: true,
+    doc: "{label, path} tuples in order; a nil path marks the current segment"
+
+  def breadcrumbs(assigns) do
+    ~H"""
+    <nav aria-label="Breadcrumb" class="font-mono text-sm">
+      <ol class="flex flex-wrap items-center gap-2">
+        <li
+          :for={{{label, path}, index} <- Enum.with_index(@segments)}
+          class="flex items-center gap-2"
+        >
+          <span :if={index > 0} class="text-base-content/40" aria-hidden="true">/</span>
+          <.link :if={path} navigate={path} class="text-base-content/70 hover:text-base-content">
+            {label}
+          </.link>
+          <span :if={!path} aria-current="page" class="text-base-content">{label}</span>
+        </li>
+      </ol>
+    </nav>
     """
   end
 

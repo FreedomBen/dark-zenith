@@ -6,8 +6,8 @@ defmodule DarkZenithWeb.UserLive.ResetPassword do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div :if={@completed} class="mx-auto max-w-md space-y-6" id="reset-complete">
+    <Layouts.app flash={@flash} current_scope={@current_scope} width={:narrow}>
+      <div :if={@completed} class="space-y-6" id="reset-complete">
         <div class="text-center">
           <.header>Password reset</.header>
         </div>
@@ -45,7 +45,7 @@ defmodule DarkZenithWeb.UserLive.ResetPassword do
         </p>
       </div>
 
-      <div :if={!@completed} class="mx-auto max-w-sm">
+      <div :if={!@completed}>
         <div class="text-center">
           <.header>Reset password</.header>
         </div>

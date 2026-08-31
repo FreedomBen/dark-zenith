@@ -6,8 +6,8 @@ defmodule DarkZenithWeb.UserLive.Login do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-sm space-y-4">
+    <Layouts.app flash={@flash} current_scope={@current_scope} width={:narrow}>
+      <div class="space-y-4">
         <div class="text-center">
           <.header>
             <p>Log in</p>

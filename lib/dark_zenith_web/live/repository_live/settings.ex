@@ -9,8 +9,8 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-xl space-y-10">
+    <Layouts.app flash={@flash} current_scope={@current_scope} width={:prose}>
+      <div class="space-y-10">
         <.header>
           Repository Settings
           <:subtitle>{@repository.slug} — the slug is immutable</:subtitle>

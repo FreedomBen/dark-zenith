@@ -7,8 +7,8 @@ defmodule DarkZenithWeb.UserLive.Registration do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-sm">
+    <Layouts.app flash={@flash} current_scope={@current_scope} width={:narrow}>
+      <div>
         <div class="text-center">
           <.header>
             Register for an account
