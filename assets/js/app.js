@@ -68,6 +68,33 @@ const liveSocket = new LiveSocket("/live", Socket, {
   hooks: {...colocatedHooks, DirectUpload},
 })
 
+// Command-block copy buttons (docs/DESIGN_UI.md — Components). The button
+// dispatches dz:copy at its block; copy the <code> text and flash the
+// checkmark by toggling dz-copied. The textarea fallback covers insecure
+// contexts (plain-http LAN deployments) where navigator.clipboard is absent.
+window.addEventListener("dz:copy", event => {
+  const block = event.target
+  const code = block.querySelector("code")
+  if (!code) return
+  const confirm = () => {
+    block.classList.add("dz-copied")
+    setTimeout(() => block.classList.remove("dz-copied"), 2000)
+  }
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(code.innerText).then(confirm, confirm)
+  } else {
+    const scratch = document.createElement("textarea")
+    scratch.value = code.innerText
+    scratch.style.position = "fixed"
+    scratch.style.opacity = "0"
+    document.body.appendChild(scratch)
+    scratch.select()
+    document.execCommand("copy")
+    scratch.remove()
+    confirm()
+  }
+})
+
 // Show progress bar on live navigation and form submits
 // Zenith Gold (docs/DESIGN_UI.md — Color)
 topbar.config({barColors: {0: "#E3B341"}, shadowColor: "rgba(0, 0, 0, .3)"})

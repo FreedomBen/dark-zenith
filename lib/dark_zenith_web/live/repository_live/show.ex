@@ -12,9 +12,7 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
         <div class="flex items-center justify-between">
           <.header>
             {@repository.name}
-            <span :if={!@repository.is_public} class="badge badge-ghost align-middle ml-2">
-              private
-            </span>
+            <.badge :if={!@repository.is_public} variant={:private} class="align-middle ml-2" />
             <:subtitle>{@repository.description}</:subtitle>
           </.header>
           <div :if={@manager?} class="flex gap-2">
@@ -33,14 +31,17 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
           <p class="text-sm mb-2">
             Save this as <code>/etc/yum.repos.d/dark-zenith-{@repository.slug}.repo</code>:
           </p>
-          <pre class="bg-base-200 rounded-lg p-4 text-sm overflow-x-auto"><code>{@repo_file}</code></pre>
+          <.command_block id="repo-file" command={@repo_file} />
 
           <div :if={!@repository.is_public} class="text-sm mt-2 space-y-1">
             <p>
               Replace <code>&lt;api-key&gt;</code>
               with one of your API keys carrying <code>repo:read</code>, then restrict the file since it embeds the key:
             </p>
-            <pre class="bg-base-200 rounded-lg p-4 overflow-x-auto"><code>sudo chmod 600 /etc/yum.repos.d/dark-zenith-{@repository.slug}.repo</code></pre>
+            <.command_block
+              id="chmod-repo-file"
+              command={"sudo chmod 600 /etc/yum.repos.d/dark-zenith-#{@repository.slug}.repo"}
+            />
             <p :if={!@has_suitable_key?} class="alert alert-warning mt-2">
               You have no active API key with <code>repo:read</code>.
               <.link navigate={~p"/users/settings"} class="link font-semibold">
@@ -52,29 +53,42 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
 
           <div :if={@repository.is_public} class="mt-4 space-y-2 text-sm">
             <p>Or add it with one command:</p>
-            <pre class="bg-base-200 rounded-lg p-4 overflow-x-auto"><code>dnf config-manager --add-repo {@base_url}/repos/{@repository.slug}/dark-zenith.repo</code></pre>
-            <p>DNF 5:</p>
-            <pre class="bg-base-200 rounded-lg p-4 overflow-x-auto"><code>dnf5 config-manager addrepo --from-repofile={@base_url}/repos/{@repository.slug}/dark-zenith.repo</code></pre>
+            <.command_block
+              id="dnf4-addrepo"
+              eyebrow="DNF 4"
+              command={"dnf config-manager --add-repo #{repo_file_url(@base_url, @repository)}"}
+            />
+            <.command_block
+              id="dnf5-addrepo"
+              eyebrow="DNF 5"
+              command={"dnf5 config-manager addrepo --from-repofile=#{repo_file_url(@base_url, @repository)}"}
+            />
             <details class="mt-2">
               <summary class="cursor-pointer">
                 Authenticated access (recommended for higher rate limits)
               </summary>
-              <pre class="bg-base-200 rounded-lg p-4 mt-2 overflow-x-auto"><code>{@authenticated_repo_file}</code></pre>
+              <.command_block id="auth-repo-file" class="mt-2" command={@authenticated_repo_file} />
             </details>
           </div>
 
           <div :if={@repository.gpg_key_fingerprint && @repository.is_public} class="mt-4 text-sm">
-            <p>Import the repository signing key:</p>
-            <pre class="bg-base-200 rounded-lg p-4 overflow-x-auto"><code>sudo rpmkeys --import {@base_url}/repos/{@repository.slug}/RPM-GPG-KEY</code></pre>
+            <p class="mb-2">Import the repository signing key:</p>
+            <.command_block
+              id="gpg-import"
+              command={"sudo rpmkeys --import #{gpg_key_url(@base_url, @repository)}"}
+            />
           </div>
 
           <div :if={@repository.gpg_key_fingerprint && !@repository.is_public} class="mt-4 text-sm">
-            <p>
+            <p class="mb-2">
               Import the repository signing key. The key URL requires credentials,
               so curl prompts for your API key (it never appears in the command
               or a file):
             </p>
-            <pre class="bg-base-200 rounded-lg p-4 overflow-x-auto"><code>curl --fail --user token {@base_url}/repos/{@repository.slug}/RPM-GPG-KEY | sudo rpmkeys --import -</code></pre>
+            <.command_block
+              id="gpg-import-private"
+              command={"curl --fail --user token #{gpg_key_url(@base_url, @repository)} | sudo rpmkeys --import -"}
+            />
           </div>
         </section>
 
@@ -100,12 +114,17 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
             </select>
           </form>
 
-          <div
-            :if={@packages == []}
-            class="text-base-content/60 text-sm py-8 text-center border border-dashed border-base-300 rounded-lg"
-          >
+          <Layouts.empty_state :if={@packages == []}>
             No packages{if @package_q != "", do: " match", else: " yet"}.
-          </div>
+            <:action :if={@manager? && @package_q == ""}>
+              <.link
+                navigate={~p"/repos/#{@repository.slug}/upload"}
+                class="btn btn-outline btn-sm"
+              >
+                Upload the first RPM
+              </.link>
+            </:action>
+          </Layouts.empty_state>
 
           <div :if={@packages != []} class="overflow-x-auto">
             <table class="table table-sm">
@@ -261,5 +280,13 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
 
   defp manager?(repository, user) do
     DarkZenith.Authorization.can_manage?(user, repository)
+  end
+
+  defp repo_file_url(base_url, repository) do
+    "#{base_url}/repos/#{repository.slug}/dark-zenith.repo"
+  end
+
+  defp gpg_key_url(base_url, repository) do
+    "#{base_url}/repos/#{repository.slug}/RPM-GPG-KEY"
   end
 end

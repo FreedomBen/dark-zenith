@@ -330,7 +330,7 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
       (`SOURCE_URL` specified in `DESIGN.md`)
 - [x] U3 — Shell: top nav (logo, links, account dropdown, mobile menu), `Layouts.app`
       width system, breadcrumbs component
-- [ ] U4 — Components: command block with copy, table conventions, badges, empty states,
+- [x] U4 — Components: command block with copy, table conventions, badges, empty states,
       reticle spinner, confirmation dialogs (type-to-confirm repo delete)
 - [ ] U5 — Pages: landing hero + star-field, repo list, repo detail setup-instructions
       tabs, package pages, upload states, settings, auth

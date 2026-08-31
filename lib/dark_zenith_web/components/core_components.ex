@@ -63,11 +63,12 @@ defmodule DarkZenithWeb.CoreComponents do
       id={@id}
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
       role="alert"
-      class="toast toast-top toast-end z-50"
+      class="toast toast-top toast-end z-50 mt-14"
       {@rest}
     >
       <div class={[
-        "alert w-80 sm:w-96 max-w-80 sm:max-w-96 text-wrap",
+        "alert alert-soft w-80 sm:w-96 max-w-80 sm:max-w-96 text-wrap",
+        "border border-base-content/10 shadow-lg",
         @kind == :info && "alert-info",
         @kind == :error && "alert-error"
       ]}>
@@ -97,11 +98,19 @@ defmodule DarkZenithWeb.CoreComponents do
   """
   attr :rest, :global, include: ~w(href navigate patch method download name value disabled)
   attr :class, :any
-  attr :variant, :string, values: ~w(primary)
+  attr :variant, :string, values: ~w(primary outline ghost error)
   slot :inner_block, required: true
 
   def button(%{rest: rest} = assigns) do
-    variants = %{"primary" => "btn-primary", nil => "btn-primary btn-soft"}
+    # docs/DESIGN_UI.md — Buttons: one primary per view, outline secondary,
+    # ghost tertiary, error destructive.
+    variants = %{
+      "primary" => "btn-primary",
+      "outline" => "btn-outline",
+      "ghost" => "btn-ghost",
+      "error" => "btn-error",
+      nil => "btn-primary btn-soft"
+    }
 
     assigns =
       assign_new(assigns, :class, fn ->
@@ -177,6 +186,7 @@ defmodule DarkZenithWeb.CoreComponents do
     doc: "a form field struct retrieved from the form, for example: @form[:email]"
 
   attr :errors, :list, default: []
+  attr :help, :string, default: nil, doc: "muted help text rendered below the field"
   attr :checked, :boolean, doc: "the checked flag for checkbox inputs"
   attr :prompt, :string, default: nil, doc: "the prompt for select inputs"
   attr :options, :list, doc: "the options to pass to Phoenix.HTML.Form.options_for_select/2"
@@ -233,6 +243,7 @@ defmodule DarkZenithWeb.CoreComponents do
           />{@label}
         </span>
       </label>
+      <p :if={@help} class="mt-1 text-xs text-base-content/60">{@help}</p>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
@@ -254,6 +265,7 @@ defmodule DarkZenithWeb.CoreComponents do
           {Phoenix.HTML.Form.options_for_select(@options, @value)}
         </select>
       </label>
+      <p :if={@help} class="mt-1 text-xs text-base-content/60">{@help}</p>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
@@ -274,6 +286,7 @@ defmodule DarkZenithWeb.CoreComponents do
           {@rest}
         >{Phoenix.HTML.Form.normalize_value("textarea", @value)}</textarea>
       </label>
+      <p :if={@help} class="mt-1 text-xs text-base-content/60">{@help}</p>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
@@ -297,6 +310,7 @@ defmodule DarkZenithWeb.CoreComponents do
           {@rest}
         />
       </label>
+      <p :if={@help} class="mt-1 text-xs text-base-content/60">{@help}</p>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
@@ -336,7 +350,10 @@ defmodule DarkZenithWeb.CoreComponents do
   end
 
   @doc """
-  Renders a table with generic styling.
+  Renders a table in the dense catalog style (docs/DESIGN_UI.md — Tables):
+  uppercase eyebrow headers, hairline row dividers, row hover, mono and
+  right-aligned columns, and sortable headers as real buttons. The table
+  scrolls inside its own container.
 
   ## Examples
 
@@ -344,11 +361,22 @@ defmodule DarkZenithWeb.CoreComponents do
         <:col :let={user} label="id">{user.id}</:col>
         <:col :let={user} label="username">{user.username}</:col>
       </.table>
+
+  Sortable columns take the table's current `sort` (e.g. `"name"` ascending,
+  `"-name"` descending) and a `sort_event`; a header click sends the event
+  with the next sort under `phx-value-sort`:
+
+      <.table id="pkgs" rows={@packages} sort={@sort} sort_event="sort">
+        <:col :let={p} label="Name" sort="name" mono>{p.name}</:col>
+        <:col :let={p} label="Size" align={:right}>{p.size}</:col>
+      </.table>
   """
   attr :id, :string, required: true
   attr :rows, :list, required: true
   attr :row_id, :any, default: nil, doc: "the function for generating the row id"
   attr :row_click, :any, default: nil, doc: "the function for handling phx-click on each row"
+  attr :sort, :string, default: nil, doc: "the current sort, a key optionally prefixed with -"
+  attr :sort_event, :string, default: nil, doc: "the event a sortable header click pushes"
 
   attr :row_item, :any,
     default: &Function.identity/1,
@@ -356,6 +384,9 @@ defmodule DarkZenithWeb.CoreComponents do
 
   slot :col, required: true do
     attr :label, :string
+    attr :sort, :string, doc: "the sort key this column's header toggles"
+    attr :mono, :boolean, doc: "render the column in the mono face"
+    attr :align, :atom, doc: "column alignment; :right for numeric columns"
   end
 
   slot :action, doc: "the slot for showing user actions in the last table column"
@@ -367,34 +398,219 @@ defmodule DarkZenithWeb.CoreComponents do
       end
 
     ~H"""
-    <table class="table table-zebra">
-      <thead>
-        <tr>
-          <th :for={col <- @col}>{col[:label]}</th>
-          <th :if={@action != []}>
-            <span class="sr-only">{gettext("Actions")}</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody id={@id} phx-update={is_struct(@rows, Phoenix.LiveView.LiveStream) && "stream"}>
-        <tr :for={row <- @rows} id={@row_id && @row_id.(row)}>
-          <td
-            :for={col <- @col}
-            phx-click={@row_click && @row_click.(row)}
-            class={@row_click && "hover:cursor-pointer"}
+    <div class="overflow-x-auto">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th
+              :for={col <- @col}
+              class={[
+                "text-xs font-medium uppercase tracking-wider text-base-content/60",
+                col[:align] == :right && "text-right"
+              ]}
+              aria-sort={@sort_event && col[:sort] && aria_sort(@sort, col[:sort])}
+            >
+              <button
+                :if={@sort_event && col[:sort]}
+                type="button"
+                phx-click={@sort_event}
+                phx-value-sort={next_sort(@sort, col[:sort])}
+                class="inline-flex cursor-pointer items-center gap-1 uppercase tracking-wider hover:text-base-content"
+              >
+                {col[:label]}
+                <.icon
+                  :if={@sort == col[:sort]}
+                  name="hero-chevron-up-micro"
+                  class="size-3"
+                />
+                <.icon
+                  :if={@sort == "-" <> col[:sort]}
+                  name="hero-chevron-down-micro"
+                  class="size-3"
+                />
+              </button>
+              <span :if={!(@sort_event && col[:sort])}>{col[:label]}</span>
+            </th>
+            <th :if={@action != []}>
+              <span class="sr-only">{gettext("Actions")}</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody id={@id} phx-update={is_struct(@rows, Phoenix.LiveView.LiveStream) && "stream"}>
+          <tr
+            :for={row <- @rows}
+            id={@row_id && @row_id.(row)}
+            class="border-b border-base-content/10 hover:bg-base-200"
           >
-            {render_slot(col, @row_item.(row))}
-          </td>
-          <td :if={@action != []} class="w-0 font-semibold">
-            <div class="flex gap-4">
-              <%= for action <- @action do %>
-                {render_slot(action, @row_item.(row))}
-              <% end %>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+            <td
+              :for={col <- @col}
+              phx-click={@row_click && @row_click.(row)}
+              class={[
+                @row_click && "hover:cursor-pointer",
+                col[:mono] && "font-mono whitespace-nowrap",
+                col[:align] == :right && "text-right"
+              ]}
+            >
+              {render_slot(col, @row_item.(row))}
+            </td>
+            <td :if={@action != []} class="w-0 font-semibold">
+              <div class="flex gap-4">
+                <%= for action <- @action do %>
+                  {render_slot(action, @row_item.(row))}
+                <% end %>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    """
+  end
+
+  # Clicking an active ascending header flips to descending; anything else
+  # (inactive, or active descending) sorts ascending.
+  defp next_sort(current, key) when current == key, do: "-" <> key
+  defp next_sort(_current, key), do: key
+
+  defp aria_sort(current, key) when current == key, do: "ascending"
+
+  defp aria_sort(current, key) do
+    if current == "-" <> key, do: "descending"
+  end
+
+  @doc """
+  Renders a copy-paste command block (docs/DESIGN_UI.md — Components): Umbra
+  ground in both themes, Starlight mono text, an optional eyebrow label, and a
+  copy button that confirms with a checkmark. Long commands scroll
+  horizontally instead of wrapping.
+
+  The command is an attribute, not a slot, because `<pre>` preserves every
+  character: slot content would render (and copy) the template's indentation.
+
+  The copy button dispatches `dz:copy` at the block; the app.js listener
+  copies the `<code>` text and toggles the `dz-copied` class for the icon
+  swap.
+
+  ## Examples
+
+      <.command_block id="install-cmd" command="dnf install htop" />
+      <.command_block id="dnf5-add" eyebrow="DNF 5" command={@addrepo_command} />
+  """
+  attr :id, :string, required: true
+  attr :command, :string, required: true, doc: "the exact text to display and copy"
+  attr :eyebrow, :string, default: nil, doc: "small uppercase label above the command"
+  attr :class, :any, default: nil
+
+  def command_block(assigns) do
+    ~H"""
+    <div
+      id={@id}
+      class={[
+        "dz-command-block relative rounded-box border border-base-content/10 bg-umbra text-starlight",
+        @class
+      ]}
+    >
+      <div
+        :if={@eyebrow}
+        class="px-4 pt-3 font-mono text-[11px] uppercase tracking-wider text-starlight/60"
+      >
+        {@eyebrow}
+      </div>
+      <pre class={[
+        "overflow-x-auto px-4 pr-12 font-mono text-sm",
+        (@eyebrow && "pt-1 pb-3") || "py-3"
+      ]}><code>{@command}</code></pre>
+      <button
+        type="button"
+        class="absolute top-1.5 right-1.5 cursor-pointer rounded-field p-1.5 text-starlight/60 hover:bg-starlight/10 hover:text-starlight"
+        phx-click={JS.dispatch("dz:copy", to: "##{@id}")}
+        aria-label={gettext("Copy to clipboard")}
+      >
+        <.icon name="hero-clipboard-micro" class="size-4 [.dz-copied_&]:hidden" />
+        <%!-- confirmation color is fixed: the ground never follows the theme --%>
+        <.icon
+          name="hero-check-micro"
+          class="hidden size-4 text-[#58b77e] [.dz-copied_&]:inline-block"
+        />
+      </button>
+    </div>
+    """
+  end
+
+  @badge_variants %{
+    public: {"badge-outline badge-secondary", "Public", nil},
+    private: {"badge-soft badge-neutral", "Private", "hero-lock-closed-micro"},
+    metadata_signed: {"badge-soft badge-accent", "Metadata signed", nil},
+    auto_sign: {"badge-outline badge-primary", "Auto-sign", nil},
+    signing: {"badge-soft badge-warning", "signing", nil},
+    failed: {"badge-soft badge-error", "failed", nil},
+    queued: {"badge-soft badge-neutral", "queued", nil},
+    sent: {"badge-soft badge-success", "sent", nil},
+    suppressed: {"badge-soft badge-warning", "suppressed", nil}
+  }
+
+  @doc """
+  Renders a domain-state badge (docs/DESIGN_UI.md — Badges): each variant maps
+  a state to its semantic token. The inner block overrides the default label.
+
+  ## Examples
+
+      <.badge variant={:private} />
+      <.badge variant={:sent} class="badge-sm" />
+  """
+  attr :variant, :atom, required: true, values: Map.keys(@badge_variants)
+  attr :class, :any, default: nil
+  slot :inner_block
+
+  def badge(assigns) do
+    {classes, label, icon} = Map.fetch!(@badge_variants, assigns.variant)
+    assigns = assign(assigns, classes: classes, label: label, icon: icon)
+
+    ~H"""
+    <span class={["badge", @classes, @class]}>
+      <.icon :if={@icon} name={@icon} class="size-3" />
+      <%= if @inner_block == [] do %>
+        {@label}
+      <% else %>
+        {render_slot(@inner_block)}
+      <% end %>
+    </span>
+    """
+  end
+
+  @doc """
+  Renders a modal dialog for destructive confirmations (docs/DESIGN_UI.md —
+  Dialogs). Visibility is server-driven through `show`; the backdrop and the
+  Escape key both push `on_cancel`.
+
+  ## Examples
+
+      <.modal id="delete_modal" show={@show_delete} on_cancel="cancel_delete">
+        <h3>Delete repository</h3>
+        ...
+      </.modal>
+  """
+  attr :id, :string, required: true
+  attr :show, :boolean, default: false
+  attr :on_cancel, :any, default: nil, doc: "event name or JS command pushed on dismiss"
+  slot :inner_block, required: true
+
+  def modal(assigns) do
+    ~H"""
+    <div
+      :if={@show}
+      id={@id}
+      class="modal modal-open"
+      role="dialog"
+      aria-modal="true"
+      phx-window-keydown={@on_cancel}
+      phx-key="escape"
+    >
+      <div class="modal-box border border-base-content/10">
+        {render_slot(@inner_block)}
+      </div>
+      <div class="modal-backdrop" phx-click={@on_cancel} aria-hidden="true"></div>
+    </div>
     """
   end
 

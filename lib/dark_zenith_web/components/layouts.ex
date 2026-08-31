@@ -163,6 +163,67 @@ defmodule DarkZenithWeb.Layouts do
   end
 
   @doc """
+  Renders an empty state (docs/DESIGN_UI.md — Components): the ghosted
+  reticle, one plain sentence, and at most one action. Use it wherever a
+  table or list would otherwise render bare.
+
+  ## Examples
+
+      <Layouts.empty_state>
+        No packages yet.
+        <:action><.link navigate={~p"/repos/x/upload"}>Upload the first RPM</.link></:action>
+      </Layouts.empty_state>
+  """
+  slot :inner_block, required: true
+  slot :action
+
+  def empty_state(assigns) do
+    ~H"""
+    <div class="flex flex-col items-center gap-3 rounded-box border border-dashed border-base-content/15 px-6 py-10 text-center">
+      <.zenith_mark class="size-10 opacity-30" />
+      <p class="text-sm text-base-content/70">{render_slot(@inner_block)}</p>
+      <div :if={@action != []}>{render_slot(@action)}</div>
+    </div>
+    """
+  end
+
+  @doc """
+  Renders the reticle as a loading spinner (docs/DESIGN_UI.md — Components):
+  the ring and ticks rotate while the star stays fixed. `prefers-reduced-motion`
+  leaves the mark static; the label always shows.
+
+  ## Examples
+
+      <Layouts.reticle_spinner />
+      <Layouts.reticle_spinner label="Signing…" class="size-6" />
+  """
+  attr :class, :string, default: "size-8"
+  attr :label, :string, default: "Loading…"
+
+  def reticle_spinner(assigns) do
+    ~H"""
+    <div class="flex flex-col items-center gap-2" role="status">
+      <svg viewBox="0 0 24 24" fill="none" class={@class} aria-hidden="true">
+        <g class="origin-center animate-reticle-spin motion-reduce:animate-none">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5" />
+          <path
+            d="M12 1.5v3M22.5 12h-3M12 22.5v-3M1.5 12h3"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+        </g>
+        <path
+          d="M12 7 Q12.8 11.2 17 12 Q12.8 12.8 12 17 Q11.2 12.8 7 12 Q11.2 11.2 12 7 Z"
+          fill="var(--color-primary)"
+        />
+      </svg>
+      <span class="text-sm text-base-content/70">{@label}</span>
+    </div>
+    """
+  end
+
+  @doc """
   Renders the app footer (docs/DESIGN_UI.md — App shell): mark, name, and version
   on the left; the AGPL §13 corresponding-source link and license on the right.
   """

@@ -28,8 +28,13 @@ defmodule DarkZenithWeb.PackageLive.Show do
           <p class="text-sm text-base-content/70 mb-2">
             Assumes the repository is already configured on your system.
           </p>
-          <pre :if={@install_command} class="bg-base-200 rounded-lg p-4 text-sm overflow-x-auto"><code>{@install_command}</code></pre>
-          <pre :if={@source_command} class="bg-base-200 rounded-lg p-4 text-sm overflow-x-auto mt-2"><code>{@source_command}</code></pre>
+          <.command_block :if={@install_command} id="install-cmd" command={@install_command} />
+          <.command_block
+            :if={@source_command}
+            id="source-cmd"
+            class="mt-2"
+            command={@source_command}
+          />
         </section>
 
         <section>

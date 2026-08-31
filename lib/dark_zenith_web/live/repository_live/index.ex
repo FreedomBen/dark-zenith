@@ -22,9 +22,9 @@ defmodule DarkZenithWeb.RepositoryLive.Index do
           </.link>
         </div>
 
-        <div :if={@repositories == []} class="text-center text-base-content/60 py-12">
+        <Layouts.empty_state :if={@repositories == []}>
           No repositories yet.
-        </div>
+        </Layouts.empty_state>
 
         <ul class="space-y-3">
           <li :for={repository <- @repositories} class="card bg-base-200">
@@ -33,9 +33,7 @@ defmodule DarkZenithWeb.RepositoryLive.Index do
                 <.link navigate={~p"/repos/#{repository.slug}"} class="font-semibold link">
                   {repository.name}
                 </.link>
-                <span :if={!repository.is_public} class="badge badge-ghost badge-sm ml-2">
-                  private
-                </span>
+                <.badge :if={!repository.is_public} variant={:private} class="badge-sm ml-2" />
                 <p :if={repository.description} class="text-sm text-base-content/70 mt-1">
                   {repository.description}
                 </p>

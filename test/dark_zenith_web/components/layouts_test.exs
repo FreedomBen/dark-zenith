@@ -74,6 +74,58 @@ defmodule DarkZenithWeb.LayoutsTest do
     end
   end
 
+  describe "empty_state/1" do
+    test "renders the ghosted reticle, the message, and the action" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <Layouts.empty_state>
+          No packages yet.
+          <:action><a href="/upload">Upload the first RPM</a></:action>
+        </Layouts.empty_state>
+        """)
+
+      assert html =~ "<svg"
+      assert html =~ "opacity-30"
+      assert html =~ "size-10"
+      assert html =~ "No packages yet."
+      assert html =~ "Upload the first RPM"
+    end
+
+    test "renders without an action" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <Layouts.empty_state>No repositories yet.</Layouts.empty_state>
+        """)
+
+      assert html =~ "No repositories yet."
+    end
+  end
+
+  describe "reticle_spinner/1" do
+    test "rotates the ring and ticks while the star stays fixed, with a status label" do
+      html = render_component(&Layouts.reticle_spinner/1, %{})
+
+      assert html =~ ~s(role="status")
+      assert html =~ "animate-reticle-spin"
+      assert html =~ "motion-reduce:animate-none"
+      assert html =~ "Loading…"
+
+      # the star is outside the rotating group
+      [_, rotating_group] = Regex.run(~r|<g[^>]*animate-reticle-spin[^>]*>(.*?)</g>|s, html)
+      refute rotating_group =~ "--color-primary"
+      assert html =~ ~s|fill="var(--color-primary)"|
+    end
+
+    test "accepts a custom label" do
+      html = render_component(&Layouts.reticle_spinner/1, %{label: "Signing…"})
+      assert html =~ "Signing…"
+    end
+  end
+
   describe "app_footer/1" do
     test "shows the mark, app version, and license, and links to the source" do
       html = render_component(&Layouts.app_footer/1, %{})

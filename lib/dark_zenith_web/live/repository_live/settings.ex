@@ -175,15 +175,51 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
             Deleting a repository permanently removes its packages and metadata. Its slug is
             retired and cannot be reused by other users.
           </p>
-          <button
-            id="delete_repository"
-            class="btn btn-error"
-            phx-click="delete"
-            data-confirm="Permanently delete this repository? This cannot be undone."
-          >
+          <button id="delete_repository" class="btn btn-error" phx-click="confirm_delete">
             Delete repository
           </button>
         </section>
+
+        <.modal id="delete_repository_modal" show={@show_delete_modal} on_cancel="cancel_delete">
+          <h3 class="text-lg font-semibold">Delete repository</h3>
+          <p class="py-3 text-sm">
+            Deleting <span class="font-mono font-semibold">{@repository.slug}</span>
+            permanently removes its packages and metadata. Its slug is retired and cannot
+            be reused by other users. This cannot be undone.
+          </p>
+          <form
+            id="delete_confirmation_form"
+            phx-change="validate_delete_confirmation"
+            phx-submit="delete"
+          >
+            <label class="text-sm" for="delete_confirmation_input">
+              Type <span class="font-mono font-semibold">{@repository.slug}</span> to confirm:
+            </label>
+            <input
+              id="delete_confirmation_input"
+              type="text"
+              name="confirmation"
+              value={@delete_confirmation}
+              autocomplete="off"
+              spellcheck="false"
+              phx-mounted={JS.focus()}
+              class="input mt-2 w-full font-mono"
+            />
+            <div class="modal-action">
+              <button type="button" class="btn btn-ghost" phx-click="cancel_delete">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                id="confirm_delete_repository"
+                class="btn btn-error"
+                disabled={@delete_confirmation != @repository.slug}
+              >
+                Delete repository
+              </button>
+            </div>
+          </form>
+        </.modal>
       </div>
     </Layouts.app>
     """
@@ -206,6 +242,8 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
        socket
        |> assign(:repository, repository)
        |> assign(:owner_fingerprint, owner.gpg_key_fingerprint)
+       |> assign(:show_delete_modal, false)
+       |> assign(:delete_confirmation, "")
        |> assign_signing_progress(repository)
        |> assign_form(changeset)
        |> assign(:collaborator_rows, Collaborators.list_rows(repository))
@@ -306,18 +344,39 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
     end
   end
 
+  def handle_event("confirm_delete", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:show_delete_modal, true)
+     |> assign(:delete_confirmation, "")}
+  end
+
+  def handle_event("cancel_delete", _params, socket) do
+    {:noreply, assign(socket, :show_delete_modal, false)}
+  end
+
+  def handle_event("validate_delete_confirmation", %{"confirmation" => value}, socket) do
+    {:noreply, assign(socket, :delete_confirmation, value)}
+  end
+
   def handle_event("delete", _params, socket) do
-    user = socket.assigns.current_scope.user
+    # The typed-slug check is enforced here, not only via the disabled
+    # button, so a bare event or Enter in the input cannot bypass it.
+    if socket.assigns.delete_confirmation == socket.assigns.repository.slug do
+      user = socket.assigns.current_scope.user
 
-    case Repositories.delete_repository(user, socket.assigns.repository) do
-      :ok ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Repository deleted.")
-         |> push_navigate(to: ~p"/repos")}
+      case Repositories.delete_repository(user, socket.assigns.repository) do
+        :ok ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Repository deleted.")
+           |> push_navigate(to: ~p"/repos")}
 
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "The repository could not be deleted.")}
+        {:error, _} ->
+          {:noreply, put_flash(socket, :error, "The repository could not be deleted.")}
+      end
+    else
+      {:noreply, socket}
     end
   end
 

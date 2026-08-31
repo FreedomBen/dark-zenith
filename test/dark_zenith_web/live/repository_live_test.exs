@@ -34,6 +34,17 @@ defmodule DarkZenithWeb.RepositoryLiveTest do
 
       assert html =~ "My Private"
       assert html =~ "Create New Repo"
+
+      # visibility renders as the semantic badge (docs/DESIGN_UI.md — Badges)
+      assert html =~ "hero-lock-closed-micro"
+      assert html =~ "Private"
+    end
+
+    test "an empty index renders the reticle empty state", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/repos")
+
+      assert html =~ "No repositories yet."
+      assert html =~ "opacity-30"
     end
   end
 
@@ -86,6 +97,15 @@ defmodule DarkZenithWeb.RepositoryLiveTest do
       assert html =~ "dnf5 config-manager addrepo"
       assert html =~ "No packages yet"
       refute html =~ "Settings"
+
+      # setup snippets are command blocks with copy buttons (docs/DESIGN_UI.md)
+      assert html =~ ~s(aria-label="Copy to clipboard")
+      assert html =~ "bg-umbra"
+
+      # commands render flush inside <pre><code>: no template indentation to
+      # display or copy
+      assert html =~ "<code>dnf config-manager --add-repo"
+      assert html =~ "<code>dnf5 config-manager addrepo"
     end
 
     test "owners see management actions", %{conn: conn} do
@@ -266,7 +286,44 @@ defmodule DarkZenithWeb.RepositoryLiveTest do
       end
     end
 
-    test "owners can delete the repository after confirmation", %{conn: conn} do
+    test "owners can delete the repository after typing the slug to confirm", %{conn: conn} do
+      owner = user_fixture()
+      repo = repository_fixture(owner)
+
+      {:ok, lv, _html} =
+        conn
+        |> log_in_user(owner)
+        |> live(~p"/repos/#{repo.slug}/settings")
+
+      # opening the dialog does not delete anything
+      html = lv |> element("#delete_repository") |> render_click()
+      assert html =~ "delete_repository_modal"
+      assert Repositories.get_repository_by_slug(repo.slug)
+
+      # the destructive button stays disabled until the exact slug is typed
+      assert lv |> element("#confirm_delete_repository") |> render() =~ "disabled"
+
+      html =
+        lv
+        |> element("#delete_repository_modal form")
+        |> render_change(%{"confirmation" => "not-the-slug"})
+
+      assert html =~ "disabled"
+      assert Repositories.get_repository_by_slug(repo.slug)
+
+      lv
+      |> element("#delete_repository_modal form")
+      |> render_change(%{"confirmation" => repo.slug})
+
+      refute lv |> element("#confirm_delete_repository") |> render() =~ "disabled"
+
+      lv |> element("#delete_repository_modal form") |> render_submit()
+
+      assert_redirect(lv, "/repos")
+      refute Repositories.get_repository_by_slug(repo.slug)
+    end
+
+    test "the delete event is refused server-side without the typed confirmation", %{conn: conn} do
       owner = user_fixture()
       repo = repository_fixture(owner)
 
@@ -277,8 +334,34 @@ defmodule DarkZenithWeb.RepositoryLiveTest do
 
       lv |> element("#delete_repository") |> render_click()
 
-      assert_redirect(lv, "/repos")
-      refute Repositories.get_repository_by_slug(repo.slug)
+      # submitting the form (e.g. Enter in the input) with a mismatch is a no-op
+      lv
+      |> element("#delete_repository_modal form")
+      |> render_change(%{"confirmation" => "wrong"})
+
+      lv |> element("#delete_repository_modal form") |> render_submit()
+
+      assert Repositories.get_repository_by_slug(repo.slug)
+
+      # so is pushing the event directly, bypassing the form
+      render_click(lv, "delete", %{})
+      assert Repositories.get_repository_by_slug(repo.slug)
+    end
+
+    test "cancel closes the delete dialog without deleting", %{conn: conn} do
+      owner = user_fixture()
+      repo = repository_fixture(owner)
+
+      {:ok, lv, _html} =
+        conn
+        |> log_in_user(owner)
+        |> live(~p"/repos/#{repo.slug}/settings")
+
+      lv |> element("#delete_repository") |> render_click()
+      html = render_click(lv, "cancel_delete", %{})
+
+      refute html =~ "delete_repository_modal"
+      assert Repositories.get_repository_by_slug(repo.slug)
     end
   end
 

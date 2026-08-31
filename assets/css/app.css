@@ -100,6 +100,20 @@
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --font-display: "Spectral", Georgia, serif;
+
+  /* Theme-invariant grounds for command blocks (docs/DESIGN_UI.md — Components):
+     the terminal stays night-dark in both themes. */
+  --color-umbra: #070b14;
+  --color-starlight: #e8ecf4;
+
+  /* Reticle spinner: ring and ticks rotate, the star stays fixed. */
+  --animate-reticle-spin: reticle-spin 1.6s linear infinite;
+
+  @keyframes reticle-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 }
 
 /* Add variants based on LiveView classes */
