@@ -444,6 +444,20 @@ defmodule DarkZenith.RepositoriesTest do
       assert private_repo.id in admin_ids
     end
 
+    test "collaborators see private repositories they can read in listings" do
+      owner = user_fixture()
+      collaborator = user_fixture()
+
+      {:ok, private_repo} = Repositories.create_repository(owner, %{slug: "collab", name: "C"})
+      {:ok, other_private} = Repositories.create_repository(owner, %{slug: "other", name: "O"})
+
+      DarkZenith.CollaboratorsFixtures.collaborator_row_fixture(private_repo, collaborator)
+
+      ids = Repositories.list_visible_repositories(collaborator) |> Enum.map(& &1.id)
+      assert private_repo.id in ids
+      refute other_private.id in ids
+    end
+
     test "listing orders by slug ascending" do
       owner = user_fixture()
       repository_fixture(owner, %{slug: "zebra", name: "Z", is_public: true})

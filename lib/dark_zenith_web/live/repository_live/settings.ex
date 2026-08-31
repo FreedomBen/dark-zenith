@@ -54,7 +54,7 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
     repository = Repositories.get_repository_by_slug(slug)
     user = socket.assigns.current_scope.user
 
-    if repository && (user.is_admin or user.id == repository.user_id) do
+    if repository && DarkZenith.Authorization.can_manage?(user, repository) do
       changeset = settings_changeset(repository, %{}, socket)
 
       {:ok,

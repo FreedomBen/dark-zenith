@@ -111,12 +111,10 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
   end
 
   defp accessible?(repository, user) do
-    repository.is_public or manager?(repository, user)
+    DarkZenith.Authorization.can_read?(user, repository)
   end
 
-  defp manager?(_repository, nil), do: false
-
   defp manager?(repository, user) do
-    user.is_admin or user.id == repository.user_id
+    DarkZenith.Authorization.can_manage?(user, repository)
   end
 end

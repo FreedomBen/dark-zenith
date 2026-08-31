@@ -35,12 +35,22 @@ defmodule DarkZenith.Repositories do
 
   @doc "The query behind `list_visible_repositories/1`, for pagination."
   def visible_repositories_query(user) do
-    base = from r in Repository, order_by: [asc: r.slug, asc: r.id]
+    base = from r in Repository, as: :repository, order_by: [asc: r.slug, asc: r.id]
 
     case user do
-      nil -> from r in base, where: r.is_public
-      %User{is_admin: true} -> base
-      %User{id: user_id} -> from r in base, where: r.is_public or r.user_id == ^user_id
+      nil ->
+        from r in base, where: r.is_public
+
+      %User{is_admin: true} ->
+        base
+
+      %User{id: user_id} ->
+        collaborated =
+          from c in DarkZenith.Collaborators.Collaborator,
+            where: c.repository_id == parent_as(:repository).id and c.user_id == ^user_id
+
+        from r in base,
+          where: r.is_public or r.user_id == ^user_id or exists(collaborated)
     end
   end
 

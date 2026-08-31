@@ -196,6 +196,37 @@ defmodule DarkZenithWeb.Api.V1.RepoControllerTest do
       assert json_response(conn, 200)
     end
 
+    test "collaborators read the private repository and see it listed", %{
+      conn: conn,
+      owner: owner
+    } do
+      repo = repository_fixture(owner, %{is_public: false})
+      other_private = repository_fixture(owner, %{is_public: false})
+      collaborator = user_fixture()
+      DarkZenith.CollaboratorsFixtures.collaborator_row_fixture(repo, collaborator)
+
+      show =
+        conn |> bearer(session_token_for(collaborator)) |> get(~p"/api/v1/repos/#{repo.slug}")
+
+      assert json_response(show, 200)
+
+      index =
+        build_conn()
+        |> bearer(api_key_for(collaborator, ["repo:read"]))
+        |> get(~p"/api/v1/repos")
+
+      slugs = for %{"slug" => slug} <- json_response(index, 200)["data"], do: slug
+      assert repo.slug in slugs
+      refute other_private.slug in slugs
+
+      masked =
+        build_conn()
+        |> bearer(api_key_for(collaborator, ["repo:create"]))
+        |> get(~p"/api/v1/repos/#{repo.slug}")
+
+      assert %{"error" => %{"code" => "not_found"}} = json_response(masked, 404)
+    end
+
     test "an API key without repo:read is masked on private reads", %{conn: conn, owner: owner} do
       repo = repository_fixture(owner, %{is_public: false})
 

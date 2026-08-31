@@ -148,7 +148,7 @@ defmodule DarkZenithWeb.Api.V1.RepoController do
         _ -> true
       end
 
-    scope_ok? and (user.is_admin or user.id == repository.user_id)
+    scope_ok? and DarkZenith.Authorization.can_read?(user, repository)
   end
 
   defp readable_private?(_principal, _repository), do: false

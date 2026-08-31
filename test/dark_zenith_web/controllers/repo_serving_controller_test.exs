@@ -257,6 +257,53 @@ defmodule DarkZenithWeb.RepoServingControllerTest do
       assert response(conn, 404) == "not_found"
     end
 
+    test "a collaborator's repo:read key can read the private repository", %{
+      conn: conn,
+      private_repo: repo
+    } do
+      collaborator = user_fixture()
+      DarkZenith.CollaboratorsFixtures.collaborator_row_fixture(repo, collaborator)
+      key = api_key_for(collaborator)
+
+      conn =
+        conn
+        |> basic_auth_header(key)
+        |> get("/repos/#{repo.slug}/repodata/repomd.xml")
+
+      assert conn.status == 200
+    end
+
+    test "a collaborator's key without repo:read is still masked as 404", %{
+      conn: conn,
+      private_repo: repo
+    } do
+      collaborator = user_fixture()
+      DarkZenith.CollaboratorsFixtures.collaborator_row_fixture(repo, collaborator)
+      key = api_key_for(collaborator, ["package:upload"])
+
+      conn =
+        conn
+        |> basic_auth_header(key)
+        |> get("/repos/#{repo.slug}/repodata/repomd.xml")
+
+      assert response(conn, 404) == "not_found"
+    end
+
+    test "a collaborator's browser session cookie can read the private repository", %{
+      conn: conn,
+      private_repo: repo
+    } do
+      collaborator = user_fixture()
+      DarkZenith.CollaboratorsFixtures.collaborator_row_fixture(repo, collaborator)
+
+      conn =
+        conn
+        |> log_in_user(collaborator)
+        |> get("/repos/#{repo.slug}/repodata/repomd.xml")
+
+      assert conn.status == 200
+    end
+
     test "invalid credentials are masked as 404 on private slugs", %{
       conn: conn,
       private_repo: repo

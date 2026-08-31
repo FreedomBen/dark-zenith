@@ -101,8 +101,8 @@ defmodule DarkZenithWeb.RepoServingController do
   defp principal_public_ok?(:invalid_cookie), do: true
   defp principal_public_ok?(_), do: false
 
-  # Private access requires the owner, a collaborator (arrives with the
-  # collaborators feature), or an admin; API keys additionally need repo:read.
+  # Private access requires the owner, a collaborator, or an admin; API keys
+  # additionally need repo:read.
   defp authorized_for_private?(user, kind, repository) do
     scope_ok? =
       case kind do
@@ -110,9 +110,7 @@ defmodule DarkZenithWeb.RepoServingController do
         _ -> true
       end
 
-    access_ok? = user.is_admin or user.id == repository.user_id
-
-    scope_ok? and access_ok?
+    scope_ok? and DarkZenith.Authorization.can_read?(user, repository)
   end
 
   defp challenge(conn) do

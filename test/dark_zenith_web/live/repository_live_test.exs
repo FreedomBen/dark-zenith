@@ -139,6 +139,32 @@ defmodule DarkZenithWeb.RepositoryLiveTest do
         get(conn, ~p"/repos/#{repo.slug}")
       end
     end
+
+    test "collaborators can view a private repository but see no management actions", %{
+      conn: conn
+    } do
+      owner = user_fixture()
+      collaborator = user_fixture()
+      repo = repository_fixture(owner, %{name: "Shared Repo", is_public: false})
+      DarkZenith.CollaboratorsFixtures.collaborator_row_fixture(repo, collaborator)
+
+      {:ok, _lv, html} =
+        conn
+        |> log_in_user(collaborator)
+        |> live(~p"/repos/#{repo.slug}")
+
+      assert html =~ "Shared Repo"
+      refute html =~ "/repos/#{repo.slug}/settings"
+      refute html =~ "Upload RPM"
+
+      # A collaborator's visible private repository also appears in the index.
+      {:ok, _lv, index_html} =
+        build_conn()
+        |> log_in_user(collaborator)
+        |> live(~p"/repos")
+
+      assert index_html =~ "Shared Repo"
+    end
   end
 
   describe "repository settings" do
