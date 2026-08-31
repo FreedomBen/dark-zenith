@@ -41,6 +41,13 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
               with one of your API keys carrying <code>repo:read</code>, then restrict the file since it embeds the key:
             </p>
             <pre class="bg-base-200 rounded-lg p-4 overflow-x-auto"><code>sudo chmod 600 /etc/yum.repos.d/dark-zenith-{@repository.slug}.repo</code></pre>
+            <p :if={!@has_suitable_key?} class="alert alert-warning mt-2">
+              You have no active API key with <code>repo:read</code>.
+              <.link navigate={~p"/users/settings"} class="link font-semibold">
+                Create one in account settings
+              </.link>
+              first — the plaintext is shown exactly once at creation.
+            </p>
           </div>
 
           <div :if={@repository.is_public} class="mt-4 space-y-2 text-sm">
@@ -56,9 +63,18 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
             </details>
           </div>
 
-          <div :if={@repository.gpg_key_fingerprint} class="mt-4 text-sm">
+          <div :if={@repository.gpg_key_fingerprint && @repository.is_public} class="mt-4 text-sm">
             <p>Import the repository signing key:</p>
             <pre class="bg-base-200 rounded-lg p-4 overflow-x-auto"><code>sudo rpmkeys --import {@base_url}/repos/{@repository.slug}/RPM-GPG-KEY</code></pre>
+          </div>
+
+          <div :if={@repository.gpg_key_fingerprint && !@repository.is_public} class="mt-4 text-sm">
+            <p>
+              Import the repository signing key. The key URL requires credentials,
+              so curl prompts for your API key (it never appears in the command
+              or a file):
+            </p>
+            <pre class="bg-base-200 rounded-lg p-4 overflow-x-auto"><code>curl --fail --user token {@base_url}/repos/{@repository.slug}/RPM-GPG-KEY | sudo rpmkeys --import -</code></pre>
           </div>
         </section>
 
@@ -170,6 +186,7 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
            :authenticated_repo_file,
            RepoFile.render(repository, base_url, credentials: :with_placeholders)
          )
+         |> assign(:has_suitable_key?, suitable_key?(repository, user))
          |> assign(:package_q, "")
          |> assign(:package_sort, nil)
          |> load_packages(1)}
@@ -230,6 +247,16 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
 
   defp accessible?(repository, user) do
     DarkZenith.Authorization.can_read?(user, repository)
+  end
+
+  # Whether the viewer holds an active repo:read API key for the private
+  # setup snippet; if not, the page prompts them to create one (DESIGN.md:
+  # Repository Detail). Public pages never prompt.
+  defp suitable_key?(%{is_public: true}, _user), do: true
+  defp suitable_key?(_repository, nil), do: false
+
+  defp suitable_key?(_repository, user) do
+    DarkZenith.Accounts.has_usable_api_key?(user, "repo:read")
   end
 
   defp manager?(repository, user) do

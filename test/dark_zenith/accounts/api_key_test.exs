@@ -238,4 +238,27 @@ defmodule DarkZenith.Accounts.ApiKeyTest do
         set: [expires_at: past]
       )
   end
+
+  describe "has_usable_api_key?/2" do
+    setup do
+      %{user: user_fixture()}
+    end
+
+    test "false without keys or with only other scopes", %{user: user} do
+      refute Accounts.has_usable_api_key?(user, "repo:read")
+
+      {:ok, _} = Accounts.create_api_key(user, %{name: "up", scopes: ["package:upload"]})
+      refute Accounts.has_usable_api_key?(user, "repo:read")
+    end
+
+    test "true for an active key carrying the scope; expired keys do not count", %{user: user} do
+      {:ok, {_plaintext, key}} =
+        Accounts.create_api_key(user, %{name: "read", scopes: ["repo:read", "package:upload"]})
+
+      assert Accounts.has_usable_api_key?(user, "repo:read")
+
+      expire_api_key(key)
+      refute Accounts.has_usable_api_key?(user, "repo:read")
+    end
+  end
 end

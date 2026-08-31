@@ -967,6 +967,17 @@ defmodule DarkZenith.Accounts do
   end
 
   @doc """
+  Whether the user holds a non-expired API key carrying `scope` — the
+  repository detail page's suitable-key check (DESIGN.md: Repository
+  Detail). Row count is bounded by `MAX_USER_API_KEYS`.
+  """
+  def has_usable_api_key?(%User{} = user, scope) when is_binary(scope) do
+    user
+    |> list_api_keys()
+    |> Enum.any?(fn key -> not ApiKey.expired?(key) and scope in key.scopes end)
+  end
+
+  @doc """
   Lists the user's API keys, expired rows included, newest first with id as
   the deterministic tie-breaker (DESIGN.md: API Contract Details ordering).
   """

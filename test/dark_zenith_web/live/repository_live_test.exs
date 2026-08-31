@@ -118,6 +118,74 @@ defmodule DarkZenithWeb.RepositoryLiveTest do
       refute html =~ "config-manager --add-repo"
     end
 
+    test "private repositories prompt for API-key creation only without a suitable key", %{
+      conn: conn
+    } do
+      owner = user_fixture()
+      repo = repository_fixture(owner, %{is_public: false})
+      conn = log_in_user(conn, owner)
+
+      {:ok, _lv, html} = live(conn, ~p"/repos/#{repo.slug}")
+      assert html =~ "no active API key with"
+      assert html =~ "/users/settings"
+
+      {:ok, _} =
+        DarkZenith.Accounts.create_api_key(owner, %{name: "reader", scopes: ["repo:read"]})
+
+      {:ok, _lv, html} = live(conn, ~p"/repos/#{repo.slug}")
+      refute html =~ "no active API key with"
+    end
+
+    test "a key without repo:read still prompts on a private repository", %{conn: conn} do
+      owner = user_fixture()
+      repo = repository_fixture(owner, %{is_public: false})
+
+      {:ok, _} =
+        DarkZenith.Accounts.create_api_key(owner, %{name: "up", scopes: ["package:upload"]})
+
+      {:ok, _lv, html} =
+        conn
+        |> log_in_user(owner)
+        |> live(~p"/repos/#{repo.slug}")
+
+      assert html =~ "no active API key with"
+    end
+
+    test "GPG import instructions are authenticated for private repositories", %{conn: conn} do
+      pair = DarkZenith.GpgFixtures.generate_key_pair()
+      owner = user_fixture()
+      {:ok, owner} = DarkZenith.Accounts.upsert_gpg_key(owner, pair.public, pair.private)
+
+      {:ok, private_repo} =
+        DarkZenith.Repositories.create_repository(owner, %{
+          slug: "priv-key-#{System.unique_integer([:positive])}",
+          name: "Private keyed",
+          is_public: false,
+          gpg_key_fingerprint: pair.fingerprint
+        })
+
+      conn = log_in_user(conn, owner)
+      {:ok, _lv, html} = live(conn, ~p"/repos/#{private_repo.slug}")
+
+      # The interactive authenticated import step: curl prompts for the API
+      # key; credentials never appear in a URL or command argument.
+      assert html =~ "curl --fail --user token"
+      assert html =~ "rpmkeys --import -"
+      refute html =~ ~r/rpmkeys --import http/
+
+      {:ok, public_repo} =
+        DarkZenith.Repositories.create_repository(owner, %{
+          slug: "pub-key-#{System.unique_integer([:positive])}",
+          name: "Public keyed",
+          is_public: true,
+          gpg_key_fingerprint: pair.fingerprint
+        })
+
+      {:ok, _lv, html} = live(conn, ~p"/repos/#{public_repo.slug}")
+      assert html =~ "sudo rpmkeys --import http"
+      refute html =~ "curl --fail"
+    end
+
     test "anonymous requests for private or unknown slugs redirect to login", %{conn: conn} do
       owner = user_fixture()
       repo = repository_fixture(owner, %{is_public: false})
