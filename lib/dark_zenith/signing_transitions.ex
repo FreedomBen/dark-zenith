@@ -605,11 +605,16 @@ defmodule DarkZenith.SigningTransitions do
   end
 
   @doc """
-  The 60-second sweep: requeues expired item execution leases and evaluates
-  completion for active enable transitions.
+  The 60-second sweep: renews reservations linked by nonterminal items,
+  requeues expired item execution leases, rebuilds missing item jobs, and
+  evaluates completion for active enable transitions.
   """
   def sweep do
     now = DateTime.utc_now(:second)
+
+    # Pending and executing items renew linked reservations two hours ahead
+    # (DESIGN.md: Storage Reservations).
+    Storage.renew_signing_item_reservations()
 
     expired_ids =
       Repo.all(
@@ -655,7 +660,13 @@ defmodule DarkZenith.SigningTransitions do
           select: t.id
       )
 
-    Enum.each(active_ids, &check_completion/1)
+    Enum.each(active_ids, fn id ->
+      # Rebuild lost Oban jobs for due pending items; job uniqueness dedupes
+      # rows that still have one (DESIGN.md: Signing Transition Items).
+      DarkZenith.SigningTransitions.UserWide.enqueue_item_jobs(id)
+      check_completion(id)
+    end)
+
     DarkZenith.SigningTransitions.UserWide.sweep()
     :ok
   end

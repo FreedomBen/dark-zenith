@@ -159,6 +159,67 @@ defmodule DarkZenith.StorageTest do
       assert Repo.get(Reservation, live.id)
       assert Repo.get(Reservation, linked.id)
     end
+
+    test "an expired reservation linked by a nonterminal signing item survives", ctx do
+      past = DateTime.add(DateTime.utc_now(:second), -1, :minute)
+
+      pending_linked = reservation_row_fixture(ctx.owner, ctx.repo, %{expires_at: past})
+      executing_linked = reservation_row_fixture(ctx.owner, ctx.repo, %{expires_at: past})
+
+      signing_item_row!(ctx, pending_linked.id, "pending")
+      signing_item_row!(ctx, executing_linked.id, "executing")
+
+      Storage.cleanup_expired()
+
+      assert Repo.get(Reservation, pending_linked.id)
+      assert Repo.get(Reservation, executing_linked.id)
+    end
+
+    test "reservation creation does not reclaim signing-item-linked expired rows", ctx do
+      past = DateTime.add(DateTime.utc_now(:second), -1, :minute)
+      linked = reservation_row_fixture(ctx.owner, ctx.repo, %{expires_at: past})
+      signing_item_row!(ctx, linked.id, "pending")
+
+      assert {:ok, _} =
+               Storage.create_reservation(
+                 ctx.owner,
+                 ctx.repo.id,
+                 Ecto.UUID.generate(),
+                 "upload",
+                 10
+               )
+
+      assert Repo.get(Reservation, linked.id)
+    end
+  end
+
+  # A nonterminal signing-transition item linking the given reservation.
+  defp signing_item_row!(ctx, reservation_id, status) do
+    transition =
+      Repo.insert!(%DarkZenith.SigningTransitions.Transition{
+        kind: "enable_rpm_signing",
+        user_id: ctx.owner.id,
+        repository_id: ctx.repo.id,
+        status: "active"
+      })
+
+    now = DateTime.utc_now(:second)
+
+    executing? = status == "executing"
+
+    Repo.insert!(%DarkZenith.SigningTransitions.Item{
+      transition_id: transition.id,
+      repository_id: ctx.repo.id,
+      package_id: Ecto.UUID.generate(),
+      expected_storage_path: "repos/#{ctx.repo.slug}/packages/p/w/p.rpm",
+      expected_storage_version_id: "4_zv",
+      reservation_id: reservation_id,
+      status: status,
+      attempts: if(executing?, do: 1, else: 0),
+      next_attempt_at: unless(executing?, do: now),
+      lease_token: if(executing?, do: Ecto.UUID.generate()),
+      lease_expires_at: if(executing?, do: DateTime.add(now, 900, :second))
+    })
   end
 end
 

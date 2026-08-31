@@ -13,6 +13,7 @@ defmodule DarkZenith.Storage do
 
   alias DarkZenith.Accounts.User
   alias DarkZenith.Repo
+  alias DarkZenith.SigningTransitions.Item, as: SigningItem
   alias DarkZenith.Storage.Reservation
   alias DarkZenith.Uploads.Intent
 
@@ -106,34 +107,54 @@ defmodule DarkZenith.Storage do
   end
 
   @doc """
-  Deletes expired reservations that no upload intent links (hourly cleanup;
-  nonterminal signing items join the guard with the signing phase). Terminal
-  intents null their reservation reference, so any link marks the row live.
+  Deletes expired reservations that no active upload intent or nonterminal
+  signing item links (hourly cleanup). Terminal intents and items null their
+  reservation reference, so any intent link marks the row live; item links
+  additionally check the nonterminal statuses explicitly.
   """
   def cleanup_expired do
     now = DateTime.utc_now(:second)
-
-    Repo.delete_all(
-      from(r in Reservation,
-        as: :reservation,
-        where: r.expires_at <= ^now,
-        where: not exists(from i in Intent, where: i.reservation_id == parent_as(:reservation).id)
-      )
-    )
-
+    Repo.delete_all(expired_unlinked_query(now))
     :ok
   end
 
   defp reclaim_expired_unlinked(user_id) do
     now = DateTime.utc_now(:second)
+    Repo.delete_all(from r in expired_unlinked_query(now), where: r.user_id == ^user_id)
+  end
 
-    Repo.delete_all(
-      from(r in Reservation,
-        as: :reservation,
-        where: r.user_id == ^user_id and r.expires_at <= ^now,
-        where: not exists(from i in Intent, where: i.reservation_id == parent_as(:reservation).id)
-      )
+  defp expired_unlinked_query(now) do
+    from(r in Reservation,
+      as: :reservation,
+      where: r.expires_at <= ^now,
+      where: not exists(from i in Intent, where: i.reservation_id == parent_as(:reservation).id),
+      where:
+        not exists(
+          from it in SigningItem,
+            where:
+              it.reservation_id == parent_as(:reservation).id and
+                it.status in ["pending", "executing"]
+        )
     )
+  end
+
+  @doc """
+  Renews every reservation linked by a pending or executing signing item two
+  hours ahead (DESIGN.md: Storage Reservations), called from the 60-second
+  signing-transition sweep.
+  """
+  def renew_signing_item_reservations do
+    {_count, _} =
+      Repo.update_all(
+        from(r in Reservation,
+          join: it in SigningItem,
+          on: it.reservation_id == r.id,
+          where: it.status in ["pending", "executing"]
+        ),
+        set: [expires_at: lease_expiry(), updated_at: DateTime.utc_now(:second)]
+      )
+
+    :ok
   end
 
   defp check_quota(stored, active, requested) do

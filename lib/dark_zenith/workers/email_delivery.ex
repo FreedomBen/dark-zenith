@@ -39,25 +39,17 @@ defmodule DarkZenith.Workers.EmailDelivery do
   @impl Oban.Worker
   def backoff(%Oban.Job{attempt: attempt}), do: RetryPolicy.backoff(attempt)
 
-  # Positive integer delta-seconds from a provider Retry-After when the
-  # Swoosh API-client error exposes response headers; malformed, zero, or
-  # negative values are ignored.
+  # Provider Retry-After (delta-seconds or future HTTP-date) when the
+  # Swoosh API-client error exposes response headers; malformed, zero,
+  # negative, past, or overflowed values are ignored (Background Retry
+  # Policy, via RetryPolicy.provider_delay/2).
   defp provider_delay({_status, %{headers: headers}}) when is_list(headers) do
     headers
     |> Enum.find_value(fn {name, value} ->
-      if String.downcase(to_string(name)) == "retry-after", do: value
+      if String.downcase(to_string(name)) == "retry-after", do: to_string(value)
     end)
-    |> parse_delay()
+    |> RetryPolicy.provider_delay()
   end
 
   defp provider_delay(_reason), do: nil
-
-  defp parse_delay(nil), do: nil
-
-  defp parse_delay(value) do
-    case Integer.parse(to_string(value)) do
-      {seconds, ""} when seconds > 0 -> seconds
-      _ -> nil
-    end
-  end
 end

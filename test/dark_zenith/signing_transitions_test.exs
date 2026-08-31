@@ -236,6 +236,74 @@ defmodule DarkZenith.SigningTransitionsTest do
     assert requeued.next_attempt_at
   end
 
+  test "the sweep renews reservations linked by pending and executing items", ctx do
+    repo = enable!(ctx)
+    [pending_item, other_item] = SigningTransitions.list_items(repo.signing_transition_id)
+
+    now = DateTime.utc_now(:second)
+    soon = DateTime.add(now, 5, :minute)
+
+    pending_reservation = link_reservation!(ctx, pending_item, soon)
+
+    {1, _} =
+      Repo.update_all(from(i in Item, where: i.id == ^other_item.id),
+        set: [
+          status: "executing",
+          lease_token: Ecto.UUID.generate(),
+          lease_expires_at: DateTime.add(now, 900, :second),
+          next_attempt_at: nil,
+          attempts: 1
+        ]
+      )
+
+    executing_reservation = link_reservation!(ctx, Repo.get!(Item, other_item.id), soon)
+
+    # An expired reservation nothing links is untouched by the renewal.
+    unlinked =
+      DarkZenith.UploadsFixtures.reservation_row_fixture(ctx.owner, repo, %{expires_at: soon})
+
+    assert :ok = SigningTransitions.sweep()
+
+    expected = DateTime.add(now, 2, :hour)
+
+    for id <- [pending_reservation.id, executing_reservation.id] do
+      renewed = Repo.get!(DarkZenith.Storage.Reservation, id)
+      assert_in_delta DateTime.to_unix(renewed.expires_at), DateTime.to_unix(expected), 5
+    end
+
+    assert Repo.get!(DarkZenith.Storage.Reservation, unlinked.id).expires_at == soon
+  end
+
+  test "the sweep rebuilds a lost item job for an enable transition", ctx do
+    repo = enable!(ctx)
+    [item | _] = SigningTransitions.list_items(repo.signing_transition_id)
+
+    # Simulate Oban job loss (pruning/discard): the durable item row remains
+    # pending and due but no job exists.
+    Repo.delete_all(from j in Oban.Job, where: j.worker == "DarkZenith.Workers.SigningItem")
+    refute_enqueued(worker: SigningItem)
+
+    assert :ok = SigningTransitions.sweep()
+
+    assert_enqueued(worker: SigningItem, args: %{item_id: item.id})
+  end
+
+  defp link_reservation!(ctx, item, expires_at) do
+    reservation =
+      DarkZenith.UploadsFixtures.reservation_row_fixture(ctx.owner, ctx.repo, %{
+        expires_at: expires_at,
+        package_id: item.package_id,
+        kind: "resign"
+      })
+
+    {1, _} =
+      Repo.update_all(from(i in Item, where: i.id == ^item.id),
+        set: [reservation_id: reservation.id]
+      )
+
+    reservation
+  end
+
   test "a claim skips when the transition was canceled", ctx do
     repo = enable!(ctx)
     transition = Repo.get!(Transition, repo.signing_transition_id)
