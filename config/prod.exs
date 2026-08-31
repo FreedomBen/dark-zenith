@@ -8,17 +8,12 @@ import Config
 config :dark_zenith, DarkZenithWeb.Endpoint,
   cache_static_manifest: "priv/static/cache_manifest.json"
 
-# Force using SSL in production. This also sets the "strict-security-transport" header,
-# known as HSTS. If you have a health check endpoint, you may want to exclude it below.
-# Note `:force_ssl` is required to be set at compile-time.
-config :dark_zenith, DarkZenithWeb.Endpoint,
-  force_ssl: [
-    rewrite_on: [:x_forwarded_proto],
-    exclude: [
-      # paths: ["/health"],
-      hosts: ["localhost", "127.0.0.1"]
-    ]
-  ]
+# TLS redirect + HSTS. The endpoint plugs Plug.SSL itself (after the
+# untrusted forwarded-header strip) when this compile-time flag is set;
+# PHX_SCHEME=http deployments exclude every request at runtime (DESIGN.md:
+# Security Considerations). The endpoint's :force_ssl option is deliberately
+# unused — Phoenix would plug it ahead of the header strip.
+config :dark_zenith, enforce_tls: true
 
 # Configure Swoosh API Client
 config :swoosh, api_client: Swoosh.ApiClient.Req
@@ -36,9 +31,3 @@ config :logger, level: :info
 # Deployment).
 config :dark_zenith, boot_checks_on_boot: true
 
-# TLS redirect + HSTS behind the trusted proxy; the endpoint strips
-# X-Forwarded-Proto from untrusted peers before this runs.
-config :dark_zenith, DarkZenithWeb.Endpoint,
-  force_ssl: [hsts: true, rewrite_on: [:x_forwarded_proto]]
-
-config :dark_zenith, secure_cookies: true

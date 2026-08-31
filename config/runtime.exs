@@ -318,13 +318,10 @@ if config_env() == :prod do
   # "priv/ssl/server.key". For all supported SSL configuration
   # options, see https://plug.hexdocs.pm/Plug.SSL.html#configure/1
   #
-  # We also recommend setting `force_ssl` in your config/prod.exs,
-  # ensuring no data is ever sent via http, always redirecting to https:
-  #
-  #     config :dark_zenith, DarkZenithWeb.Endpoint,
-  #       force_ssl: [hsts: true]
-  #
-  # Check `Plug.SSL` for all available options in `force_ssl`.
+  # The TLS redirect itself is handled by the endpoint's own Plug.SSL
+  # (see `enforce_tls` in config/prod.exs) rather than the endpoint's
+  # `force_ssl` option, so it runs after the untrusted forwarded-header
+  # strip and honors PHX_SCHEME=http deployments.
 
   # ## Configuring the mailer
   #

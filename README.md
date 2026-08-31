@@ -45,15 +45,23 @@ podman compose up -d --build
 
 | Service    | Where                                                                |
 | ---------- | -------------------------------------------------------------------- |
-| App        | http://localhost:4200, published on all interfaces (`admin@example.com` / `darkzenith-admin-dev`) |
-| MinIO S3   | http://localhost:9000 (`minioadmin` / `minioadmin`; console on 9001), 127.0.0.1 only |
+| App        | http://localhost:4200 (`admin@example.com` / `darkzenith-admin-dev`)     |
+| MinIO S3   | http://localhost:9000 (`minioadmin` / `minioadmin`; console on 9001)     |
 | PostgreSQL | 127.0.0.1:55433                                                      |
 
-The app port is the only one published beyond localhost, so the stack (with its
-well-known dev credentials) is reachable from your network while it runs. Note
-that package downloads redirect to presigned MinIO URLs on
-`http://localhost:9000`, so downloads only resolve from the machine running the
-stack.
+By default everything binds to `127.0.0.1`. To use the stack from other
+machines (browser, API, and `dnf` installs), set `PHX_HOST` to this machine's
+LAN IP address when starting it:
+
+```sh
+PHX_HOST=192.168.1.5 podman compose up -d --build
+```
+
+The app and MinIO S3 ports then bind to that address instead of localhost
+(browse via the LAN IP from this machine too), and generated URLs, presigned
+MinIO URLs, and the websocket origin all use it. Anyone on the network can
+reach the stack's fixed development credentials in this mode, so keep the
+default on untrusted networks.
 
 This stack is independent of the `dark-zenith-pg` container above (its own
 database on 55433, its own volumes) so it can run alongside `mix phx.server`.

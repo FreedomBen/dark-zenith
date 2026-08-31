@@ -1,15 +1,22 @@
 # Local development stack (`podman compose up -d --build`): the released app
 # plus PostgreSQL and MinIO, with MinIO standing in for Backblaze B2 so
 # everything works offline. All values below are development-only; nothing
-# here is a secret. PostgreSQL and MinIO are published on 127.0.0.1 only;
-# the app is published on all interfaces (0.0.0.0) so other machines can
-# reach it.
+# here is a secret.
+#
+# By default everything binds to 127.0.0.1 and the app is
+# http://localhost:4200. To use the stack from other machines, set PHX_HOST
+# to this machine's LAN IP address (e.g. `PHX_HOST=192.168.1.5 podman
+# compose up -d`): the app and MinIO S3 ports bind to that address instead
+# (localhost is then unbound — browse via the LAN IP from this machine too),
+# and generated URLs, presigned MinIO URLs, and the websocket origin all
+# use it. Anyone on the network can then reach the stack's fixed
+# development credentials, so keep the default on untrusted networks.
 #
 # The app shares MinIO's network namespace so that presigned object URLs
-# (http://localhost:9000/...) reach MinIO identically from inside the app,
-# from a browser, and from dnf on the host — SigV4 signs the URL host, so
-# every consumer must use the same one. The pair is published on the ports
-# declared under `minio`; the app itself is http://localhost:4200.
+# (http://<PHX_HOST>:9000/...) reach MinIO identically from inside the app,
+# from a browser, and from dnf — SigV4 signs the URL host, so every
+# consumer must use the same one. The pair is published on the ports
+# declared under `minio`.
 name: dark-zenith
 
 services:
@@ -39,9 +46,9 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
       MINIO_REGION: us-east-1
     ports:
-      - "127.0.0.1:9000:9000" # S3 API (B2_ENDPOINT)
+      - "${PHX_HOST:-127.0.0.1}:9000:9000" # S3 API (B2_ENDPOINT)
       - "127.0.0.1:9001:9001" # MinIO web console
-      - "4200:4200" # the app (shares this network namespace), on all interfaces
+      - "${PHX_HOST:-127.0.0.1}:4200:4200" # the app (shares this network namespace)
     volumes:
       - minio-data:/data
 
@@ -79,7 +86,7 @@ services:
       - /tmp/dark-zenith
     environment:
       PHX_SERVER: "true"
-      PHX_HOST: localhost
+      PHX_HOST: ${PHX_HOST:-localhost}
       PHX_SCHEME: http
       PHX_URL_PORT: "4200"
       PORT: "4200"
@@ -88,7 +95,7 @@ services:
       B2_KEY_ID: minioadmin
       B2_APPLICATION_KEY: minioadmin
       B2_BUCKET: dark-zenith
-      B2_ENDPOINT: http://localhost:9000
+      B2_ENDPOINT: http://${PHX_HOST:-localhost}:9000
       B2_REGION: us-east-1
       MAIL_ADAPTER: local
       MAIL_FROM_ADDRESS: dark-zenith@localhost

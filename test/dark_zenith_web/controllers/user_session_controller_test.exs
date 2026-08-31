@@ -18,6 +18,25 @@ defmodule DarkZenithWeb.UserSessionControllerTest do
       assert redirected_to(conn) == ~p"/"
     end
 
+    test "session cookie is not Secure over plain HTTP", %{conn: conn, user: user} do
+      conn =
+        post(conn, ~p"/users/log-in", %{
+          "user" => %{"email" => user.email, "password" => valid_user_password()}
+        })
+
+      assert %{} = cookie = conn.resp_cookies["_dark_zenith_key"]
+      refute cookie[:secure]
+    end
+
+    test "session cookie is Secure over HTTPS", %{conn: conn, user: user} do
+      conn =
+        post(conn, "https://localhost" <> ~p"/users/log-in", %{
+          "user" => %{"email" => user.email, "password" => valid_user_password()}
+        })
+
+      assert conn.resp_cookies["_dark_zenith_key"][:secure] == true
+    end
+
     test "logs the user in with remember me", %{conn: conn, user: user} do
       conn =
         post(conn, ~p"/users/log-in", %{

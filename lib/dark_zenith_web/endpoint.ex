@@ -4,20 +4,52 @@ defmodule DarkZenithWeb.Endpoint do
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
-  # Secure/http_only/SameSite=Lax session cookies (DESIGN.md: Security
-  # Considerations); :secure_cookies is set in prod configuration.
+  # http_only/SameSite=Lax session cookies (DESIGN.md: Security
+  # Considerations); Plug marks the cookie Secure per request whenever the
+  # effective scheme after trusted-proxy normalization is HTTPS.
   @session_options [
     store: :cookie,
     key: "_dark_zenith_key",
     signing_salt: "1FSpVC28",
     same_site: "Lax",
-    http_only: true,
-    secure: Application.compile_env(:dark_zenith, :secure_cookies, false)
+    http_only: true
   ]
 
   socket "/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [:peer_data, :x_headers, session: @session_options]],
     longpoll: [connect_info: [:peer_data, :x_headers, session: @session_options]]
+
+  # Forwarded scheme and client-IP headers are honored only from trusted
+  # proxies (DESIGN.md: Security Considerations); anything else is stripped
+  # here, ahead of the TLS redirect, so a direct HTTP client cannot spoof
+  # `X-Forwarded-Proto: https` to bypass it.
+  plug :normalize_forwarded_proto
+
+  # TLS redirect + HSTS (DESIGN.md: Security Considerations). Plugged
+  # explicitly rather than through the endpoint's :force_ssl option, which
+  # would run before the untrusted-header strip above. Compiled in only for
+  # prod builds; PHX_SCHEME=http deployments exclude every request at runtime.
+  @tls_redirect_opts [
+    rewrite_on: [:x_forwarded_proto],
+    hsts: true,
+    host: {__MODULE__, :host, []},
+    exclude: [
+      hosts: ["localhost", "127.0.0.1"],
+      conn: {__MODULE__, :plain_http_deployment?, []}
+    ]
+  ]
+
+  if Application.compile_env(:dark_zenith, :enforce_tls, false) do
+    plug Plug.SSL, @tls_redirect_opts
+  end
+
+  def tls_redirect_opts, do: @tls_redirect_opts
+
+  @doc false
+  def plain_http_deployment?(_conn) do
+    url = Keyword.get(Application.get_env(:dark_zenith, __MODULE__) || [], :url, [])
+    to_string(Keyword.get(url, :scheme) || "https") == "http"
+  end
 
   # Serve at "/" the static files from "priv/static" directory.
   #
@@ -56,10 +88,6 @@ defmodule DarkZenithWeb.Endpoint do
     json_decoder: Phoenix.json_library()
 
   plug Plug.MethodOverride
-  # Forwarded scheme headers are honored only from trusted proxies
-  # (DESIGN.md: Security Considerations); anything else is stripped before
-  # force_ssl sees it, so a direct HTTP client cannot spoof HTTPS.
-  plug :normalize_forwarded_proto
   # Plug.Head rewrites HEAD to GET for routing; repository-serving download
   # responses need the original method to sign a method-specific B2 URL.
   plug :save_original_method

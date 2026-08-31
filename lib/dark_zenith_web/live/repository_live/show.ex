@@ -65,7 +65,7 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
         <section>
           <h2 class="text-lg font-semibold mb-2">Packages</h2>
 
-          <form phx-change="search_packages" class="mb-3 flex gap-2">
+          <form id="package-search-form" phx-change="search_packages" class="mb-3 flex gap-2">
             <input
               type="text"
               name="q"
