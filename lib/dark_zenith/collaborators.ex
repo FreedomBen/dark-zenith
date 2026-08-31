@@ -89,7 +89,8 @@ defmodule DarkZenith.Collaborators do
   end
 
   # Registered address: create or idempotently return the collaborator row,
-  # re-queuing only a failed direct-link delivery.
+  # re-queuing only a failed direct-link delivery. Returned rows carry the
+  # user preloaded for rendering.
   defp add_registered(actor, repository, user) do
     case Repo.get_by(Collaborator, repository_id: repository.id, user_id: user.id) do
       nil ->
@@ -110,7 +111,7 @@ defmodule DarkZenith.Collaborators do
             metadata: %{"slug" => repository.slug, "email" => user.email}
           )
 
-          {:ok, {:created, collaborator}}
+          {:ok, {:created, %{collaborator | user: user}}}
         end
 
       %Collaborator{notification_status: "failed"} = existing ->
@@ -124,10 +125,10 @@ defmodule DarkZenith.Collaborators do
           |> Repo.update!()
 
         enqueue_collaborator_mail(requeued)
-        {:ok, {:existing, requeued}}
+        {:ok, {:existing, %{requeued | user: user}}}
 
       %Collaborator{} = existing ->
-        {:ok, {:existing, existing}}
+        {:ok, {:existing, %{existing | user: user}}}
     end
   end
 

@@ -83,6 +83,16 @@ defmodule DarkZenithWeb.Router do
     patch "/repos/:slug", RepoController, :update
     delete "/repos/:slug", RepoController, :delete
 
+    get "/repos/:slug/collaborators", CollaboratorController, :index
+    post "/repos/:slug/collaborators", CollaboratorController, :create
+    # The invitations route precedes the :id route so "invitations" never
+    # matches as a collaborator id.
+    delete "/repos/:slug/collaborators/invitations/:id",
+           CollaboratorController,
+           :delete_invitation
+
+    delete "/repos/:slug/collaborators/:id", CollaboratorController, :delete
+
     get "/api_keys", ApiKeyController, :index
     post "/api_keys", ApiKeyController, :create
     delete "/api_keys/:id", ApiKeyController, :delete

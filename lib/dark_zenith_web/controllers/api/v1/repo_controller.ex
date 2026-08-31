@@ -8,7 +8,7 @@ defmodule DarkZenithWeb.Api.V1.RepoController do
   action_fallback DarkZenithWeb.Api.FallbackController
 
   alias DarkZenith.Repositories
-  alias DarkZenithWeb.Api.{Pagination, Strict}
+  alias DarkZenithWeb.Api.{Pagination, RepoAccess, Strict}
   alias DarkZenithWeb.Api.V1.RepoJSON
 
   @create_fields ~w(name slug description is_public gpg_key_fingerprint sign_rpms)
@@ -124,71 +124,6 @@ defmodule DarkZenithWeb.Api.V1.RepoController do
     end
   end
 
-  # Read access with the 404 masking rule (DESIGN.md: API Contract Details).
-  defp fetch_readable(conn, slug) do
-    repository = Repositories.get_repository_by_slug(slug)
-    principal = conn.assigns.api_principal
-
-    cond do
-      repository && repository.is_public ->
-        {:ok, repository}
-
-      repository && readable_private?(principal, repository) ->
-        {:ok, repository}
-
-      true ->
-        {:error, :not_found}
-    end
-  end
-
-  defp readable_private?({:authenticated, user, kind}, repository) do
-    scope_ok? =
-      case kind do
-        {:api_key, key} -> "repo:read" in key.scopes
-        _ -> true
-      end
-
-    scope_ok? and DarkZenith.Authorization.can_read?(user, repository)
-  end
-
-  defp readable_private?(_principal, _repository), do: false
-
-  # Mutation access: owners and admins mutate with the matching API-key scope
-  # (no repo:read requirement); everyone else gets 403 when they can see the
-  # repository and 404 when they cannot.
-  defp fetch_manageable(conn, slug, scope) do
-    repository = Repositories.get_repository_by_slug(slug)
-    principal = conn.assigns.api_principal
-
-    case principal do
-      {:authenticated, user, kind} ->
-        cond do
-          is_nil(repository) ->
-            {:error, :not_found}
-
-          user.is_admin or user.id == repository.user_id ->
-            case kind do
-              {:api_key, key} ->
-                if scope in key.scopes, do: {:ok, user, repository}, else: {:error, :forbidden}
-
-              _ ->
-                {:ok, user, repository}
-            end
-
-          repository.is_public or readable_private?(principal, repository) ->
-            {:error, :forbidden}
-
-          true ->
-            {:error, :not_found}
-        end
-
-      :anonymous ->
-        if repository && repository.is_public,
-          do: {:error, :unauthenticated},
-          else: {:error, :not_found}
-
-      _invalid ->
-        {:error, :not_found}
-    end
-  end
+  defdelegate fetch_readable(conn, slug), to: RepoAccess
+  defdelegate fetch_manageable(conn, slug, scope), to: RepoAccess
 end
