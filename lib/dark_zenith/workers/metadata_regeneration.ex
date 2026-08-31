@@ -214,8 +214,17 @@ defmodule DarkZenith.Workers.MetadataRegeneration do
       owner = Repo.get!(User, repository.user_id)
 
       case Signing.sign_repomd(owner, repomd_xml) do
-        {:ok, armored} -> {:ok, repomd_xml, armored}
-        {:error, :unavailable} -> {:error, :signing_unavailable}
+        {:ok, armored} ->
+          {:ok, repomd_xml, armored}
+
+        {:error, :unavailable} ->
+          {:error, :signing_unavailable}
+
+        {:error, :expired} ->
+          # Non-retryable: the cache stays at its previous revision and the
+          # newer revision keeps returning metadata_not_ready until the key
+          # is replaced or removed.
+          {:cancel, :conflict_gpg_key_expired}
       end
     else
       {:ok, repomd_xml, nil}

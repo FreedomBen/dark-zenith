@@ -46,6 +46,39 @@ defmodule DarkZenith.Accounts.UserNotifier do
     """)
   end
 
+  @doc "Security notification for an uploaded GPG key."
+  def deliver_gpg_key_uploaded(user, fingerprint) do
+    deliver(user.email, "A GPG signing key was uploaded", """
+
+    ==============================
+
+    Hi #{user.email},
+
+    A GPG signing key with fingerprint #{fingerprint} was uploaded to your
+    Dark Zenith account.
+
+    If you did not do this, remove the key and change your password.
+
+    ==============================
+    """)
+  end
+
+  @doc "Security notification for a removed GPG key."
+  def deliver_gpg_key_removed(user) do
+    deliver(user.email, "Your GPG signing key was removed", """
+
+    ==============================
+
+    Hi #{user.email},
+
+    The GPG signing key was removed from your Dark Zenith account.
+
+    If you did not do this, change your password immediately.
+
+    ==============================
+    """)
+  end
+
   @doc "Security notification for a newly created API key."
   def deliver_api_key_created(user, key_name) do
     deliver(user.email, "A new API key was created", """

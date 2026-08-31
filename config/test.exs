@@ -73,3 +73,8 @@ config :dark_zenith, :b2,
   endpoint: "https://s3.test.invalid",
   region: "test-region",
   req_options: [plug: {Req.Test, DarkZenith.B2Stub}, retry: false]
+
+# rpmsign is not always installed in dev/test machines; the per-key RPM
+# fixture-compatibility check is stubbed and exercised for real only where
+# rpm-sign exists (tagged :rpmsign integration test).
+config :dark_zenith, gpg_rpm_compat_impl: DarkZenith.GpgRpmCompatStub

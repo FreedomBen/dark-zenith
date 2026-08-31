@@ -449,6 +449,130 @@ defmodule DarkZenith.Accounts do
     Repo.delete_all(from(t in SessionToken, where: t.expires_at <= ^now))
   end
 
+  ## GPG key management (DESIGN.md: GPG Signing)
+
+  @doc "The user's GPG key info map, or nil when no key is stored."
+  def get_gpg_key_info(%User{} = user) do
+    user = Repo.get!(User, user.id)
+
+    if user.gpg_key_fingerprint do
+      %{
+        fingerprint: user.gpg_key_fingerprint,
+        signing_fingerprint: user.gpg_signing_fingerprint,
+        expires_at: user.gpg_key_expires_at,
+        public_key: user.gpg_key_public,
+        previous_public_key: user.previous_gpg_key_public,
+        # The transition linkage arrives with the replacement machinery; a
+        # retained previous public key marks a replacement mid-flight.
+        replacement_in_progress: not is_nil(user.previous_gpg_key_public),
+        updated_at: user.updated_at
+      }
+    end
+  end
+
+  @doc """
+  Uploads a user's first GPG key pair after full validation (DESIGN.md:
+  GPG Signing). Replacing an existing key requires the durable replacement
+  transition and is reported as `{:error, :replacement_not_implemented}`
+  until that machinery lands.
+  """
+  def upsert_gpg_key(%User{} = user, public_armored, private_armored)
+      when is_binary(public_armored) and is_binary(private_armored) do
+    with {:ok, info} <- DarkZenith.Gpg.validate_key_pair(public_armored, private_armored) do
+      envelope = DarkZenith.Crypto.GpgKeyEnvelope.encrypt(private_armored, user.id)
+
+      {:ok, result} =
+        Repo.transact(fn ->
+          lock_user_row!(user.id)
+          current = Repo.get!(User, user.id)
+
+          if current.gpg_key_fingerprint do
+            {:ok, {:error, :replacement_not_implemented}}
+          else
+            {1, _} =
+              Repo.update_all(
+                from(u in User, where: u.id == ^user.id),
+                set: [
+                  gpg_key_private: envelope,
+                  gpg_key_public: public_armored,
+                  gpg_key_fingerprint: info.primary_fingerprint,
+                  gpg_signing_fingerprint: info.signing_fingerprint,
+                  gpg_key_expires_at: info.expires_at && DateTime.truncate(info.expires_at, :second),
+                  gpg_key_expiry_notified_days: [],
+                  updated_at: DateTime.utc_now(:second)
+                ]
+              )
+
+            DarkZenith.Audit.record!("gpg_key.upload",
+              actor: user,
+              target: {:gpg_key, nil},
+              metadata: %{"fingerprint" => info.primary_fingerprint}
+            )
+
+            UserNotifier.deliver_gpg_key_uploaded(user, info.primary_fingerprint)
+            {:ok, {:ok, Repo.get!(User, user.id)}}
+          end
+        end)
+
+      result
+    end
+  end
+
+  @doc """
+  Removes the user's GPG key when no owned repository uses it; all key
+  fields clear together.
+  """
+  def remove_gpg_key(%User{} = user) do
+    {:ok, result} =
+      Repo.transact(fn ->
+        lock_user_row!(user.id)
+        current = Repo.get!(User, user.id)
+
+        in_use? =
+          Repo.exists?(
+            from r in DarkZenith.Repositories.Repository,
+              where:
+                r.user_id == ^user.id and
+                  (not is_nil(r.gpg_key_fingerprint) or r.sign_rpms)
+          )
+
+        cond do
+          is_nil(current.gpg_key_fingerprint) ->
+            {:ok, {:error, :not_found}}
+
+          in_use? ->
+            {:ok, {:error, :in_use}}
+
+          true ->
+            {1, _} =
+              Repo.update_all(
+                from(u in User, where: u.id == ^user.id),
+                set: [
+                  gpg_key_private: nil,
+                  gpg_key_public: nil,
+                  gpg_key_fingerprint: nil,
+                  gpg_signing_fingerprint: nil,
+                  gpg_key_expires_at: nil,
+                  gpg_key_expiry_notified_days: [],
+                  previous_gpg_key_public: nil,
+                  updated_at: DateTime.utc_now(:second)
+                ]
+              )
+
+            DarkZenith.Audit.record!("gpg_key.remove",
+              actor: user,
+              target: {:gpg_key, nil},
+              metadata: %{"fingerprint" => current.gpg_key_fingerprint}
+            )
+
+            UserNotifier.deliver_gpg_key_removed(user)
+            {:ok, :ok}
+        end
+      end)
+
+    result
+  end
+
   ## Admin flag management
 
   @doc """

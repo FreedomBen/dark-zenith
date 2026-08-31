@@ -156,10 +156,12 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 11 — GPG signing (M3)
 
-- [ ] Key upload validation: armored V4 pair, single identity, signing-key selection,
+- [x] Key upload validation: armored V4 pair, single identity, signing-key selection,
       algorithm allowlist, ephemeral GNUPGHOME, rpmsign/rpmkeys fixture tests, expiry floor
-      (GPG Signing)
-- [ ] Metadata signing in regeneration; `RPM-GPG-KEY` and `repomd.xml.asc` endpoints
+      (GPG Signing) — real-gpg tests; the rpmsign fixture check is stubbed where rpm-sign is
+      absent and exercised via the tagged :rpmsign integration test
+- [x] Metadata signing in regeneration; `RPM-GPG-KEY` and `repomd.xml.asc` endpoints
+      (Signing.Gpg default impl; expired keys fail closed with conflict_gpg_key_expired)
 - [ ] RPM signing in upload pipeline (addsign/resign, --rpmv4 for v6, expected-key verify)
 - [ ] Signing transitions + items + repository snapshots: enable_rpm_signing,
       replace_gpg_key, clear_metadata_signing, delete_signed_packages (Signing Transitions)

@@ -111,6 +111,10 @@ defmodule DarkZenithWeb.Router do
     get "/api_keys", ApiKeyController, :index
     post "/api_keys", ApiKeyController, :create
     delete "/api_keys/:id", ApiKeyController, :delete
+
+    get "/gpg_key", GpgKeyController, :show
+    put "/gpg_key", GpgKeyController, :update
+    delete "/gpg_key", GpgKeyController, :delete
   end
 
   # Other scopes may use custom stacks.

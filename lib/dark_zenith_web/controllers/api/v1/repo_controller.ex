@@ -48,6 +48,9 @@ defmodule DarkZenithWeb.Api.V1.RepoController do
         {:error, :signing_unavailable} ->
           {:error, :service_unavailable, "signing_unavailable", 30}
 
+        {:error, :gpg_key_expired} ->
+          {:error, :conflict, "conflict_gpg_key_expired"}
+
         {:error, changeset} ->
           {:error, changeset}
       end

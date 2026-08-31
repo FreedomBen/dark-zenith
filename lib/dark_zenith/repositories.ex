@@ -182,6 +182,7 @@ defmodule DarkZenith.Repositories do
         case Signing.sign_repomd(owner, generation.repomd_xml) do
           {:ok, armored} -> {:ok, generation, armored}
           {:error, :unavailable} -> {:error, :signing_unavailable}
+          {:error, :expired} -> {:error, :gpg_key_expired}
         end
     end
   end
