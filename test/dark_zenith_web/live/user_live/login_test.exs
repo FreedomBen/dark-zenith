@@ -13,6 +13,14 @@ defmodule DarkZenithWeb.UserLive.LoginTest do
       assert html =~ "Forgot your password?"
       assert html =~ "Resend confirmation email"
     end
+
+    test "does not render the Phoenix scaffold navbar", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/users/log-in")
+
+      refute html =~ "phoenixframework.org"
+      refute html =~ "Get Started"
+      refute html =~ "logo.svg"
+    end
   end
 
   describe "user login - password" do

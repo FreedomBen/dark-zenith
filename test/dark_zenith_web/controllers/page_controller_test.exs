@@ -9,4 +9,11 @@ defmodule DarkZenithWeb.PageControllerTest do
     assert html =~ "RPM package repository"
     assert html =~ ~p"/repos"
   end
+
+  test "GET / renders the theme toggle in the top menu", %{conn: conn} do
+    conn = get(conn, ~p"/")
+    html = html_response(conn, 200)
+
+    assert html =~ "data-phx-theme"
+  end
 end
