@@ -38,11 +38,20 @@ defmodule DarkZenith.Accounts.Bootstrap do
       acquire_admin_invariant_lock!()
 
       if Repo.aggregate(User, :count) == 0 do
-        %User{}
-        |> User.registration_changeset(%{email: email, password: password})
-        |> Ecto.Changeset.put_change(:is_admin, true)
-        |> Ecto.Changeset.put_change(:confirmed_at, DateTime.utc_now(:second))
-        |> Repo.insert()
+        changeset =
+          %User{}
+          |> User.registration_changeset(%{email: email, password: password})
+          |> Ecto.Changeset.put_change(:is_admin, true)
+          |> Ecto.Changeset.put_change(:confirmed_at, DateTime.utc_now(:second))
+
+        # Creating a user at an email holds the normalized-email lock
+        # (DESIGN.md: User Lifecycle); with zero users no invitations can
+        # exist, so there is nothing to convert.
+        if changeset.valid? do
+          DarkZenith.Accounts.EmailLock.acquire!(Ecto.Changeset.get_field(changeset, :email))
+        end
+
+        Repo.insert(changeset)
       else
         {:error, :users_exist}
       end

@@ -6,7 +6,7 @@ defmodule DarkZenith.Accounts do
   import Ecto.Query, warn: false
   alias DarkZenith.Repo
 
-  alias DarkZenith.Accounts.{ApiKey, SessionToken, User, UserToken, UserNotifier}
+  alias DarkZenith.Accounts.{ApiKey, EmailLock, SessionToken, User, UserToken, UserNotifier}
   alias DarkZenith.Crypto
 
   @doc """
@@ -86,9 +86,30 @@ defmodule DarkZenith.Accounts do
 
   """
   def register_user(attrs) do
-    %User{}
-    |> User.registration_changeset(attrs)
-    |> Repo.insert()
+    changeset = User.registration_changeset(%User{}, attrs)
+
+    if changeset.valid? do
+      Repo.transact(fn ->
+        # The normalized-email advisory lock makes the user-versus-invitation
+        # decision atomic with collaborator addition (DESIGN.md: User
+        # Lifecycle); pending invitations convert in the same transaction.
+        EmailLock.acquire!(Ecto.Changeset.get_field(changeset, :email))
+
+        with {:ok, user} <- Repo.insert(changeset) do
+          :ok = DarkZenith.Collaborators.convert_invitations_for_user(user)
+
+          DarkZenith.Audit.record!("auth.register",
+            actor: user,
+            target: {:user, user.id},
+            metadata: %{"email" => user.email}
+          )
+
+          {:ok, user}
+        end
+      end)
+    else
+      {:error, %{changeset | action: :insert}}
+    end
   end
 
   @doc """
@@ -226,13 +247,25 @@ defmodule DarkZenith.Accounts do
   """
   def update_user_email(user, token) do
     context = "change:#{user.email}"
+    previous_email = user.email
 
     Repo.transact(fn ->
       with {:ok, query} <- UserToken.verify_change_email_token_query(token, context),
            %UserToken{sent_to: email} <- Repo.one(query),
+           # Same advisory lock as registration: conversion of pending
+           # invitations to the new address happens atomically here
+           # (DESIGN.md: User Lifecycle).
+           :ok <- EmailLock.acquire!(email),
            {:ok, user} <- Repo.update(User.email_changeset(user, %{email: email})),
            {_count, _result} <-
-             Repo.delete_all(from(UserToken, where: [user_id: ^user.id, context: ^context])) do
+             Repo.delete_all(from(UserToken, where: [user_id: ^user.id, context: ^context])),
+           :ok <- DarkZenith.Collaborators.convert_invitations_for_user(user) do
+        DarkZenith.Audit.record!("auth.email_change",
+          actor: user,
+          target: {:user, user.id},
+          metadata: %{"previous_email" => previous_email, "email" => user.email}
+        )
+
         {:ok, user}
       else
         _ -> {:error, :transaction_aborted}

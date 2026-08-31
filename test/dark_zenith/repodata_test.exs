@@ -2,7 +2,7 @@ defmodule DarkZenith.RepodataTest do
   use ExUnit.Case, async: true
 
   alias DarkZenith.Repodata
-  alias DarkZenith.Repodata.{Filelists, Gzip, Other, Primary, Repomd}
+  alias DarkZenith.Repodata.{Filelists, Gzip, Other, Primary}
 
   describe "empty documents" do
     test "primary.xml for zero packages is the canonical empty document" do

@@ -172,7 +172,7 @@ defmodule DarkZenithWeb.Api.V1.RepoControllerTest do
       assert data["description"] == "hello"
     end
 
-    test "masks private repositories and unknown slugs identically", %{conn: conn, owner: owner} do
+    test "masks private repositories and unknown slugs identically", %{conn: _conn, owner: owner} do
       repo = repository_fixture(owner, %{is_public: false})
       stranger = user_fixture()
 

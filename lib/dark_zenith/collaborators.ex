@@ -226,6 +226,86 @@ defmodule DarkZenith.Collaborators do
     requeued
   end
 
+  ## Conversion
+
+  @doc """
+  Converts pending invitations addressed to the user's normalized email into
+  collaborator rows and deletes the invitation rows (DESIGN.md: Collaborator
+  Invitations).
+
+  Must run inside the account-creation or email-change-confirmation
+  transaction while the caller holds the normalized-email advisory lock.
+  Expired invitations are skipped and deleted; an invitation on a repository
+  the user owns, or where the user already holds a collaborator row, is
+  deleted without further effect. A `sent` invitation carries its delivery
+  state to the collaborator; any other state queues a fresh direct-link
+  generation. Conversion is never quota-checked.
+  """
+  def convert_invitations_for_user(%User{} = user) do
+    now = DateTime.utc_now(:second)
+
+    invitations =
+      Repo.all(from i in Invitation, where: i.email == ^user.email, preload: [:repository])
+
+    Enum.each(invitations, fn invitation ->
+      outcome = convert_one(user, invitation, now)
+      Repo.delete!(invitation)
+
+      unless outcome == :expired do
+        Audit.record!("invitation.convert",
+          actor: user,
+          target: {:invitation, invitation.id},
+          metadata: %{
+            "slug" => invitation.repository.slug,
+            "email" => invitation.email,
+            "outcome" => to_string(outcome)
+          }
+        )
+      end
+    end)
+
+    :ok
+  end
+
+  defp convert_one(user, invitation, now) do
+    cond do
+      Invitation.expired?(invitation, now) ->
+        :expired
+
+      invitation.repository.user_id == user.id ->
+        :owner
+
+      Repo.get_by(Collaborator,
+        repository_id: invitation.repository_id,
+        user_id: user.id
+      ) ->
+        :already_collaborator
+
+      invitation.notification_status == "sent" ->
+        Repo.insert!(%Collaborator{
+          repository_id: invitation.repository_id,
+          user_id: user.id,
+          notification_status: "sent",
+          notification_generation: invitation.notification_generation,
+          notification_sent_at: invitation.notification_sent_at
+        })
+
+        :converted
+
+      true ->
+        collaborator =
+          Repo.insert!(%Collaborator{
+            repository_id: invitation.repository_id,
+            user_id: user.id,
+            notification_status: "queued",
+            notification_generation: invitation.notification_generation + 1
+          })
+
+        enqueue_collaborator_mail(collaborator)
+        :converted
+    end
+  end
+
   ## Removal and cancellation
 
   @doc """

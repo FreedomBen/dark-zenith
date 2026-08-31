@@ -108,6 +108,23 @@ defmodule DarkZenith.Collaborators.QuotaTest do
     end
   end
 
+  test "conversion is exempt because it deletes the invitation it replaces", ctx do
+    email = "convertee#{System.unique_integer([:positive])}@example.com"
+    {:ok, :created, _} = Collaborators.add_collaborator(ctx.owner, ctx.repo, email)
+    {:ok, :created, _} = Collaborators.add_collaborator(ctx.owner, ctx.repo, unique_invited_email())
+
+    assert {:error, :quota_exceeded} =
+             Collaborators.add_collaborator(ctx.owner, ctx.repo, unique_invited_email())
+
+    {:ok, user} =
+      DarkZenith.Accounts.register_user(%{email: email, password: valid_user_password()})
+
+    assert DarkZenith.Repo.get_by(DarkZenith.Collaborators.Collaborator,
+             repository_id: ctx.repo.id,
+             user_id: user.id
+           )
+  end
+
   test "simultaneous adds at the last slot serialize; only one crosses", ctx do
     {:ok, :created, _} =
       Collaborators.add_collaborator(ctx.owner, ctx.repo, user_fixture().email)
