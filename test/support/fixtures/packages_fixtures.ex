@@ -72,6 +72,22 @@ defmodule DarkZenith.PackagesFixtures do
         inc: [metadata_revision: 1]
       )
 
+    # Owner storage accounting, as the upload transactions would maintain it.
+    stored =
+      Repo.one(
+        from p in Packages.Package,
+          join: r in DarkZenith.Repositories.Repository,
+          on: r.id == p.repository_id,
+          where: r.user_id == ^repository.user_id,
+          select: type(coalesce(sum(p.size_package), 0), :integer)
+      )
+
+    {1, _} =
+      Repo.update_all(
+        from(u in DarkZenith.Accounts.User, where: u.id == ^repository.user_id),
+        set: [storage_bytes: stored]
+      )
+
     :ok
   end
 end

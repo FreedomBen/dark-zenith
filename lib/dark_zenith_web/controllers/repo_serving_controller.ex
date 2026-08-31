@@ -44,6 +44,54 @@ defmodule DarkZenithWeb.RepoServingController do
     end)
   end
 
+  @download_filename ~r/^[A-Za-z0-9._+~-]+\.rpm$/
+
+  # RPM download: 302 to a signed B2 URL for the exact stored version
+  # (DESIGN.md: RPM File Downloads). The filename segment is cosmetic but
+  # must match the documented pattern; HEAD gets a method-specific
+  # presigned HeadObject URL because the method is part of the signature.
+  def download(conn, %{"slug" => slug, "id" => id, "filename" => filename}) do
+    with_authorized_repository(conn, slug, fn conn, repository ->
+      cond do
+        not Regex.match?(@download_filename, filename) ->
+          send_plain_error(conn, 400, "invalid_request")
+
+        package = DarkZenith.Packages.get_package(repository, id) ->
+          redirect_to_signed_url(conn, package)
+
+        true ->
+          send_plain_error(conn, 404, "not_found")
+      end
+    end)
+  end
+
+  defp redirect_to_signed_url(conn, package) do
+    config = DarkZenith.B2.config!()
+    ttl = Application.get_env(:dark_zenith, :b2_signed_url_ttl, 1800)
+
+    url =
+      case conn.private[:dz_original_method] || conn.method do
+        "HEAD" ->
+          DarkZenith.B2.signed_head_url(config, package.storage_path, package.storage_version_id,
+            ttl: ttl
+          )
+
+        _ ->
+          DarkZenith.B2.signed_get_url(config, package.storage_path, package.storage_version_id,
+            ttl: ttl
+          )
+      end
+
+    # Signed URLs are bearer capabilities: never cacheable.
+    conn
+    |> put_resp_header("cache-control", "private, no-store")
+    |> put_resp_header("location", url)
+    |> send_resp(302, "")
+  rescue
+    # B2 not configured or URL generation failed for an infrastructure reason.
+    _ -> send_plain_error(conn, 503, "storage_unavailable")
+  end
+
   def repo_file(conn, %{"slug" => slug}) do
     with_authorized_repository(conn, slug, fn conn, repository ->
       body = render_repo_file(repository)

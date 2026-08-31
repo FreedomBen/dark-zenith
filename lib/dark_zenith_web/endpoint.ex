@@ -52,7 +52,14 @@ defmodule DarkZenithWeb.Endpoint do
     json_decoder: Phoenix.json_library()
 
   plug Plug.MethodOverride
+  # Plug.Head rewrites HEAD to GET for routing; repository-serving download
+  # responses need the original method to sign a method-specific B2 URL.
+  plug :save_original_method
   plug Plug.Head
+
+  defp save_original_method(conn, _opts) do
+    Plug.Conn.put_private(conn, :dz_original_method, conn.method)
+  end
   plug Plug.Session, @session_options
   plug DarkZenithWeb.Router
 end

@@ -69,6 +69,7 @@ defmodule DarkZenithWeb.Router do
     get "/repodata/:filename", RepoServingController, :repodata
     get "/RPM-GPG-KEY", RepoServingController, :gpg_key
     get "/dark-zenith.repo", RepoServingController, :repo_file
+    get "/packages/:id/:filename", RepoServingController, :download
   end
 
   scope "/api/v1", DarkZenithWeb.Api.V1 do
@@ -82,6 +83,17 @@ defmodule DarkZenithWeb.Router do
     get "/repos/:slug", RepoController, :show
     patch "/repos/:slug", RepoController, :update
     delete "/repos/:slug", RepoController, :delete
+
+    get "/repos/:slug/packages", PackageController, :index
+    get "/repos/:slug/packages/:id", PackageController, :show
+    get "/repos/:slug/packages/:id/:collection", PackageController, :subresource
+    delete "/repos/:slug/packages/:id", PackageController, :delete
+
+    post "/repos/:slug/package-uploads", PackageUploadController, :create
+    get "/repos/:slug/package-uploads/:id", PackageUploadController, :show
+    post "/repos/:slug/package-uploads/:id/refresh", PackageUploadController, :refresh
+    post "/repos/:slug/package-uploads/:id/complete", PackageUploadController, :complete
+    delete "/repos/:slug/package-uploads/:id", PackageUploadController, :delete
 
     get "/repos/:slug/collaborators", CollaboratorController, :index
     post "/repos/:slug/collaborators", CollaboratorController, :create

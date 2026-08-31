@@ -62,6 +62,27 @@ defmodule DarkZenithWeb.Api.Strict do
     end
   end
 
+  @doc """
+  Accepts an absent body or an empty JSON object; any body field is
+  rejected. For POST endpoints that document no body.
+  """
+  def validate_empty_body(conn) do
+    case conn.body_params do
+      params when params == %{} ->
+        :ok
+
+      %{"_json" => _} ->
+        {:error, :invalid_request}
+
+      params when is_map(params) ->
+        unknown = params |> Map.keys() |> List.first()
+        {:error, :validation_failed, %{unknown => ["is not a supported field"]}}
+
+      _other ->
+        {:error, :invalid_request}
+    end
+  end
+
   # Decodes the raw query string, rejecting malformed percent encoding and
   # bytes that are not valid UTF-8 after decoding.
   defp decode_query_pairs(""), do: {:ok, []}

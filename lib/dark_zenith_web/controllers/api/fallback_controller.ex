@@ -33,6 +33,10 @@ defmodule DarkZenithWeb.Api.FallbackController do
     Errors.send_error(conn, 422, "validation_failed")
   end
 
+  def call(conn, {:error, :payload_too_large}) do
+    Errors.send_error(conn, 413, "payload_too_large")
+  end
+
   def call(conn, {:error, :validation_failed, details}) do
     Errors.send_error(conn, 422, "validation_failed", details: details)
   end
