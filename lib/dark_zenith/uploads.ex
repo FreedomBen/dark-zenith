@@ -266,26 +266,39 @@ defmodule DarkZenith.Uploads do
 
   ## Cancellation
 
-  @doc "Cancels an unfinished intent, releasing its reservation and staging."
+  @doc """
+  Cancels an unfinished intent, releasing its reservation and staging.
+  Repeating cancellation, or cancelling an already failed/expired intent,
+  is an idempotent success; a succeeded intent conflicts (DESIGN.md:
+  `DELETE /api/v1/repos/:slug/package-uploads/:id`).
+  """
   def cancel_intent(%User{} = actor, %Intent{} = intent) do
     with :ok <- authorize_intent(actor, intent) do
       {:ok, result} =
         Repo.transact(fn ->
           current = lock_intent!(intent.id)
 
-          if current &&
-               current.status in ["awaiting_upload", "queued", "processing", "preview_ready"] do
-            canceled = terminalize!(current, "canceled")
+          cond do
+            is_nil(current) ->
+              {:ok, {:error, :not_found}}
 
-            Audit.record!("package.upload_intent_cancel",
-              actor: actor,
-              target: {:upload_intent, current.id},
-              metadata: %{}
-            )
+            current.status in ["awaiting_upload", "queued", "processing", "preview_ready"] ->
+              canceled = terminalize!(current, "canceled")
 
-            {:ok, {:ok, canceled}}
-          else
-            {:ok, {:error, :upload_state}}
+              Audit.record!("package.upload_intent_cancel",
+                actor: actor,
+                target: {:upload_intent, current.id},
+                metadata: %{}
+              )
+
+              {:ok, {:ok, canceled}}
+
+            current.status == "succeeded" ->
+              {:ok, {:error, :upload_state}}
+
+            true ->
+              # canceled/failed/expired: already terminal, nothing to change.
+              {:ok, {:ok, current}}
           end
         end)
 
@@ -589,9 +602,17 @@ defmodule DarkZenith.Uploads do
 
   defp validate_size(_size), do: {:error, :invalid_size}
 
+# An opaque non-empty string of at most 1024 bytes with no (ASCII) control
+  # characters (DESIGN.md: completion endpoint).
   defp validate_version_id(version_id)
-       when is_binary(version_id) and byte_size(version_id) in 1..1024,
-       do: :ok
+       when is_binary(version_id) and byte_size(version_id) in 1..1024 do
+    control? =
+      version_id
+      |> :binary.bin_to_list()
+      |> Enum.any?(&(&1 < 0x20 or &1 == 0x7F))
+
+    if control?, do: {:error, :validation_failed}, else: :ok
+  end
 
   defp validate_version_id(_version_id), do: {:error, :validation_failed}
 

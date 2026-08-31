@@ -219,6 +219,16 @@ defmodule DarkZenith.UploadsTest do
                Uploads.complete_intent(ctx.owner, intent, 1, "4_zmissing")
     end
 
+    test "a version_id with control characters is rejected without B2 contact",
+         %{intent: intent} = ctx do
+      for bad <- ["4_z\nv", "4_z\tv", "\x00", "4_z\x7Fv"] do
+        assert {:error, :validation_failed} =
+                 Uploads.complete_intent(ctx.owner, intent, 1, bad)
+      end
+
+      assert reload(intent).status == "awaiting_upload"
+    end
+
     test "an overdue intent is atomically expired instead", %{intent: intent} = ctx do
       past = DateTime.add(DateTime.utc_now(:second), -1, :minute)
       Repo.update_all(from(i in Intent, where: i.id == ^intent.id), set: [expires_at: past])
@@ -244,8 +254,47 @@ defmodule DarkZenith.UploadsTest do
       refute Repo.get(Reservation, reservation_id)
       assert_enqueued(worker: StagingCleanup, args: %{staging_path: intent.staging_path})
 
+      # Repeating cancellation is an idempotent success (DESIGN.md: DELETE
+      # package-uploads), not a conflict.
+      assert {:ok, %Intent{status: "canceled"}} = Uploads.cancel_intent(ctx.owner, reload(intent))
+    end
+
+    test "cancelling an already failed or expired intent is idempotent", ctx do
+      for {status, extra} <- [{"failed", [last_error_code: "validation_failed"]}, {"expired", []}] do
+        {intent, _} = create!(ctx)
+        terminalize_for_test!(intent, status, extra)
+
+        assert {:ok, %Intent{status: ^status}} =
+                 Uploads.cancel_intent(ctx.owner, reload(intent))
+      end
+    end
+
+    test "cancelling a succeeded intent conflicts", ctx do
+      {intent, _} = create!(ctx)
+      terminalize_for_test!(intent, "succeeded", [])
+
       assert {:error, :upload_state} = Uploads.cancel_intent(ctx.owner, reload(intent))
     end
+  end
+
+  # Forces an intent into a terminal state the way the pipeline would,
+  # satisfying the upload_intents_state check constraint.
+  defp terminalize_for_test!(intent, status, extra) do
+    now = DateTime.utc_now(:second)
+
+    Repo.update_all(from(i in Intent, where: i.id == ^intent.id),
+      set:
+        [
+          status: status,
+          reservation_id: nil,
+          completed_at: now,
+          next_attempt_at: nil,
+          lease_token: nil,
+          lease_expires_at: nil,
+          expires_at: nil,
+          upload_url_expires_at: nil
+        ] ++ extra
+    )
   end
 
   describe "sweeps" do

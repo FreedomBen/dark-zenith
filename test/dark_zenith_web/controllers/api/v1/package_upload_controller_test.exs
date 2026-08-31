@@ -4,9 +4,31 @@ defmodule DarkZenithWeb.Api.V1.PackageUploadControllerTest do
 
   import DarkZenith.AccountsFixtures
   import DarkZenith.RepositoriesFixtures
+  import Ecto.Query, only: [from: 2]
 
   alias DarkZenith.Accounts
   alias DarkZenith.Uploads
+
+  # Forces an intent into a terminal state the way the pipeline would,
+  # satisfying the upload_intents_state check constraint.
+  defp force_terminal!(intent_id, status, extra) do
+    now = DateTime.utc_now(:second)
+
+    DarkZenith.Repo.update_all(
+      from(i in Uploads.Intent, where: i.id == ^intent_id),
+      set:
+        [
+          status: status,
+          reservation_id: nil,
+          completed_at: now,
+          next_attempt_at: nil,
+          lease_token: nil,
+          lease_expires_at: nil,
+          expires_at: nil,
+          upload_url_expires_at: nil
+        ] ++ extra
+    )
+  end
 
   setup %{conn: conn} do
     owner = user_fixture()
@@ -82,6 +104,21 @@ defmodule DarkZenithWeb.Api.V1.PackageUploadControllerTest do
       assert %{"error" => %{"code" => "validation_failed"}} = json_response(numeric_size, 422)
     end
 
+    test "a size with leading zeros or non-canonical form is 422", ctx do
+      for bad <- ["007", "0010", "+7", "7.0", " 7", "7e2", ""] do
+        conn =
+          build_conn()
+          |> put_req_header("content-type", "application/json")
+          |> bearer(ctx.token)
+          |> post(~p"/api/v1/repos/#{ctx.repo.slug}/package-uploads", %{
+            "filename" => "a.rpm",
+            "size" => bad
+          })
+
+        assert %{"error" => %{"code" => "validation_failed"}} = json_response(conn, 422)
+      end
+    end
+
     test "an oversized declaration is 413", ctx do
       conn =
         ctx.conn
@@ -149,6 +186,66 @@ defmodule DarkZenithWeb.Api.V1.PackageUploadControllerTest do
       assert %{"data" => %{"status" => "queued"}} = json_response(conn, 202)
       assert get_resp_header(conn, "retry-after") == ["2"]
       assert_enqueued(worker: DarkZenith.Workers.UploadProcessing)
+    end
+
+    test "idempotent completion of a terminal intent is 200 without Retry-After", ctx do
+      path = "/dz-bucket/" <> ctx.intent.staging_path
+
+      Req.Test.stub(DarkZenith.B2Stub, fn conn ->
+        assert conn.request_path == path
+
+        conn
+        |> Plug.Conn.delete_resp_header("cache-control")
+        |> Plug.Conn.put_resp_header("content-length", "1000")
+        |> Plug.Conn.put_resp_header("content-type", "application/x-rpm")
+        |> Plug.Conn.send_resp(200, "")
+      end)
+
+      complete = fn ->
+        build_conn()
+        |> put_req_header("content-type", "application/json")
+        |> bearer(ctx.token)
+        |> post(~p"/api/v1/repos/#{ctx.repo.slug}/package-uploads/#{ctx.intent.id}/complete", %{
+          "generation" => 1,
+          "version_id" => "4_zv"
+        })
+      end
+
+      assert complete.().status == 202
+
+      # A replay while queued stays 202 with Retry-After.
+      replay = complete.()
+      assert replay.status == 202
+      assert get_resp_header(replay, "retry-after") == ["2"]
+
+      # Once the intent is terminal, the same replay is 200 without Retry-After.
+      force_terminal!(ctx.intent.id, "failed", last_error_code: "validation_failed")
+
+      done = complete.()
+      assert %{"data" => %{"status" => "failed"}} = json_response(done, 200)
+      assert get_resp_header(done, "retry-after") == []
+    end
+
+    test "cancelling an already failed intent is an idempotent 204", ctx do
+      force_terminal!(ctx.intent.id, "failed", last_error_code: "validation_failed")
+
+      conn =
+        ctx.conn
+        |> bearer(ctx.token)
+        |> delete(~p"/api/v1/repos/#{ctx.repo.slug}/package-uploads/#{ctx.intent.id}")
+
+      assert response(conn, 204) == ""
+    end
+
+    test "cancelling a succeeded intent is 409", ctx do
+      force_terminal!(ctx.intent.id, "succeeded", [])
+
+      conn =
+        ctx.conn
+        |> bearer(ctx.token)
+        |> delete(~p"/api/v1/repos/#{ctx.repo.slug}/package-uploads/#{ctx.intent.id}")
+
+      assert %{"error" => %{"code" => "conflict_upload_state"}} = json_response(conn, 409)
     end
 
     test "refresh before URL expiry conflicts", ctx do

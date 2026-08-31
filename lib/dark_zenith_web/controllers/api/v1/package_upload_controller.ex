@@ -90,10 +90,11 @@ defmodule DarkZenithWeb.Api.V1.PackageUploadController do
          {:ok, generation} <- parse_generation(body["generation"]) do
       case Uploads.complete_intent(user, intent, generation, body["version_id"]) do
         {:ok, completed} ->
-          conn
-          |> put_status(202)
-          |> put_resp_header("retry-after", "2")
-          |> json(%{"data" => UploadIntentJSON.data(completed, repository)})
+          # 202 with Retry-After while queued/processing (including the first
+          # acceptance); an idempotent replay of a preview_ready, succeeded,
+          # or failed intent is a plain 200 (DESIGN.md: POST .../complete).
+          conn = json_status(conn, completed)
+          json(conn, %{"data" => UploadIntentJSON.data(completed, repository)})
 
         {:error, :upload_state} ->
           {:error, :conflict, "conflict_upload_state"}
@@ -132,11 +133,15 @@ defmodule DarkZenithWeb.Api.V1.PackageUploadController do
     end
   end
 
-  # Declared sizes travel as decimal strings, like every bigint in this API.
+  # Declared sizes travel as canonical decimal strings, like every bigint in
+  # this API: exactly "0" or [1-9][0-9]* — signs, decimals, exponent
+  # notation, whitespace, and leading zeros are rejected (DESIGN.md: API
+  # Contract Details).
   defp parse_size(value) when is_binary(value) do
-    case Integer.parse(value) do
-      {size, ""} -> {:ok, size}
-      _ -> {:error, :validation_failed, %{"size" => ["must be a decimal string"]}}
+    if value == "0" or value =~ ~r/^[1-9][0-9]*$/ do
+      {:ok, String.to_integer(value)}
+    else
+      {:error, :validation_failed, %{"size" => ["must be a decimal string"]}}
     end
   end
 
@@ -151,6 +156,16 @@ defmodule DarkZenithWeb.Api.V1.PackageUploadController do
   defp maybe_retry_after(conn, intent) do
     if intent.status in ["queued", "processing"] do
       put_resp_header(conn, "retry-after", "2")
+    else
+      conn
+    end
+  end
+
+  defp json_status(conn, intent) do
+    if intent.status in ["queued", "processing"] do
+      conn
+      |> put_status(202)
+      |> put_resp_header("retry-after", "2")
     else
       conn
     end
