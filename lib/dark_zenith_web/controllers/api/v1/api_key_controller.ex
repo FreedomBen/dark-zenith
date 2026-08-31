@@ -10,7 +10,6 @@ defmodule DarkZenithWeb.Api.V1.ApiKeyController do
   action_fallback DarkZenithWeb.Api.FallbackController
 
   alias DarkZenith.Accounts
-  alias DarkZenith.Audit
   alias DarkZenithWeb.Api.{Pagination, Strict}
   alias DarkZenithWeb.Api.V1.ApiKeyJSON
 
@@ -37,13 +36,6 @@ defmodule DarkZenithWeb.Api.V1.ApiKeyController do
 
       case Accounts.create_api_key(user, attrs) do
         {:ok, {plaintext, api_key}} ->
-          Audit.record!("api_key.create",
-            actor: user,
-            target: {:api_key, api_key.id},
-            ip: client_ip(conn),
-            metadata: %{"name" => api_key.name, "scopes" => api_key.scopes}
-          )
-
           conn
           |> put_status(201)
           |> json(%{"data" => ApiKeyJSON.data(api_key, plaintext)})
@@ -62,17 +54,8 @@ defmodule DarkZenithWeb.Api.V1.ApiKeyController do
          {:ok, user} <- require_session_principal(conn),
          {:ok, uuid} <- cast_uuid(id) do
       case Accounts.delete_api_key(user, uuid) do
-        :ok ->
-          Audit.record!("api_key.revoke",
-            actor: user,
-            target: {:api_key, uuid},
-            ip: client_ip(conn)
-          )
-
-          send_resp(conn, 204, "")
-
-        :error ->
-          {:error, :not_found}
+        :ok -> send_resp(conn, 204, "")
+        :error -> {:error, :not_found}
       end
     end
   end
@@ -106,9 +89,5 @@ defmodule DarkZenithWeb.Api.V1.ApiKeyController do
       {:ok, uuid} -> {:ok, uuid}
       :error -> {:error, :not_found}
     end
-  end
-
-  defp client_ip(conn) do
-    conn.remote_ip |> :inet.ntoa() |> to_string()
   end
 end

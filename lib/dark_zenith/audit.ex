@@ -15,14 +15,31 @@ defmodule DarkZenith.Audit do
   alias DarkZenith.Audit.Event
   alias DarkZenith.Repo
 
+  @client_ip_key {__MODULE__, :client_ip}
+
+  @doc """
+  Stores the resolved client IP for this process so `record!/2` calls made
+  by context functions default to it (set by `DarkZenithWeb.AuditContext`
+  for HTTP requests and LiveView processes). Background/system processes
+  never set it, so their events record a null `ip`.
+  """
+  def put_client_ip(ip) when is_binary(ip) or is_nil(ip) do
+    Process.put(@client_ip_key, ip)
+    :ok
+  end
+
+  @doc "The process-scoped client IP, or nil outside a client-request process."
+  def client_ip, do: Process.get(@client_ip_key)
+
   @doc """
   Records one audit event. Options:
 
     * `:actor` — the acting `%User{}`, or nil for unauthenticated/system events
     * `:target` — `{type, id}` with type an atom/string from the allowed target
       types, or a bare type for string-keyed targets (`:slug` uses metadata)
-    * `:ip` — client IP string as resolved by client IP detection, nil for
-      system events
+    * `:ip` — client IP string as resolved by client IP detection; defaults
+      to the process-scoped client IP (see `put_client_ip/1`), so pass an
+      explicit nil to force a system event from a request process
     * `:metadata` — map of event-specific details; never secrets, token
       values, or key material
   """
@@ -46,7 +63,7 @@ defmodule DarkZenith.Audit do
       action: action,
       target_type: target_type,
       target_id: target_id,
-      ip: Keyword.get(opts, :ip),
+      ip: Keyword.get_lazy(opts, :ip, &client_ip/0),
       metadata: Keyword.get(opts, :metadata, %{})
     })
   end

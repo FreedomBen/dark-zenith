@@ -31,6 +31,21 @@ defmodule DarkZenith.AuditTest do
       assert event.ip == nil
     end
 
+    test "defaults ip from the process-scoped audit context" do
+      Audit.put_client_ip("198.51.100.7")
+
+      event = Audit.record!("auth.login", actor: user_fixture())
+      assert event.ip == "198.51.100.7"
+
+      # An explicit ip always wins over the context.
+      explicit = Audit.record!("auth.login", actor: user_fixture(), ip: "203.0.113.9")
+      assert explicit.ip == "203.0.113.9"
+
+      # An explicit nil records a system event even with context set.
+      system = Audit.record!("package.upload", ip: nil)
+      assert system.ip == nil
+    end
+
     test "records slug targets with a nil target_id and the slug in metadata" do
       event =
         Audit.record!("admin.slug_release",

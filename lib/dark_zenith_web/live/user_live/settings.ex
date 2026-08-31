@@ -447,13 +447,7 @@ defmodule DarkZenithWeb.UserLive.Settings do
     attrs = %{name: params["name"], scopes: params["scopes"] || []}
 
     case Accounts.create_api_key(user, attrs) do
-      {:ok, {plaintext, api_key}} ->
-        DarkZenith.Audit.record!("api_key.create",
-          actor: user,
-          target: {:api_key, api_key.id},
-          metadata: %{"name" => api_key.name, "scopes" => api_key.scopes}
-        )
-
+      {:ok, {plaintext, _api_key}} ->
         {:noreply,
          socket
          |> assign(:created_key, plaintext)
@@ -473,12 +467,6 @@ defmodule DarkZenithWeb.UserLive.Settings do
 
     case Accounts.delete_api_key(user, id) do
       :ok ->
-        DarkZenith.Audit.record!("api_key.revoke",
-          actor: user,
-          target: {:api_key, id},
-          metadata: %{}
-        )
-
         {:noreply, socket |> reload_account_sections() |> put_flash(:info, "API key revoked.")}
 
       :error ->

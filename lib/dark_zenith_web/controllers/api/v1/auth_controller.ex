@@ -24,7 +24,6 @@ defmodule DarkZenithWeb.Api.V1.AuthController do
           Audit.record!("auth.login",
             actor: user,
             target: {:user, user.id},
-            ip: client_ip(conn),
             metadata: %{"surface" => "api"}
           )
 
@@ -37,7 +36,6 @@ defmodule DarkZenithWeb.Api.V1.AuthController do
 
         {:error, :invalid_credentials} ->
           Audit.record!("auth.login_failed",
-            ip: client_ip(conn),
             metadata: %{"surface" => "api", "email" => String.slice(email, 0, 160)}
           )
 
@@ -71,11 +69,4 @@ defmodule DarkZenithWeb.Api.V1.AuthController do
   end
 
   defp string_credentials(_), do: {:error, :validation_failed}
-
-  # Client IP resolution honoring TRUSTED_PROXIES arrives with rate limiting;
-  # until then the TCP peer address is used, matching the empty-TRUSTED_PROXIES
-  # behavior.
-  defp client_ip(conn) do
-    conn.remote_ip |> :inet.ntoa() |> to_string()
-  end
 end

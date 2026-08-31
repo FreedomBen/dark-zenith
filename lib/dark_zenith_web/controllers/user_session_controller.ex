@@ -2,6 +2,7 @@ defmodule DarkZenithWeb.UserSessionController do
   use DarkZenithWeb, :controller
 
   alias DarkZenith.Accounts
+  alias DarkZenith.Audit
   alias DarkZenithWeb.UserAuth
 
   def create(conn, %{"user" => user_params}) do
@@ -9,11 +10,21 @@ defmodule DarkZenithWeb.UserSessionController do
 
     case Accounts.authenticate_user(email, password) do
       {:ok, user} ->
+        Audit.record!("auth.login",
+          actor: user,
+          target: {:user, user.id},
+          metadata: %{"surface" => "web"}
+        )
+
         conn
         |> put_flash(:info, "Welcome back!")
         |> UserAuth.log_in_user(user, user_params)
 
       {:error, :invalid_credentials} ->
+        Audit.record!("auth.login_failed",
+          metadata: %{"surface" => "web", "email" => String.slice(email, 0, 160)}
+        )
+
         # To prevent user enumeration attacks (and to avoid revealing whether
         # an account is unconfirmed), don't disclose the failure reason.
         conn

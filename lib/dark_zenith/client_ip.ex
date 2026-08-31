@@ -12,10 +12,19 @@ defmodule DarkZenith.ClientIp do
 
   @doc "Resolves the client IP tuple for the connection."
   def resolve(conn) do
-    peer = conn.remote_ip
+    resolve_peer(conn.remote_ip, conn.req_headers)
+  end
 
+  @doc """
+  Resolves the client IP tuple from a TCP peer address plus a lowercase
+  `{name, value}` header list, for surfaces without a full `%Plug.Conn{}`
+  (LiveView sockets expose `peer_data` and `x_headers`; `CF-Connecting-IP`
+  is not an `x-` header and is absent there, but a trusted Cloudflare proxy
+  also appends the client to `X-Forwarded-For`, which resolves identically).
+  """
+  def resolve_peer(peer, headers) when is_list(headers) do
     if trusted?(peer) do
-      cf_connecting_ip(conn) || forwarded_for(conn, peer) || peer
+      cf_connecting_ip(headers) || forwarded_for(headers, peer) || peer
     else
       peer
     end
@@ -88,17 +97,22 @@ defmodule DarkZenith.ClientIp do
 
   ## Header handling
 
-  defp cf_connecting_ip(conn) do
-    with [value] <- Plug.Conn.get_req_header(conn, "cf-connecting-ip"),
-         {:ok, ip} <- :inet.parse_strict_address(String.to_charlist(String.trim(value))) do
-      ip
-    else
-      _ -> nil
+  # Exactly one CF-Connecting-IP value that parses as an IP wins.
+  defp cf_connecting_ip(headers) do
+    case header_values(headers, "cf-connecting-ip") do
+      [value] ->
+        case :inet.parse_strict_address(String.to_charlist(String.trim(value))) do
+          {:ok, ip} -> ip
+          {:error, _} -> nil
+        end
+
+      _ ->
+        nil
     end
   end
 
-  defp forwarded_for(conn, peer) do
-    case Plug.Conn.get_req_header(conn, "x-forwarded-for") do
+  defp forwarded_for(headers, peer) do
+    case header_values(headers, "x-forwarded-for") do
       [chain | _] ->
         chain
         |> String.split(",")
@@ -118,5 +132,9 @@ defmodule DarkZenith.ClientIp do
       _ ->
         nil
     end
+  end
+
+  defp header_values(headers, name) do
+    for {^name, value} <- headers, do: value
   end
 end

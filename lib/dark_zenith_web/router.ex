@@ -5,6 +5,7 @@ defmodule DarkZenithWeb.Router do
 
   pipeline :browser do
     plug :accepts, ["html"]
+    plug DarkZenithWeb.AuditContext
     plug :fetch_session
     plug :fetch_live_flash
     plug :put_root_layout, html: {DarkZenithWeb.Layouts, :root}
@@ -48,6 +49,7 @@ defmodule DarkZenithWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug DarkZenithWeb.AuditContext
     plug :put_no_store
     plug :put_nosniff
     plug :fetch_session
@@ -104,6 +106,7 @@ defmodule DarkZenithWeb.Router do
     live_session :repositories_authenticated,
       on_mount: [
         {DarkZenithWeb.UserAuth, :require_authenticated},
+        {DarkZenithWeb.AuditContext, :default},
         {DarkZenithWeb.LiveRateLimit, :default}
       ] do
       # /repos/new precedes /repos/:slug; the slug "new" is reserved.
@@ -115,6 +118,7 @@ defmodule DarkZenithWeb.Router do
     live_session :repositories_public,
       on_mount: [
         {DarkZenithWeb.UserAuth, :mount_current_scope},
+        {DarkZenithWeb.AuditContext, :default},
         {DarkZenithWeb.LiveRateLimit, :default}
       ] do
       live "/repos", RepositoryLive.Index, :index
@@ -208,6 +212,7 @@ defmodule DarkZenithWeb.Router do
     live_session :require_authenticated_user,
       on_mount: [
         {DarkZenithWeb.UserAuth, :require_authenticated},
+        {DarkZenithWeb.AuditContext, :default},
         {DarkZenithWeb.LiveRateLimit, :default}
       ] do
       live "/users/settings", UserLive.Settings, :edit
@@ -220,6 +225,7 @@ defmodule DarkZenithWeb.Router do
       on_mount: [
         {DarkZenithWeb.UserAuth, :require_authenticated},
         {DarkZenithWeb.AdminAuth, :require_admin},
+        {DarkZenithWeb.AuditContext, :default},
         {DarkZenithWeb.LiveRateLimit, :default}
       ] do
       live "/admin", AdminLive.Users, :index
@@ -237,6 +243,7 @@ defmodule DarkZenithWeb.Router do
     live_session :current_user,
       on_mount: [
         {DarkZenithWeb.UserAuth, :mount_current_scope},
+        {DarkZenithWeb.AuditContext, :default},
         {DarkZenithWeb.LiveRateLimit, :default}
       ] do
       live "/users/register", UserLive.Registration, :new

@@ -926,6 +926,13 @@ defmodule DarkZenith.Accounts do
         else
           with {:ok, api_key} <- Repo.insert(changeset) do
             UserNotifier.deliver_api_key_created(user, api_key.name)
+
+            DarkZenith.Audit.record!("api_key.create",
+              actor: user,
+              target: {:api_key, api_key.id},
+              metadata: %{"name" => api_key.name, "scopes" => api_key.scopes}
+            )
+
             {:ok, {plaintext, api_key}}
           end
         end
@@ -976,8 +983,9 @@ defmodule DarkZenith.Accounts do
 
   @doc """
   Deletes one of the user's API keys by id. Locks the user row so deletion
-  serializes with quota-checked creation. Returns `:ok` or `:error` when the
-  key does not exist or belongs to another user.
+  serializes with quota-checked creation, and audits the revocation in the
+  same transaction. Returns `:ok` or `:error` when the key does not exist
+  or belongs to another user.
   """
   def delete_api_key(%User{} = user, id) do
     {:ok, result} =
@@ -985,8 +993,12 @@ defmodule DarkZenith.Accounts do
         lock_user_row!(user.id)
 
         case Repo.delete_all(from(k in ApiKey, where: k.id == ^id and k.user_id == ^user.id)) do
-          {1, _} -> {:ok, :ok}
-          {0, _} -> {:ok, :error}
+          {1, _} ->
+            DarkZenith.Audit.record!("api_key.revoke", actor: user, target: {:api_key, id})
+            {:ok, :ok}
+
+          {0, _} ->
+            {:ok, :error}
         end
       end)
 
