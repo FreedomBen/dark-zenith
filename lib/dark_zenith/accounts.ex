@@ -595,6 +595,10 @@ defmodule DarkZenith.Accounts do
   def get_gpg_key_info(%User{} = user) do
     user = Repo.get!(User, user.id)
 
+    transition =
+      user.gpg_key_transition_id &&
+        DarkZenith.SigningTransitions.get_transition(user.gpg_key_transition_id)
+
     if user.gpg_key_fingerprint do
       %{
         fingerprint: user.gpg_key_fingerprint,
@@ -602,22 +606,50 @@ defmodule DarkZenith.Accounts do
         expires_at: user.gpg_key_expires_at,
         public_key: user.gpg_key_public,
         previous_public_key: user.previous_gpg_key_public,
-        # The transition linkage arrives with the replacement machinery; a
-        # retained previous public key marks a replacement mid-flight.
-        replacement_in_progress: not is_nil(user.previous_gpg_key_public),
+        replacement_in_progress: replacement_in_progress?(transition),
+        transition: transition,
         updated_at: user.updated_at
       }
     end
   end
 
+  defp replacement_in_progress?(nil), do: false
+
+  defp replacement_in_progress?(transition) do
+    transition.kind == "replace_gpg_key" and
+      transition.status in ["preparing", "activating", "active", "failed"]
+  end
+
   @doc """
   Uploads a user's first GPG key pair after full validation (DESIGN.md:
-  GPG Signing). Replacing an existing key requires the durable replacement
-  transition and is reported as `{:error, :replacement_not_implemented}`
-  until that machinery lands.
+  GPG Signing), or starts the durable replacement transition when a key
+  already exists (`{:accepted, transition}`).
   """
   def upsert_gpg_key(%User{} = user, public_armored, private_armored)
       when is_binary(public_armored) and is_binary(private_armored) do
+    if Repo.get!(User, user.id).gpg_key_fingerprint do
+      DarkZenith.SigningTransitions.UserWide.start_replacement(
+        user,
+        public_armored,
+        private_armored
+      )
+    else
+      case first_gpg_key_upload(user, public_armored, private_armored) do
+        {:error, :has_key} ->
+          # Lost the first-upload race: run the replacement flow instead.
+          DarkZenith.SigningTransitions.UserWide.start_replacement(
+            user,
+            public_armored,
+            private_armored
+          )
+
+        other ->
+          other
+      end
+    end
+  end
+
+  defp first_gpg_key_upload(user, public_armored, private_armored) do
     with {:ok, info} <- DarkZenith.Gpg.validate_key_pair(public_armored, private_armored) do
       envelope = DarkZenith.Crypto.GpgKeyEnvelope.encrypt(private_armored, user.id)
 
@@ -627,7 +659,7 @@ defmodule DarkZenith.Accounts do
           current = Repo.get!(User, user.id)
 
           if current.gpg_key_fingerprint do
-            {:ok, {:error, :replacement_not_implemented}}
+            {:ok, {:error, :has_key}}
           else
             {1, _} =
               Repo.update_all(
@@ -668,22 +700,38 @@ defmodule DarkZenith.Accounts do
         lock_user_row!(user.id)
         current = Repo.get!(User, user.id)
 
-        in_use? =
-          Repo.exists?(
-            from r in DarkZenith.Repositories.Repository,
-              where:
-                r.user_id == ^user.id and
-                  (not is_nil(r.gpg_key_fingerprint) or r.sign_rpms)
-          )
+        existing =
+          current.gpg_key_transition_id &&
+            Repo.one(
+              from t in DarkZenith.SigningTransitions.Transition,
+                where: t.id == ^current.gpg_key_transition_id,
+                lock: "FOR UPDATE"
+            )
+
+        counts = DarkZenith.SigningTransitions.UserWide.affected_repository_counts(user.id)
+        in_use? = counts.metadata_signed > 0 or counts.rpm_signed > 0
 
         cond do
           is_nil(current.gpg_key_fingerprint) ->
             {:ok, {:error, :not_found}}
 
+          existing && existing.kind != "replace_gpg_key" ->
+            # An unresolved removal transition's durable finalizer owns key
+            # deletion.
+            {:ok, {:error, :transition_in_progress}}
+
           in_use? ->
-            {:ok, {:error, :in_use}}
+            {:ok, {:error, {:in_use, counts}}}
 
           true ->
+            # A key no repository uses deletes immediately, atomically
+            # canceling an unresolved replacement.
+            if existing do
+              DarkZenith.SigningTransitions.UserWide.cancel_replacement_locked!(
+                existing,
+                current
+              )
+            end
             {1, _} =
               Repo.update_all(
                 from(u in User, where: u.id == ^user.id),
@@ -695,6 +743,7 @@ defmodule DarkZenith.Accounts do
                   gpg_key_expires_at: nil,
                   gpg_key_expiry_notified_days: [],
                   previous_gpg_key_public: nil,
+                  gpg_key_transition_id: nil,
                   updated_at: DateTime.utc_now(:second)
                 ]
               )

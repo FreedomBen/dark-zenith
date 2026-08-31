@@ -33,12 +33,20 @@ defmodule DarkZenith.Accounts.GpgKeyTest do
       assert_enqueued(worker: EmailDelivery, args: %{subject: "A GPG signing key was uploaded"})
     end
 
-    test "replacing an existing key requires the transition machinery", ctx do
+    test "replacing an existing key starts the durable replacement transition", ctx do
       {:ok, _} = Accounts.upsert_gpg_key(ctx.user, ctx.pair.public, ctx.pair.private)
       other = generate_key_pair()
 
-      assert {:error, :replacement_not_implemented} =
+      assert {:accepted, transition} =
                Accounts.upsert_gpg_key(ctx.user, other.public, other.private)
+
+      assert transition.kind == "replace_gpg_key"
+      assert transition.status == "preparing"
+
+      # The current key is untouched until the key-swap commit.
+      user = DarkZenith.Repo.get!(DarkZenith.Accounts.User, ctx.user.id)
+      assert user.gpg_key_fingerprint == ctx.pair.fingerprint
+      assert user.gpg_key_transition_id == transition.id
     end
 
     test "invalid pairs are rejected before any state changes", ctx do
@@ -134,7 +142,8 @@ defmodule DarkZenith.Accounts.GpgKeyTest do
           gpg_key_fingerprint: ctx.pair.fingerprint
         })
 
-      assert {:error, :in_use} = Accounts.remove_gpg_key(user)
+      assert {:error, {:in_use, %{metadata_signed: 1, rpm_signed: 0}}} =
+               Accounts.remove_gpg_key(user)
 
       :ok = Repositories.delete_repository(user, repository)
       assert :ok = Accounts.remove_gpg_key(user)

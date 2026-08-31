@@ -100,3 +100,187 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyControllerTest do
     assert %{"error" => %{"code" => "unauthenticated"}} = json_response(conn, 401)
   end
 end
+
+defmodule DarkZenithWeb.Api.V1.GpgKeyTransitionApiTest do
+  # Not async: overrides the signing implementation.
+  use DarkZenithWeb.ConnCase, async: false
+
+  import DarkZenith.AccountsFixtures
+  import DarkZenith.GpgFixtures
+
+  alias DarkZenith.Accounts
+  alias DarkZenith.Repositories
+
+  setup %{conn: conn} do
+    Application.put_env(:dark_zenith, :signing_impl, DarkZenith.SigningStub)
+    on_exit(fn -> Application.delete_env(:dark_zenith, :signing_impl) end)
+
+    pair = generate_key_pair()
+    user = user_fixture()
+    {:ok, user} = Accounts.upsert_gpg_key(user, pair.public, pair.private)
+
+    {:ok, repo} =
+      Repositories.create_repository(user, %{
+        slug: "api-tr-#{System.unique_integer([:positive])}",
+        name: "T",
+        gpg_key_fingerprint: pair.fingerprint
+      })
+
+    {plaintext, _} = Accounts.create_session_token(user)
+    %{conn: conn, user: user, token: plaintext, pair: pair, repo: repo}
+  end
+
+  defp bearer(conn, token), do: put_req_header(conn, "authorization", "Bearer " <> token)
+
+  test "replacing an existing key returns 202 with the transition resource", ctx do
+    pair2 = generate_key_pair()
+
+    conn =
+      ctx.conn
+      |> bearer(ctx.token)
+      |> put_req_header("content-type", "multipart/form-data; boundary=test")
+      |> put(~p"/api/v1/gpg_key", %{
+        "public_key" => pair2.public,
+        "private_key" => pair2.private
+      })
+
+    assert %{"data" => data} = json_response(conn, 202)
+    assert get_resp_header(conn, "retry-after") == ["2"]
+    assert data["kind"] == "replace_gpg_key"
+    assert data["status"] == "preparing"
+    assert data["target_fingerprint"] == pair2.fingerprint
+    assert data["repository_count"] == "0"
+    assert data["item_count"] == "0"
+    assert data["error"] == nil
+    refute Map.has_key?(data, "prepared_gpg_key_private")
+
+    # The key resource reports the replacement and links the transition.
+    read = build_conn() |> bearer(ctx.token) |> get(~p"/api/v1/gpg_key")
+    assert %{"data" => key} = json_response(read, 200)
+    assert key["replacement_in_progress"] == true
+    assert key["fingerprint"] == ctx.pair.fingerprint
+    assert key["transition"]["id"] == data["id"]
+
+    # Polling returns the resource with Retry-After while unresolved.
+    poll = build_conn() |> bearer(ctx.token) |> get(~p"/api/v1/gpg_key/transitions/#{data["id"]}")
+    assert %{"data" => polled} = json_response(poll, 200)
+    assert get_resp_header(poll, "retry-after") == ["2"]
+    assert polled["id"] == data["id"]
+
+    # A second replacement is refused while unresolved.
+    again =
+      build_conn()
+      |> bearer(ctx.token)
+      |> put_req_header("content-type", "multipart/form-data; boundary=test")
+      |> put(~p"/api/v1/gpg_key", %{
+        "public_key" => pair2.public,
+        "private_key" => pair2.private
+      })
+
+    assert %{"error" => %{"code" => "conflict_gpg_key_transition_in_progress"}} =
+             json_response(again, 409)
+  end
+
+  test "delete of an in-use key carries repository counts", ctx do
+    conn = ctx.conn |> bearer(ctx.token) |> delete(~p"/api/v1/gpg_key")
+
+    assert %{"error" => %{"code" => "conflict_gpg_key_in_use", "details" => details}} =
+             json_response(conn, 409)
+
+    assert details["metadata_signed_repositories"] == "1"
+    assert details["rpm_signed_repositories"] == "0"
+  end
+
+  test "revocation with clear_metadata_signing returns 202 and delete becomes fenced", ctx do
+    conn =
+      ctx.conn
+      |> bearer(ctx.token)
+      |> put_req_header("content-type", "application/json")
+      |> post(~p"/api/v1/gpg_key/revocation", Jason.encode!(%{strategy: "clear_metadata_signing"}))
+
+    assert %{"data" => data} = json_response(conn, 202)
+    assert data["kind"] == "clear_metadata_signing"
+    assert data["target_fingerprint"] == nil
+
+    # An unresolved removal owns key deletion.
+    blocked = build_conn() |> bearer(ctx.token) |> delete(~p"/api/v1/gpg_key")
+
+    assert %{"error" => %{"code" => "conflict_gpg_key_transition_in_progress"}} =
+             json_response(blocked, 409)
+  end
+
+  test "clear_metadata_signing conflicts when RPM signing is enabled", ctx do
+    {:ok, _} =
+      Repositories.create_repository(ctx.user, %{
+        slug: "api-rpm-#{System.unique_integer([:positive])}",
+        name: "R",
+        gpg_key_fingerprint: ctx.pair.fingerprint,
+        sign_rpms: true
+      })
+
+    conn =
+      ctx.conn
+      |> bearer(ctx.token)
+      |> put_req_header("content-type", "application/json")
+      |> post(~p"/api/v1/gpg_key/revocation", Jason.encode!(%{strategy: "clear_metadata_signing"}))
+
+    assert %{"error" => %{"code" => "conflict_gpg_key_in_use"}} = json_response(conn, 409)
+  end
+
+  test "multipart revocation is accepted only with strategy=replace_key", ctx do
+    conn =
+      ctx.conn
+      |> bearer(ctx.token)
+      |> put_req_header("content-type", "multipart/form-data; boundary=test")
+      |> post(~p"/api/v1/gpg_key/revocation", %{
+        "strategy" => "clear_metadata_signing",
+        "public_key" => "x"
+      })
+
+    assert %{"error" => %{"code" => "validation_failed"}} = json_response(conn, 422)
+  end
+
+  test "multipart replace_key starts a replacement", ctx do
+    pair2 = generate_key_pair()
+
+    conn =
+      ctx.conn
+      |> bearer(ctx.token)
+      |> put_req_header("content-type", "multipart/form-data; boundary=test")
+      |> post(~p"/api/v1/gpg_key/revocation", %{
+        "strategy" => "replace_key",
+        "public_key" => pair2.public,
+        "private_key" => pair2.private
+      })
+
+    assert %{"data" => %{"kind" => "replace_gpg_key"}} = json_response(conn, 202)
+  end
+
+  test "unknown strategies are rejected", ctx do
+    conn =
+      ctx.conn
+      |> bearer(ctx.token)
+      |> put_req_header("content-type", "application/json")
+      |> post(~p"/api/v1/gpg_key/revocation", Jason.encode!(%{strategy: "nuke"}))
+
+    assert %{"error" => %{"code" => "validation_failed"}} = json_response(conn, 422)
+  end
+
+  test "transition lookup is scoped to the owner", ctx do
+    pair2 = generate_key_pair()
+    {:accepted, transition} =
+      DarkZenith.SigningTransitions.UserWide.start_replacement(
+        ctx.user,
+        pair2.public,
+        pair2.private
+      )
+
+    other = user_fixture()
+    {other_token, _} = Accounts.create_session_token(other)
+
+    conn =
+      build_conn() |> bearer(other_token) |> get(~p"/api/v1/gpg_key/transitions/#{transition.id}")
+
+    assert %{"error" => %{"code" => "not_found"}} = json_response(conn, 404)
+  end
+end

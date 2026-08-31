@@ -51,6 +51,20 @@ defmodule DarkZenith.SigningTransitions do
     )
   end
 
+  @doc "Repository-snapshot counts by application status for progress display."
+  def repository_counts(transition_id) do
+    counts =
+      Repo.all(
+        from sr in TransitionRepository,
+          where: sr.transition_id == ^transition_id,
+          group_by: sr.application_status,
+          select: {sr.application_status, count(sr.id)}
+      )
+      |> Map.new()
+
+    Map.merge(%{"pending" => 0, "applied" => 0, "satisfied_deleted" => 0}, counts)
+  end
+
   ## The owner-level write fence (DESIGN.md: Signing Transition Repositories)
 
   @doc """

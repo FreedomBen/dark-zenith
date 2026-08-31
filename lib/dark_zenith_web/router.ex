@@ -154,6 +154,8 @@ defmodule DarkZenithWeb.Router do
     get "/gpg_key", GpgKeyController, :show
     put "/gpg_key", GpgKeyController, :update
     delete "/gpg_key", GpgKeyController, :delete
+    post "/gpg_key/revocation", GpgKeyController, :revocation
+    get "/gpg_key/transitions/:id", GpgKeyController, :transition
   end
 
   # Other scopes may use custom stacks.
