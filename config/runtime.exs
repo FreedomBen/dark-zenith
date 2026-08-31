@@ -124,6 +124,26 @@ if config_env() == :prod do
 
   config :dark_zenith, invitation_expiry_days: invitation_expiry_days
 
+  max_repository_packages =
+    case Integer.parse(System.get_env("MAX_REPOSITORY_PACKAGES") || "10000") do
+      {value, ""} when value >= 1 -> value
+      _ -> raise "MAX_REPOSITORY_PACKAGES must be a positive integer"
+    end
+
+  config :dark_zenith, max_repository_packages: max_repository_packages
+
+  max_repodata_open_bytes =
+    case Integer.parse(System.get_env("MAX_REPODATA_OPEN_BYTES") || "268435456") do
+      {value, ""} when value >= 1 -> value
+      _ -> raise "MAX_REPODATA_OPEN_BYTES must be a positive integer"
+    end
+
+  config :dark_zenith, max_repodata_open_bytes: max_repodata_open_bytes
+
+  if tmpdir = System.get_env("RPM_UPLOAD_TMPDIR") do
+    config :dark_zenith, rpm_upload_tmpdir: tmpdir
+  end
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :dark_zenith, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")

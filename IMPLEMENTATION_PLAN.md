@@ -96,15 +96,17 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 6 — Repodata generation (M1 for empty repos, M2 full)
 
-- [ ] Deterministic XML encoders for `primary`/`filelists`/`other` (namespaces, element order,
-      createrepo_c parity) (Metadata Format)
-- [ ] Deterministic gzip (level 6, mtime 0, no filename)
-- [ ] `repomd.xml` (+ optional `.asc` hook for Phase 11), revision semantics
-- [ ] Counting-sink byte accounting for the four repository counters (Metadata Generation & Storage)
-- [ ] Oban regeneration job: snapshot transaction, tmp-file streaming, revision CAS, re-enqueue,
+- [x] Deterministic XML encoders for `primary`/`filelists`/`other` (namespaces, element order,
+      createrepo_c parity — format/filelists/other blocks byte-match the reference; dnf5
+      makecache + repoquery validated against generated metadata) (Metadata Format)
+- [x] Deterministic gzip (level 6, mtime 0, no filename)
+- [x] `repomd.xml` (+ optional `.asc` hook for Phase 11), revision semantics
+- [x] Counting-sink byte accounting for the four repository counters (Metadata Generation & Storage)
+- [x] Oban regeneration job: snapshot transaction, tmp-file streaming, revision CAS, re-enqueue,
       debounce (Metadata Generation & Storage)
 - [ ] `MAX_REPOSITORY_PACKAGES` / `MAX_REPODATA_OPEN_BYTES` enforcement incl. grandfathered
-      ceilings
+      ceilings (regeneration ceilings + config done; the upload-time advisory/final checks land
+      with the Phase 9 pipeline)
 
 ## Phase 7 — Repo-serving endpoints (M1)
 
