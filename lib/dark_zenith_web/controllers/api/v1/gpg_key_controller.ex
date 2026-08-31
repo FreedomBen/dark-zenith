@@ -346,18 +346,27 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyController do
     end
   end
 
+# Each key field is capped at 1 048 576 bytes in addition to the
+  # endpoint-wide multipart cap (DESIGN.md: PUT /api/v1/gpg_key).
+  @max_key_field_bytes 1_048_576
+
   defp field_value(params, field) do
     case Map.get(params, field) do
       value when is_binary(value) and value != "" ->
-        {:ok, value}
+        check_field_size(value)
 
       %Plug.Upload{path: path} ->
-        {:ok, File.read!(path)}
+        check_field_size(File.read!(path))
 
       _other ->
         {:error, :validation_failed, %{field => ["can't be blank"]}}
     end
   end
+
+  defp check_field_size(value) when byte_size(value) > @max_key_field_bytes,
+    do: {:error, :payload_too_large}
+
+  defp check_field_size(value), do: {:ok, value}
 
   defp require_session_principal(conn) do
     case conn.assigns.api_principal do

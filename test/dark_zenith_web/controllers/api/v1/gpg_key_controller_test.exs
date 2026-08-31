@@ -71,6 +71,29 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyControllerTest do
     assert %{"error" => %{"code" => "validation_failed"}} = json_response(conn, 422)
   end
 
+  test "rejects a key field over 1 MiB with 413 payload_too_large", ctx do
+    oversized = String.duplicate("a", 1_048_577)
+
+    upload =
+      ctx.conn
+      |> bearer(ctx.token)
+      |> put_multipart(%{"public_key" => oversized, "private_key" => "small"})
+
+    assert %{"error" => %{"code" => "payload_too_large"}} = json_response(upload, 413)
+
+    revocation =
+      build_conn()
+      |> bearer(ctx.token)
+      |> put_req_header("content-type", "multipart/form-data; boundary=test")
+      |> post(~p"/api/v1/gpg_key/revocation", %{
+        "strategy" => "replace_key",
+        "public_key" => "small",
+        "private_key" => oversized
+      })
+
+    assert %{"error" => %{"code" => "payload_too_large"}} = json_response(revocation, 413)
+  end
+
   test "rejects unknown multipart fields and non-multipart bodies", ctx do
     unknown =
       ctx.conn
