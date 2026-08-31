@@ -49,10 +49,17 @@ defmodule DarkZenithWeb.UserLive.ResetPasswordTest do
   end
 
   describe "Reset Password" do
-    test "resets password once", %{conn: conn, token: token, user: user} do
+    test "resets password once and shows the API-key completion page", %{
+      conn: conn,
+      token: token,
+      user: user
+    } do
+      {:ok, {key_plaintext, _}} =
+        Accounts.create_api_key(user, %{name: "survivor", scopes: ["repo:read"]})
+
       {:ok, lv, _html} = live(conn, ~p"/users/reset-password/#{token}")
 
-      {:ok, conn} =
+      html =
         lv
         |> form("#reset_password_form",
           user: %{
@@ -61,11 +68,17 @@ defmodule DarkZenithWeb.UserLive.ResetPasswordTest do
           }
         )
         |> render_submit()
-        |> follow_redirect(conn, ~p"/users/log-in")
 
-      refute get_session(conn, :user_token)
-      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Password reset successfully"
+      # The completion page lists surviving active API keys with revoke-all.
+      assert html =~ "Password reset"
+      assert html =~ "survivor"
+      assert html =~ "Revoke all API keys"
       assert {:ok, _} = Accounts.authenticate_user(user.email, "new valid password")
+      assert {:ok, _} = Accounts.fetch_api_key_user(key_plaintext)
+
+      lv |> element("#revoke-all-keys") |> render_click()
+      assert {:error, :invalid} = Accounts.fetch_api_key_user(key_plaintext)
+      assert render(lv) =~ "no active API keys"
 
       # The token cannot be reused.
       {:error, {:redirect, to}} = live(conn, ~p"/users/reset-password/#{token}")

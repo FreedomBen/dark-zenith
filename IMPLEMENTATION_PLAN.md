@@ -190,7 +190,7 @@ wins. Checklist items reference spec sections rather than restating their rules.
       (searchable/sortable table, lazy-loaded collection tabs) (Web Interface)
 - [x] Repo create/settings/delete and collaborator management
 - [x] Upload flow LiveView (direct-to-B2 via the DirectUpload hook, preview/confirm)
-- [ ] Account: API keys, GPG key management, auth pages incl. reset-page API-key revocation
+- [x] Account: API keys, GPG key management, auth pages incl. reset-page API-key revocation
 - [ ] HTML escaping guarantees; `url` as the only RPM-derived hyperlink
 
 ## Phase 15 — Admin surface (M4)
