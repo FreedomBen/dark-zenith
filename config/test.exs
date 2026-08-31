@@ -59,3 +59,8 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# The SQL sandbox wraps each test in an outer transaction, where a late SET
+# TRANSACTION ISOLATION LEVEL is rejected by PostgreSQL; the regeneration
+# job skips it in test.
+config :dark_zenith, metadata_snapshot_isolation: false

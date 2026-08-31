@@ -223,12 +223,32 @@ defmodule DarkZenith.Repositories do
                 maybe_enable_empty_signing(changeset, repository)
               end
 
+            changed_settings = changeset.changes |> Map.keys() |> Enum.map(&to_string/1)
+
+            # A metadata-signing change (gpg_key_fingerprint) affects
+            # generated metadata: bump the revision and enqueue regeneration
+            # (DESIGN.md: Metadata Generation & Storage).
+            metadata_changed? = Map.has_key?(changeset.changes, :gpg_key_fingerprint)
+
+            changeset =
+              if metadata_changed? do
+                Ecto.Changeset.put_change(
+                  changeset,
+                  :metadata_revision,
+                  repository.metadata_revision + 1
+                )
+              else
+                changeset
+              end
+
             repository = Repo.update!(changeset)
+
+            if metadata_changed?, do: Repodata.enqueue_regeneration(repository.id)
 
             Audit.record!("repository.update",
               actor: actor,
               target: {:repository, repository.id},
-              metadata: %{"changed" => changeset.changes |> Map.keys() |> Enum.map(&to_string/1)}
+              metadata: %{"changed" => changed_settings}
             )
 
             {:ok, repository}

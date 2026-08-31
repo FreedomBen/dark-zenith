@@ -74,6 +74,20 @@ defmodule DarkZenith.Repodata do
   end
 
   @doc """
+  Enqueues the unique metadata-regeneration job for a repository. Jobs are
+  unique per repository while available or scheduled, so rapid changes
+  debounce; the revision compare-and-swap guarantees a further job runs
+  until the cache reaches the latest revision.
+  """
+  def enqueue_regeneration(repository_id) do
+    %{repository_id: repository_id}
+    |> DarkZenith.Workers.MetadataRegeneration.new()
+    |> Oban.insert!()
+
+    :ok
+  end
+
+  @doc """
   Uncompressed byte counts one package's entries contribute to each XML
   artifact (the counting sink behind the maintained repository counters —
   DESIGN.md: Metadata Generation & Storage).
