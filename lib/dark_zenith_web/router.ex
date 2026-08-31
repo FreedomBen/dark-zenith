@@ -10,10 +10,18 @@ defmodule DarkZenithWeb.Router do
     plug :put_root_layout, html: {DarkZenithWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug :put_no_store
     plug :put_content_security_policy
     plug :fetch_current_scope_for_user
     plug DarkZenithWeb.Plugs.RateLimiter, surface: :browser
   end
+
+  # Web UI and /api/v1 responses are never cached (DESIGN.md: Caching headers).
+  defp put_no_store(conn, _opts), do: put_resp_header(conn, "cache-control", "no-store")
+
+  # DESIGN.md Security Considerations: every response sets nosniff; the
+  # :browser pipeline gets it from put_secure_browser_headers.
+  defp put_nosniff(conn, _opts), do: put_resp_header(conn, "x-content-type-options", "nosniff")
 
   # LiveView-compatible CSP whose connect-src permits only the app's own
   # origins plus the exact B2 endpoint origin needed for browser uploads
@@ -40,6 +48,8 @@ defmodule DarkZenithWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug :put_no_store
+    plug :put_nosniff
     plug :fetch_session
     plug :protect_cookie_authenticated_requests
     plug DarkZenithWeb.Api.AuthPlug
@@ -64,11 +74,20 @@ defmodule DarkZenithWeb.Router do
   end
 
   # Repository-serving endpoints consumed by RPM clients: no CSRF or layout,
-  # session fetched only for optional browser-cookie authentication.
+  # session fetched only for optional browser-cookie authentication. The Vary
+  # and nosniff headers are set here so halted responses (e.g. the rate
+  # limiter's 429) carry them too; caching headers are per-response in the
+  # controller.
   pipeline :repo_serving do
+    plug :put_vary_authorization_cookie
+    plug :put_nosniff
     plug :fetch_session
     plug DarkZenithWeb.Plugs.RepoServingAuth
     plug DarkZenithWeb.Plugs.RateLimiter, surface: :repo_serving
+  end
+
+  defp put_vary_authorization_cookie(conn, _opts) do
+    put_resp_header(conn, "vary", "Authorization, Cookie")
   end
 
   # Liveness probe: no session, auth, or rate limiting (DESIGN.md:

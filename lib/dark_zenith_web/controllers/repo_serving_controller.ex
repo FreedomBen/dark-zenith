@@ -4,7 +4,8 @@ defmodule DarkZenithWeb.RepoServingController do
   Repository Endpoint; Caching headers; Private Repository Authentication).
 
   Errors are bare plain-text error-code bodies; query strings are ignored
-  entirely; every response sends `Vary: Authorization, Cookie`.
+  entirely; every response sends `Vary: Authorization, Cookie` (set by the
+  `:repo_serving` pipeline so rate-limited responses carry it too).
   """
 
   use DarkZenithWeb, :controller
@@ -15,8 +16,6 @@ defmodule DarkZenithWeb.RepoServingController do
   alias DarkZenith.Repositories.MetadataCache
 
   @metadata_files ~w(repomd.xml repomd.xml.asc primary.xml.gz filelists.xml.gz other.xml.gz)
-
-  plug :put_vary_header
 
   def repodata(conn, %{"slug" => slug, "filename" => filename}) do
     with_authorized_repository(conn, slug, fn conn, repository ->
@@ -240,9 +239,5 @@ defmodule DarkZenithWeb.RepoServingController do
     |> put_resp_header("content-type", "text/plain; charset=utf-8")
     |> send_resp(status, code)
     |> halt()
-  end
-
-  defp put_vary_header(conn, _opts) do
-    put_resp_header(conn, "vary", "Authorization, Cookie")
   end
 end
