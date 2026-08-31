@@ -8,6 +8,7 @@ defmodule DarkZenith.Collaborators.Notifier do
 
   import Swoosh.Email
 
+  alias DarkZenith.Mail
   alias DarkZenith.Mailer
 
   @doc "Direct repository-link notification for a registered collaborator."
@@ -47,7 +48,7 @@ defmodule DarkZenith.Collaborators.Notifier do
     email =
       new()
       |> to(recipient)
-      |> from({"DarkZenith", "contact@example.com"})
+      |> from(Mail.from())
       |> subject(subject)
       |> text_body(body)
 
