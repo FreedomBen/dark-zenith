@@ -78,3 +78,30 @@ defmodule DarkZenith.GpgRpmCompatStub do
   """
   def check(_home, _signing_fingerprint), do: :ok
 end
+
+defmodule DarkZenith.SigningStub do
+  @moduledoc """
+  Signing implementation for transition tests on machines without rpmsign:
+  metadata signing delegates to the real gpg implementation, while RPM
+  signing "signs" by copying the input (configurable failure via
+  `:signing_stub_rpm_result`).
+  """
+
+  @behaviour DarkZenith.Signing
+
+  @impl true
+  def sign_repomd(owner, repomd_xml), do: DarkZenith.Signing.Gpg.sign_repomd(owner, repomd_xml)
+
+  @impl true
+  def sign_rpm(_owner, source_path, workdir, _format) do
+    case Application.get_env(:dark_zenith, :signing_stub_rpm_result, :copy) do
+      :copy ->
+        signed = Path.join(workdir, "signed.rpm")
+        File.cp!(source_path, signed)
+        {:ok, signed}
+
+      other ->
+        other
+    end
+  end
+end

@@ -142,6 +142,7 @@ defmodule DarkZenith.Packages do
               {:ok, {:error, :not_found}}
 
             current ->
+              DarkZenith.SigningTransitions.cancel_items_for_package!(current.id)
               entry_sizes = Repodata.entry_open_sizes(current)
               overhead_now = Repodata.document_overhead(repo.package_count)
               overhead_next = Repodata.document_overhead(repo.package_count - 1)

@@ -163,10 +163,13 @@ wins. Checklist items reference spec sections rather than restating their rules.
       absent and exercised via the tagged :rpmsign integration test
 - [x] Metadata signing in regeneration; `RPM-GPG-KEY` and `repomd.xml.asc` endpoints
       (Signing.Gpg default impl; expired keys fail closed with conflict_gpg_key_expired)
-- [ ] RPM signing in upload pipeline (addsign/resign, --rpmv4 for v6, expected-key verify)
-- [ ] Signing transitions + items + repository snapshots: enable_rpm_signing,
-      replace_gpg_key, clear_metadata_signing, delete_signed_packages (Signing Transitions)
-- [ ] Lease/fencing worker runtime shared with uploads; sweeps; admin reset/cancel flows
+- [x] RPM signing in upload pipeline (addsign/resign, --rpmv4 for v6, expected-key verify)
+- [ ] Signing transitions + items + repository snapshots (tables + enable_rpm_signing done
+      end to end: atomic enable, re-sign item worker with lease fencing and reservations,
+      completion from durable state, cancellation on disable/package/repository deletion;
+      the user-wide replace_gpg_key/clear_metadata_signing/delete_signed_packages kinds and
+      their revocation/transition endpoints remain) (Signing Transitions)
+- [x] Lease/fencing worker runtime shared with uploads; sweeps; admin item reset
 - [x] `PREVIOUS_SECRET_KEY_BASE` re-encryption scan/jobs (GPG private key encryption;
       transition prepared-candidate rows join with the transition machinery)
 - [x] Expiry reminders (30/7/1 days) + expired-key fail-closed behavior

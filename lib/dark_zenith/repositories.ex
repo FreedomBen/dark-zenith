@@ -211,18 +211,29 @@ defmodule DarkZenith.Repositories do
           {:error, %{changeset | action: :update}}
 
         enabling_on_non_empty?(changeset, repository) ->
-          # Requires an enable_rpm_signing transition with per-package re-sign
-          # items; unreachable until package upload exists (signing phase).
-          {:error, :signing_transitions_not_implemented}
+          enable_rpm_signing_with_transition(actor, repository, changeset, owner)
 
         true ->
           Repo.transact(fn ->
+            disabling? = Ecto.Changeset.get_change(changeset, :sign_rpms) == false
+
             changeset =
-              if Ecto.Changeset.get_change(changeset, :sign_rpms) == false do
-                Ecto.Changeset.put_change(changeset, :rpm_signing_state, "disabled")
+              if disabling? do
+                changeset
+                |> Ecto.Changeset.put_change(:rpm_signing_state, "disabled")
+                |> Ecto.Changeset.put_change(:signing_transition_id, nil)
               else
                 maybe_enable_empty_signing(changeset, repository)
               end
+
+            # Disabling cancels the running enable transition and every
+            # unfinished item; already-written signatures are kept.
+            if disabling? && repository.signing_transition_id do
+              case DarkZenith.SigningTransitions.get_transition(repository.signing_transition_id) do
+                nil -> :ok
+                transition -> DarkZenith.SigningTransitions.cancel_transition!(transition)
+              end
+            end
 
             changed_settings = changeset.changes |> Map.keys() |> Enum.map(&to_string/1)
 
@@ -261,6 +272,47 @@ defmodule DarkZenith.Repositories do
   defp enabling_on_non_empty?(changeset, repository) do
     Ecto.Changeset.get_change(changeset, :sign_rpms) == true and
       repository.sign_rpms == false and repository.package_count > 0
+  end
+
+  # Enabling on a non-empty repository: one atomic transaction creates the
+  # active enable_rpm_signing transition, one pending item per current
+  # package, flips the repository to signing, and enqueues the item jobs
+  # (DESIGN.md: RPM signing).
+  defp enable_rpm_signing_with_transition(actor, repository, changeset, owner) do
+    Repo.transact(fn ->
+      lock_user_row!(repository.user_id)
+
+      current =
+        Repo.one!(from r in Repository, where: r.id == ^repository.id, lock: "FOR UPDATE")
+
+      cond do
+        current.signing_transition_id ->
+          {:error, :conflict_gpg_key_transition_in_progress}
+
+        is_nil(owner.gpg_signing_fingerprint) ->
+          {:error,
+           changeset
+           |> Ecto.Changeset.add_error(:sign_rpms, "requires a configured GPG key")
+           |> Map.put(:action, :update)}
+
+        true ->
+          transition = DarkZenith.SigningTransitions.enable_rpm_signing!(current, owner)
+
+          updated =
+            changeset
+            |> Ecto.Changeset.put_change(:rpm_signing_state, "signing")
+            |> Ecto.Changeset.put_change(:signing_transition_id, transition.id)
+            |> Repo.update!()
+
+          Audit.record!("repository.update",
+            actor: actor,
+            target: {:repository, updated.id},
+            metadata: %{"changed" => ["sign_rpms"], "transition_id" => transition.id}
+          )
+
+          {:ok, updated}
+      end
+    end)
   end
 
   defp maybe_enable_empty_signing(changeset, repository) do
@@ -329,6 +381,8 @@ defmodule DarkZenith.Repositories do
                 Repo.one!(
                   from(s in SlugReservation, where: s.slug == ^current.slug, lock: "FOR UPDATE")
                 )
+
+              DarkZenith.SigningTransitions.cancel_transitions_for_repository!(current.id)
 
               stored_bytes = packages |> Enum.map(& &1.size_package) |> Enum.sum()
 
