@@ -112,16 +112,15 @@ defmodule DarkZenith.Workers.UploadProcessing do
     source_path = Path.join(dir, "source.rpm")
 
     with {:repo, %Repository{}} <- {:repo, repository},
-         sign_snapshot = signing_snapshot(repository),
+         {:ok, sign_snapshot, owner} <- signing_snapshot(repository),
          :ok <- download_source(config, intent, source_path),
          {:ok, measured_size, sha256} <- measure(source_path, intent),
          :ok <- verify_integrity(source_path, dir),
          {:ok, metadata} <- parse_metadata(source_path),
-         :ok <- signing_step(sign_snapshot),
-         final_size = measured_size,
-         final_sha = sha256,
+         {:ok, final} <-
+           signing_step(sign_snapshot, owner, source_path, dir, metadata, measured_size, sha256),
          :ok <-
-           continue(intent, token, repository, metadata, final_size, final_sha, sign_snapshot, config) do
+           continue(intent, token, repository, final, sign_snapshot, config) do
       :ok
     else
       {:repo, nil} ->
@@ -136,30 +135,32 @@ defmodule DarkZenith.Workers.UploadProcessing do
     end
   end
 
-  defp continue(intent, token, repository, metadata, final_size, final_sha, sign_snapshot, config) do
+  defp continue(intent, token, repository, final, sign_snapshot, config) do
     cond do
       intent.mode == "web_preview" and is_nil(intent.preview_metadata) ->
-        preview_transition(intent, token, metadata)
+        preview_transition(intent, token, final.metadata)
 
       intent.mode == "web_preview" and
-          intent.preview_metadata != Uploads.preview_metadata(metadata) ->
+          intent.preview_metadata != Uploads.preview_metadata(final.metadata) ->
         {:error, {:deterministic, "validation_failed"}}
 
       true ->
-        finalize(intent, token, repository, metadata, final_size, final_sha, sign_snapshot, config)
+        finalize(intent, token, repository, final, sign_snapshot, config)
     end
   end
 
-  defp finalize(intent, token, repository, metadata, final_size, final_sha, sign_snapshot, config) do
+  defp finalize(intent, token, repository, final, sign_snapshot, config) do
     now = DateTime.utc_now(:second)
-    candidate = candidate_package(intent, repository, metadata, final_size, final_sha, now)
+
+    candidate =
+      candidate_package(intent, repository, final.metadata, final.size, final.sha256, now)
 
     with :ok <- advisory_limits(repository, candidate),
-         :ok <- advisory_duplicate(repository, metadata),
-         :ok <- adjust_reservation(intent, final_size),
-         {:ok, final_key} <- compose_final_key(repository, intent, metadata),
-         {:ok, final_version} <- write_final(config, final_key, intent),
-         :ok <- verify_final(config, final_key, final_version, final_size) do
+         :ok <- advisory_duplicate(repository, final.metadata),
+         :ok <- adjust_reservation(intent, final.size),
+         {:ok, final_key} <- compose_final_key(repository, intent, final.metadata),
+         {:ok, final_version} <- write_final(config, final_key, intent, final),
+         :ok <- verify_final(config, final_key, final_version, final.size) do
       commit(
         intent,
         token,
@@ -251,20 +252,89 @@ defmodule DarkZenith.Workers.UploadProcessing do
 
   ## Step 4: signing snapshot and dispatch
 
+  # The snapshot fences the final transaction against settings and key
+  # changes that raced the attempt (DESIGN.md: step 4/step 10).
   defp signing_snapshot(repository) do
-    %{
-      sign_rpms: repository.sign_rpms,
-      gpg_key_fingerprint: repository.gpg_key_fingerprint
-    }
+    owner = Repo.get(User, repository.user_id)
+
+    if owner do
+      {:ok,
+       %{
+         sign_rpms: repository.sign_rpms,
+         gpg_key_fingerprint: repository.gpg_key_fingerprint,
+         owner_signing_fingerprint: owner.gpg_signing_fingerprint,
+         owner_public_key: owner.gpg_key_public
+       }, owner}
+    else
+      {:repo, nil}
+    end
   end
 
-  defp signing_step(%{sign_rpms: false}), do: :ok
+  # Unsigned path: the staged bytes are final.
+  defp signing_step(%{sign_rpms: false}, _owner, source_path, _dir, metadata, size, sha256) do
+    {:ok, %{path: source_path, metadata: metadata, size: size, sha256: sha256, signed?: false}}
+  end
 
-  defp signing_step(%{sign_rpms: true}) do
-    # RPM signing dispatches through DarkZenith.Signing in the signing phase;
-    # until then the configured implementation reports unavailability, which
-    # is retryable infrastructure per the spec.
-    {:error, {:infra, "signing_unavailable"}}
+  defp signing_step(%{sign_rpms: true} = snapshot, owner, source_path, dir, metadata, _size, _sha) do
+    cond do
+      is_nil(snapshot.owner_signing_fingerprint) ->
+        # sign_rpms enabled with no configured key rejects the upload.
+        {:error, {:deterministic, "validation_failed"}}
+
+      true ->
+        case DarkZenith.Signing.sign_rpm(owner, source_path, dir, metadata.rpm_format) do
+          {:ok, signed_path} ->
+            signed_final(signed_path, metadata)
+
+          {:error, :expired} ->
+            {:error, {:deterministic, "conflict_gpg_key_expired"}}
+
+          {:error, :validation_failed} ->
+            {:error, {:deterministic, "validation_failed"}}
+
+          {:error, :rpm_verification_unavailable} ->
+            {:error, {:infra, "rpm_verification_unavailable"}}
+
+          {:error, _unavailable} ->
+            {:error, {:infra, "signing_unavailable"}}
+        end
+    end
+  end
+
+  # Step 5: final values are computed from the signed bytes — signing moves
+  # the main header, so offsets and the v4 archive size are re-read, and the
+  # persisted size must still obey the upload ceiling.
+  defp signed_final(signed_path, original_metadata) do
+    %{size: size} = File.stat!(signed_path)
+    max = Application.get_env(:dark_zenith, :max_rpm_upload_bytes, 536_870_912)
+
+    cond do
+      size > max ->
+        {:error, {:deterministic, "payload_too_large"}}
+
+      true ->
+        case DarkZenith.Rpm.parse(File.read!(signed_path)) do
+          {:ok, signed_metadata} ->
+            metadata = %{
+              original_metadata
+              | header_start: signed_metadata.header_start,
+                header_end: signed_metadata.header_end,
+                size_archive: signed_metadata.size_archive
+            }
+
+            {:ok,
+             %{
+               path: signed_path,
+               metadata: metadata,
+               size: size,
+               sha256: stream_sha256(signed_path),
+               signed?: true
+             }}
+
+          {:error, _reason} ->
+            {:error, {:deterministic, "validation_failed"}}
+        end
+    end
   end
 
   ## Steps 6–9
@@ -362,8 +432,17 @@ defmodule DarkZenith.Workers.UploadProcessing do
     end
   end
 
-  defp write_final(config, final_key, intent) do
-    case B2.copy_object(config, final_key, intent.staging_path, intent.staging_version_id) do
+  # Step 9: unsigned packages are server-side copied from the exact staging
+  # version; signed packages upload the verified local output.
+  defp write_final(config, final_key, intent, final) do
+    result =
+      if final.signed? do
+        B2.put_object(config, final_key, File.read!(final.path))
+      else
+        B2.copy_object(config, final_key, intent.staging_path, intent.staging_version_id)
+      end
+
+    case result do
       {:ok, version} -> {:ok, version}
       {:error, :storage_unavailable} -> {:error, {:infra, "storage_unavailable"}}
     end
@@ -415,9 +494,11 @@ defmodule DarkZenith.Workers.UploadProcessing do
           is_nil(current) or current.status != "processing" or current.lease_token != token ->
             {:ok, {:lost, nil}}
 
-          repo.sign_rpms != sign_snapshot.sign_rpms or
-              repo.gpg_key_fingerprint != sign_snapshot.gpg_key_fingerprint ->
+          settings_changed?(repo, owner, sign_snapshot) ->
             {:ok, {:settings_changed, current}}
+
+          sign_snapshot.sign_rpms and key_expired?(owner) ->
+            {:ok, {:fail, "conflict_gpg_key_expired", current}}
 
           is_nil(initiator) or not (initiator.is_admin or initiator.id == repo.user_id) ->
             {:ok, {:fail, "forbidden", current}}
@@ -456,6 +537,22 @@ defmodule DarkZenith.Workers.UploadProcessing do
         _ = B2.delete_version(config, candidate.storage_path, candidate.storage_version_id)
         deterministic_failure(intent, token, code)
     end
+  end
+
+  # A signing-setting or fingerprint change while the attempt ran means the
+  # candidate bytes were produced under superseded settings.
+  defp settings_changed?(repo, owner, snapshot) do
+    repo.sign_rpms != snapshot.sign_rpms or
+      repo.gpg_key_fingerprint != snapshot.gpg_key_fingerprint or
+      (snapshot.sign_rpms and
+         (owner.gpg_signing_fingerprint != snapshot.owner_signing_fingerprint or
+            owner.gpg_key_public != snapshot.owner_public_key))
+  end
+
+  defp key_expired?(%{gpg_key_expires_at: nil}), do: false
+
+  defp key_expired?(%{gpg_key_expires_at: expires_at}) do
+    DateTime.compare(expires_at, DateTime.utc_now()) != :gt
   end
 
   defp candidate_metadata(candidate) do

@@ -251,7 +251,27 @@ defmodule DarkZenith.Workers.UploadProcessingTest do
     assert {:error, :forbidden} = Uploads.confirm_preview(admin, reload(intent))
   end
 
-  test "an enabled signing repository requeues as signing_unavailable", ctx do
+  test "sign_rpms with no configured owner key rejects the upload", ctx do
+    {1, _} =
+      Repo.update_all(from(r in Repository, where: r.id == ^ctx.repo.id),
+        set: [
+          sign_rpms: true,
+          gpg_key_fingerprint: String.duplicate("A", 40),
+          rpm_signing_state: "enabled"
+        ]
+      )
+
+    intent = queued_intent!(ctx, ctx.binary)
+    assert :ok = perform_job(UploadProcessing, %{"intent_id" => intent.id})
+
+    failed = reload(intent)
+    assert failed.status == "failed"
+    assert failed.last_error_code == "validation_failed"
+  end
+
+  test "an undecryptable owner key requeues as signing_unavailable", ctx do
+    DarkZenith.RepositoriesFixtures.put_user_gpg_fingerprint(ctx.owner)
+
     {1, _} =
       Repo.update_all(from(r in Repository, where: r.id == ^ctx.repo.id),
         set: [

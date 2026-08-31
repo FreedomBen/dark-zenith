@@ -10,6 +10,18 @@ defmodule DarkZenith.Signing do
   @callback sign_repomd(owner :: struct(), repomd_xml :: binary()) ::
               {:ok, String.t()} | {:error, :unavailable} | {:error, :expired}
 
+  @callback sign_rpm(
+              owner :: struct(),
+              source_path :: Path.t(),
+              workdir :: Path.t(),
+              format :: 4 | 6
+            ) ::
+              {:ok, Path.t()}
+              | {:error, :unavailable}
+              | {:error, :expired}
+              | {:error, :validation_failed}
+              | {:error, :rpm_verification_unavailable}
+
   @doc """
   Produces a detached ASCII-armored signature over the exact `repomd.xml`
   bytes with the owner's signing key. Returns `{:ok, armored_signature}`,
@@ -18,6 +30,16 @@ defmodule DarkZenith.Signing do
   """
   def sign_repomd(owner, repomd_xml) do
     impl().sign_repomd(owner, repomd_xml)
+  end
+
+  @doc """
+  Signs one RPM file with the owner's exact signing key, preserving the
+  package's v4/v6 format (`--rpmv4` compatibility signature for v6), and
+  verifies the output against the owner's public key. Returns the signed
+  file path inside `workdir`.
+  """
+  def sign_rpm(owner, source_path, workdir, format) do
+    impl().sign_rpm(owner, source_path, workdir, format)
   end
 
   defp impl do

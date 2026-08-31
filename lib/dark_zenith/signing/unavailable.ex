@@ -8,4 +8,7 @@ defmodule DarkZenith.Signing.Unavailable do
 
   @impl true
   def sign_repomd(_owner, _repomd_xml), do: {:error, :unavailable}
+
+  @impl true
+  def sign_rpm(_owner, _source_path, _workdir, _format), do: {:error, :unavailable}
 end
