@@ -140,7 +140,9 @@ defmodule DarkZenith.Workers.UploadProcessingTest do
 
   test "a package with a BAD digest fails terminally as validation_failed", ctx do
     size = byte_size(ctx.binary)
-    corrupted = binary_part(ctx.binary, 0, size - 10) <> <<0xFF>> <> binary_part(ctx.binary, size - 9, 9)
+
+    corrupted =
+      binary_part(ctx.binary, 0, size - 10) <> <<0xFF>> <> binary_part(ctx.binary, size - 9, 9)
 
     intent = queued_intent!(ctx, corrupted)
     assert :ok = perform_job(UploadProcessing, %{"intent_id" => intent.id})

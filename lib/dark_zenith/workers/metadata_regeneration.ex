@@ -226,7 +226,9 @@ defmodule DarkZenith.Workers.MetadataRegeneration do
     timestamp = DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_unix()
 
     artifacts =
-      Enum.map(artifacts, fn {type, artifact} -> {type, Map.put(artifact, :timestamp, timestamp)} end)
+      Enum.map(artifacts, fn {type, artifact} ->
+        {type, Map.put(artifact, :timestamp, timestamp)}
+      end)
 
     repomd_xml =
       IO.iodata_to_binary(Repomd.encode(artifacts, repository.metadata_revision))
@@ -304,9 +306,14 @@ defmodule DarkZenith.Workers.MetadataRegeneration do
     case Repo.one(
            from r in Repository, where: r.id == ^repository.id, select: r.metadata_revision
          ) do
-      nil -> :ok
-      revision when revision > repository.metadata_revision -> Repodata.enqueue_regeneration(repository.id)
-      _current -> :ok
+      nil ->
+        :ok
+
+      revision when revision > repository.metadata_revision ->
+        Repodata.enqueue_regeneration(repository.id)
+
+      _current ->
+        :ok
     end
   end
 

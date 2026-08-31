@@ -89,12 +89,21 @@ defmodule DarkZenith.MailTest do
 
       token =
         extract_user_token(fn url ->
-          Accounts.deliver_user_update_email_instructions(%{user | email: new_email}, user.email, url)
+          Accounts.deliver_user_update_email_instructions(
+            %{user | email: new_email},
+            user.email,
+            url
+          )
         end)
 
       {:ok, _} = Accounts.update_user_email(user, token)
 
-      assert [job] = all_enqueued(worker: EmailDelivery, args: %{to: previous, subject: "Your account email was changed"})
+      assert [job] =
+               all_enqueued(
+                 worker: EmailDelivery,
+                 args: %{to: previous, subject: "Your account email was changed"}
+               )
+
       assert job.args["text_body"] =~ new_email
     end
 

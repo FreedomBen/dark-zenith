@@ -29,7 +29,11 @@ defmodule DarkZenith.Collaborators.MailerFailureTest do
       Collaborators.add_collaborator(owner, repo, user_fixture().email)
 
     {:ok, :created, invitation} =
-      Collaborators.add_collaborator(owner, repo, "pending#{System.unique_integer([:positive])}@example.com")
+      Collaborators.add_collaborator(
+        owner,
+        repo,
+        "pending#{System.unique_integer([:positive])}@example.com"
+      )
 
     %{collaborator: collaborator, invitation: invitation}
   end

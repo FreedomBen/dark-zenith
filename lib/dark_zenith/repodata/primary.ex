@@ -121,16 +121,21 @@ defmodule DarkZenith.Repodata.Primary do
 
   defp dep_element(tag, entries) do
     [
-      "    <", tag, ">\n",
+      "    <",
+      tag,
+      ">\n",
       Enum.map(entries, &dep_entry/1),
-      "    </", tag, ">\n"
+      "    </",
+      tag,
+      ">\n"
     ]
   end
 
   defp dep_entry(entry) do
     versioned =
       if entry["op"] do
-        release = if entry["release"], do: [~s( rel="), XML.escape(entry["release"]), ~s(")], else: []
+        release =
+          if entry["release"], do: [~s( rel="), XML.escape(entry["release"]), ~s(")], else: []
 
         [
           ~s( flags="#{op_to_flags(entry["op"])}" epoch="#{entry["epoch"]}" ver="),
@@ -157,8 +162,13 @@ defmodule DarkZenith.Repodata.Primary do
   # bin/, and /usr/lib/sendmail, with the filelists type mapping.
   defp primary_files(files) do
     for file <- files, primary_path?(file["path"]) do
-      ["    <file", DarkZenith.Repodata.Filelists.type_attribute(file), ">",
-       XML.escape(file["path"]), "</file>\n"]
+      [
+        "    <file",
+        DarkZenith.Repodata.Filelists.type_attribute(file),
+        ">",
+        XML.escape(file["path"]),
+        "</file>\n"
+      ]
     end
   end
 

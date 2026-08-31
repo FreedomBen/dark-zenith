@@ -72,7 +72,10 @@ defmodule DarkZenith.Collaborators.ConversionTest do
       {:ok, :created, invitation} = Collaborators.add_collaborator(ctx.owner, ctx.repo, email)
 
       past = DateTime.add(DateTime.utc_now(:second), -1, :day)
-      Repo.update_all(from(i in Invitation, where: i.id == ^invitation.id), set: [expires_at: past])
+
+      Repo.update_all(from(i in Invitation, where: i.id == ^invitation.id),
+        set: [expires_at: past]
+      )
 
       {:ok, user} = Accounts.register_user(%{email: email, password: valid_user_password()})
 
@@ -114,7 +117,8 @@ defmodule DarkZenith.Collaborators.ConversionTest do
       assert Repo.all(from(i in Invitation, where: i.email == ^new_email)) == []
     end
 
-    test "an invitation on a repository where the user is already a collaborator is dropped", ctx do
+    test "an invitation on a repository where the user is already a collaborator is dropped",
+         ctx do
       user = user_fixture()
       {:ok, :created, existing} = Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
 
@@ -134,7 +138,8 @@ defmodule DarkZenith.Collaborators.ConversionTest do
       assert length(all_enqueued(worker: CollaboratorMailer)) == before_jobs
     end
 
-    test "an invitation on a repository the user owns is dropped without a collaborator row", ctx do
+    test "an invitation on a repository the user owns is dropped without a collaborator row",
+         ctx do
       new_email = unique_user_email()
       {:ok, :created, _} = Collaborators.add_collaborator(ctx.owner, ctx.repo, new_email)
 

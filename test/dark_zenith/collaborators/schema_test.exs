@@ -69,9 +69,11 @@ defmodule DarkZenith.Collaborators.SchemaTest do
     test "one row per (repository, email)", ctx do
       invitation = invitation_row_fixture(ctx.repo, ctx.owner)
 
-      assert_raise Ecto.ConstraintError, ~r/collaborator_invitations_repository_id_email_index/, fn ->
-        invitation_row_fixture(ctx.repo, ctx.owner, %{email: invitation.email})
-      end
+      assert_raise Ecto.ConstraintError,
+                   ~r/collaborator_invitations_repository_id_email_index/,
+                   fn ->
+                     invitation_row_fixture(ctx.repo, ctx.owner, %{email: invitation.email})
+                   end
     end
 
     test "notification status includes suppressed and is constrained", ctx do
@@ -94,16 +96,20 @@ defmodule DarkZenith.Collaborators.SchemaTest do
     end
 
     test "sent requires notification_sent_at; other states require null", ctx do
-      assert_raise Ecto.ConstraintError, ~r/collaborator_invitations_sent_at_matches_status/, fn ->
-        invitation_row_fixture(ctx.repo, ctx.owner, %{notification_status: "sent"})
-      end
+      assert_raise Ecto.ConstraintError,
+                   ~r/collaborator_invitations_sent_at_matches_status/,
+                   fn ->
+                     invitation_row_fixture(ctx.repo, ctx.owner, %{notification_status: "sent"})
+                   end
 
-      assert_raise Ecto.ConstraintError, ~r/collaborator_invitations_sent_at_matches_status/, fn ->
-        invitation_row_fixture(ctx.repo, ctx.owner, %{
-          notification_status: "failed",
-          notification_sent_at: DateTime.utc_now(:second)
-        })
-      end
+      assert_raise Ecto.ConstraintError,
+                   ~r/collaborator_invitations_sent_at_matches_status/,
+                   fn ->
+                     invitation_row_fixture(ctx.repo, ctx.owner, %{
+                       notification_status: "failed",
+                       notification_sent_at: DateTime.utc_now(:second)
+                     })
+                   end
     end
 
     test "rows are removed when the repository or the inviting user is deleted", ctx do

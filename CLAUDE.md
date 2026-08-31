@@ -7,9 +7,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Commit after making changes.
 - Use a TDD (Test-Driven Development) approach when writing code.  You don't need to write tests for tests.
 
-## Repository status: implementation in progress
+## Repository status: initial implementation complete
 
-Implementation of `DESIGN.md` has begun (Phoenix 1.8 app scaffolded at the repo root).
+Every item in `IMPLEMENTATION_PLAN.md` is checked off: the `DESIGN.md` feature set is
+implemented and covered by the test suite (dnf5-validated metadata, uploads, signing
+including user-wide key transitions, rate limiting, admin surface, deployment artifacts).
+Remaining work is maintenance, review findings, and running `deploy/release_gate.sh`
+against a staging deployment before a release. Spec changes still precede code changes
+when behavior is being (re)defined.
 Key files:
 
 - `DESIGN.md` — the product/architecture spec; the source of truth for everything below

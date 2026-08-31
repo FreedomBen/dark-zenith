@@ -132,10 +132,18 @@ defmodule DarkZenithWeb.UserLive.Settings do
           <.input field={@key_form[:name]} type="text" label="Key name" required />
           <fieldset class="fieldset">
             <label
-              :for={scope <- ~w(repo:read repo:create repo:update repo:delete package:upload package:delete)}
+              :for={
+                scope <-
+                  ~w(repo:read repo:create repo:update repo:delete package:upload package:delete)
+              }
               class="flex items-center gap-2 text-sm"
             >
-              <input type="checkbox" name="api_key[scopes][]" value={scope} class="checkbox checkbox-sm" />
+              <input
+                type="checkbox"
+                name="api_key[scopes][]"
+                value={scope}
+                class="checkbox checkbox-sm"
+              />
               <span class="font-mono">{scope}</span>
             </label>
           </fieldset>
@@ -151,7 +159,10 @@ defmodule DarkZenithWeb.UserLive.Settings do
         <h2 class="text-lg font-semibold">GPG signing key</h2>
 
         <div :if={@gpg} class="space-y-2 text-sm" id="gpg-key-info">
-          <p><span class="font-semibold">Fingerprint:</span> <span class="font-mono">{@gpg.fingerprint}</span></p>
+          <p>
+            <span class="font-semibold">Fingerprint:</span>
+            <span class="font-mono">{@gpg.fingerprint}</span>
+          </p>
           <p>
             <span class="font-semibold">Signing key:</span>
             <span class="font-mono">{@gpg.signing_fingerprint}</span>
@@ -179,10 +190,11 @@ defmodule DarkZenithWeb.UserLive.Settings do
           <div :if={@gpg.transition} class="alert alert-info block space-y-1" id="gpg-transition">
             <p class="font-semibold">{transition_title(@gpg.transition)}</p>
             <p class="text-xs">
-              Status: {@gpg.transition.status}<span :if={@gpg.transition.resume_status}>
-                (resumes {@gpg.transition.resume_status})</span>
-              · Repositories updated: {@gpg_progress.repos_done}/{@gpg_progress.repos_total}
-              · Packages processed: {@gpg_progress.items_done}/{@gpg_progress.items_total}
+              Status: {@gpg.transition.status}
+              <span :if={@gpg.transition.resume_status}>
+                (resumes {@gpg.transition.resume_status})
+              </span>
+              · Repositories updated: {@gpg_progress.repos_done}/{@gpg_progress.repos_total} · Packages processed: {@gpg_progress.items_done}/{@gpg_progress.items_total}
             </p>
             <p :if={@gpg.replacement_in_progress and @gpg.previous_public_key} class="text-xs">
               Both the previous and new public keys are served until re-signing completes.
@@ -203,8 +215,7 @@ defmodule DarkZenithWeb.UserLive.Settings do
             id="gpg-removal-strategies"
           >
             <p class="text-sm">
-              This key is used by {@gpg_usage.metadata_signed} metadata-signed and
-              {@gpg_usage.rpm_signed} RPM-signed repositories. Removing it requires an
+              This key is used by {@gpg_usage.metadata_signed} metadata-signed and {@gpg_usage.rpm_signed} RPM-signed repositories. Removing it requires an
               explicit strategy (or upload a replacement key pair below):
             </p>
             <button
@@ -245,12 +256,18 @@ defmodule DarkZenithWeb.UserLive.Settings do
         >
           <p class="text-sm text-base-content/70 mb-2">
             {if @gpg,
-              do: "Upload a new key pair to start a durable key replacement: " <>
-                "affected repositories and packages are re-signed in the background.",
+              do:
+                "Upload a new key pair to start a durable key replacement: " <>
+                  "affected repositories and packages are re-signed in the background.",
               else: "Upload a dedicated repository-signing key pair."} Passphrase-protected
             keys are rejected.
           </p>
-          <.input field={@gpg_form[:public_key]} type="textarea" label="ASCII-armored public key" required />
+          <.input
+            field={@gpg_form[:public_key]}
+            type="textarea"
+            label="ASCII-armored public key"
+            required
+          />
           <.input
             field={@gpg_form[:private_key]}
             type="textarea"
@@ -409,8 +426,7 @@ defmodule DarkZenithWeb.UserLive.Settings do
           metadata: %{}
         )
 
-        {:noreply,
-         socket |> reload_account_sections() |> put_flash(:info, "API key revoked.")}
+        {:noreply, socket |> reload_account_sections() |> put_flash(:info, "API key revoked.")}
 
       :error ->
         {:noreply, put_flash(socket, :error, "That API key could not be revoked.")}
@@ -422,8 +438,7 @@ defmodule DarkZenithWeb.UserLive.Settings do
 
     case Accounts.upsert_gpg_key(user, params["public_key"] || "", params["private_key"] || "") do
       {:ok, _user} ->
-        {:noreply,
-         socket |> reload_account_sections() |> put_flash(:info, "GPG key uploaded.")}
+        {:noreply, socket |> reload_account_sections() |> put_flash(:info, "GPG key uploaded.")}
 
       {:accepted, _transition} ->
         {:noreply,
@@ -527,8 +542,7 @@ defmodule DarkZenithWeb.UserLive.Settings do
          )}
 
       {:error, :transition_in_progress} ->
-        {:noreply,
-         put_flash(socket, :error, "Another key transition is already unresolved.")}
+        {:noreply, put_flash(socket, :error, "Another key transition is already unresolved.")}
 
       {:error, :not_found} ->
         {:noreply, reload_account_sections(socket)}
@@ -565,7 +579,12 @@ defmodule DarkZenithWeb.UserLive.Settings do
   defp gpg_in_use?(usage), do: usage.metadata_signed > 0 or usage.rpm_signed > 0
 
   defp transition_title(%{kind: "replace_gpg_key"}), do: "Key replacement in progress"
-  defp transition_title(%{kind: "clear_metadata_signing"}), do: "Metadata signing removal in progress"
-  defp transition_title(%{kind: "delete_signed_packages"}), do: "Signed-package deletion in progress"
+
+  defp transition_title(%{kind: "clear_metadata_signing"}),
+    do: "Metadata signing removal in progress"
+
+  defp transition_title(%{kind: "delete_signed_packages"}),
+    do: "Signed-package deletion in progress"
+
   defp transition_title(_), do: "Key transition in progress"
 end

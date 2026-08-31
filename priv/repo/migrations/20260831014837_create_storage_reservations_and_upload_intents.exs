@@ -63,9 +63,7 @@ defmodule DarkZenith.Repo.Migrations.CreateStorageReservationsAndUploadIntents d
       timestamps(type: :utc_datetime)
     end
 
-    create unique_index(:upload_intents, [:reservation_id],
-             where: "reservation_id IS NOT NULL"
-           )
+    create unique_index(:upload_intents, [:reservation_id], where: "reservation_id IS NOT NULL")
 
     create unique_index(:upload_intents, [:staging_path])
     create unique_index(:upload_intents, [:package_id])

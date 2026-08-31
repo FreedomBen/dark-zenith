@@ -123,7 +123,11 @@ defmodule DarkZenith.SigningTransitionsUserWideTest do
       {1, _} =
         Repo.update_all(
           Ecto.Query.from(r in Repositories.Repository, where: r.id == ^repo.id),
-          set: [sign_rpms: true, rpm_signing_state: "enabled", gpg_key_fingerprint: String.duplicate("A", 40)]
+          set: [
+            sign_rpms: true,
+            rpm_signing_state: "enabled",
+            gpg_key_fingerprint: String.duplicate("A", 40)
+          ]
         )
 
       repo = Repo.get!(Repositories.Repository, repo.id)
@@ -569,5 +573,174 @@ defmodule DarkZenith.SigningTransitionsUserWideFlowsTest do
     assert is_nil(replacement.prepared_gpg_key_private)
 
     assert Repo.get!(User, ctx.owner.id).gpg_key_transition_id == removal.id
+  end
+end
+
+defmodule DarkZenith.SigningTransitionsUserWideFaultTest do
+  # Not async: overrides batch size and the signing implementation.
+  use DarkZenith.DataCase, async: false
+  use Oban.Testing, repo: DarkZenith.Repo
+
+  import DarkZenith.AccountsFixtures
+  import DarkZenith.GpgFixtures
+  import DarkZenith.PackagesFixtures
+  import DarkZenith.RpmFixtures
+
+  alias DarkZenith.Accounts
+  alias DarkZenith.Repositories
+  alias DarkZenith.SigningTransitions.{Item, Transition, TransitionRepository, UserWide}
+  alias DarkZenith.Workers.RetryPolicy
+
+  setup do
+    Application.put_env(:dark_zenith, :signing_impl, DarkZenith.SigningStub)
+    Application.put_env(:dark_zenith, :signing_preparation_batch_size, 1)
+
+    on_exit(fn ->
+      Application.delete_env(:dark_zenith, :signing_impl)
+      Application.delete_env(:dark_zenith, :signing_preparation_batch_size)
+    end)
+
+    pair = generate_key_pair()
+    owner = user_fixture()
+    {:ok, owner} = Accounts.upsert_gpg_key(owner, pair.public, pair.private)
+    %{owner: owner, pair: pair}
+  end
+
+  test "preparation advances one durable batch at a time with idempotent re-runs", ctx do
+    for _ <- 1..3 do
+      {:ok, _} =
+        Repositories.create_repository(ctx.owner, %{
+          slug: "fault-#{System.unique_integer([:positive])}",
+          name: "F",
+          gpg_key_fingerprint: ctx.pair.fingerprint
+        })
+    end
+
+    assert {:accepted, transition} = UserWide.start_removal(ctx.owner, "clear_metadata_signing")
+
+    # One batch per run: after two runs exactly two snapshot rows exist and
+    # the cursor sits at the second row.
+    :ok = UserWide.run_phase(transition.id)
+    :ok = UserWide.run_phase(transition.id)
+
+    rows =
+      Repo.all(
+        from sr in TransitionRepository,
+          where: sr.transition_id == ^transition.id,
+          order_by: [asc: sr.repository_id],
+          select: sr.repository_id
+      )
+
+    assert length(rows) == 2
+
+    current = Repo.get!(Transition, transition.id)
+    assert current.repositories_prepared_through == Enum.at(rows, 1)
+    refute current.repositories_preparation_complete
+
+    # Replaying the same batch after a simulated crash is idempotent: the
+    # unique upsert cannot duplicate rows.
+    {1, _} =
+      Repo.update_all(
+        from(t in Transition, where: t.id == ^transition.id),
+        set: [repositories_prepared_through: Enum.at(rows, 0)]
+      )
+
+    :ok = UserWide.run_phase(transition.id)
+
+    count =
+      Repo.aggregate(
+        from(sr in TransitionRepository, where: sr.transition_id == ^transition.id),
+        :count
+      )
+
+    assert count == 2
+  end
+
+  test "transient phase failures follow Background Retry Policy to failed with resume_status",
+       ctx do
+    {:ok, _} =
+      Repositories.create_repository(ctx.owner, %{
+        slug: "fault-fail-#{System.unique_integer([:positive])}",
+        name: "FF",
+        gpg_key_fingerprint: ctx.pair.fingerprint
+      })
+
+    assert {:accepted, transition} = UserWide.start_removal(ctx.owner, "clear_metadata_signing")
+
+    # Drive the failure recorder directly (the guarded batch path calls it
+    # on any raised transient error).
+    for n <- 1..19 do
+      :ok =
+        UserWide.__record_phase_failure_for_tests__(
+          transition.id,
+          "preparing",
+          "database_unavailable"
+        )
+
+      current = Repo.get!(Transition, transition.id)
+      assert current.phase_attempts == n
+      assert current.status == "preparing"
+      assert current.phase_next_attempt_at
+
+      # Backoff matches min(3600, 30 * 2^(n-1)) from the policy.
+      expected = RetryPolicy.backoff(n)
+      delta = DateTime.diff(current.phase_next_attempt_at, DateTime.utc_now(:second))
+      assert_in_delta delta, expected, 3
+
+      # Re-arm as due so the next failure is recorded against "preparing".
+      {1, _} =
+        Repo.update_all(
+          from(t in Transition, where: t.id == ^transition.id),
+          set: [phase_next_attempt_at: DateTime.utc_now(:second)]
+        )
+    end
+
+    :ok =
+      UserWide.__record_phase_failure_for_tests__(
+        transition.id,
+        "preparing",
+        "database_unavailable"
+      )
+
+    failed = Repo.get!(Transition, transition.id)
+    assert failed.status == "failed"
+    assert failed.resume_status == "preparing"
+    assert failed.last_error_code == "database_unavailable"
+    assert failed.phase_attempts == 20
+    assert is_nil(failed.phase_next_attempt_at)
+
+    # The fence still blocks creations while failed-resuming-preparing.
+    assert {:error, :gpg_key_transition_in_progress} =
+             Repositories.create_repository(ctx.owner, %{slug: "still-fenced", name: "X"})
+  end
+
+  test "a run_phase crash inside a batch records one transient failure", ctx do
+    {:ok, repo} =
+      Repositories.create_repository(ctx.owner, %{
+        slug: "fault-crash-#{System.unique_integer([:positive])}",
+        name: "FC",
+        gpg_key_fingerprint: ctx.pair.fingerprint,
+        sign_rpms: true
+      })
+
+    insert_package_from_rpm!(repo, minimal_binary())
+    sync_repository_metadata_state!(repo)
+
+    assert {:accepted, transition} = UserWide.start_removal(ctx.owner, "delete_signed_packages")
+
+    # Poison the batch: a duplicate snapshot row with a conflicting id makes
+    # insert_all raise on the non-conflict path? Instead simulate by making
+    # the transition row vanish mid-run is not possible in one process, so
+    # assert the rescue path via a bogus batch size.
+    Application.put_env(:dark_zenith, :signing_preparation_batch_size, "boom")
+
+    assert :ok = UserWide.run_phase(transition.id)
+
+    Application.put_env(:dark_zenith, :signing_preparation_batch_size, 1)
+
+    current = Repo.get!(Transition, transition.id)
+    assert current.status == "preparing"
+    assert current.phase_attempts == 1
+    assert current.last_error_code == "signing_transition_phase_error"
   end
 end

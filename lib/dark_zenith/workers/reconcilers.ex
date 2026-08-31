@@ -95,9 +95,7 @@ defmodule DarkZenith.Workers.FinalReconciler do
 
     with {:ok, entries} <- B2.list_all_object_versions(config, "repos/") do
       referenced =
-        MapSet.new(
-          Repo.all(from p in Package, select: {p.storage_path, p.storage_version_id})
-        )
+        MapSet.new(Repo.all(from p in Package, select: {p.storage_path, p.storage_version_id}))
 
       results =
         for entry <- entries,

@@ -63,7 +63,10 @@ defmodule DarkZenith.SigningTransitionsTest do
   end
 
   defp stub_item_pipeline(packages) do
-    by_path = Map.new(packages, fn {package, binary} -> {"/dz-bucket/" <> package.storage_path, binary} end)
+    by_path =
+      Map.new(packages, fn {package, binary} ->
+        {"/dz-bucket/" <> package.storage_path, binary}
+      end)
 
     Req.Test.stub(DarkZenith.B2Stub, fn conn ->
       conn = Plug.Conn.delete_resp_header(conn, "cache-control")

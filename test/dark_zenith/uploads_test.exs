@@ -80,7 +80,11 @@ defmodule DarkZenith.UploadsTest do
       end
 
       assert {:error, :invalid_size} =
-               Uploads.create_intent(ctx.owner, ctx.repo, %{filename: "a.rpm", size: 0, mode: "api"})
+               Uploads.create_intent(ctx.owner, ctx.repo, %{
+                 filename: "a.rpm",
+                 size: 0,
+                 mode: "api"
+               })
 
       assert {:error, :payload_too_large} =
                Uploads.create_intent(ctx.owner, ctx.repo, %{

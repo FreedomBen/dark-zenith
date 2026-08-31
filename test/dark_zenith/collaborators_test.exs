@@ -56,7 +56,9 @@ defmodule DarkZenith.CollaboratorsTest do
 
     test "re-adding a queued or sent collaborator changes nothing and queues nothing", ctx do
       user = user_fixture()
-      {:ok, :created, collaborator} = Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
+
+      {:ok, :created, collaborator} =
+        Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
 
       assert {:ok, :existing, unchanged} =
                Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
@@ -81,7 +83,9 @@ defmodule DarkZenith.CollaboratorsTest do
 
     test "re-adding a failed collaborator queues a fresh generation", ctx do
       user = user_fixture()
-      {:ok, :created, collaborator} = Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
+
+      {:ok, :created, collaborator} =
+        Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
 
       Repo.update_all(from(c in Collaborator, where: c.id == ^collaborator.id),
         set: [notification_status: "failed"]
@@ -279,7 +283,10 @@ defmodule DarkZenith.CollaboratorsTest do
       {:ok, :created, invitation} = Collaborators.add_collaborator(ctx.owner, ctx.repo, email)
 
       past = DateTime.add(DateTime.utc_now(:second), -1, :day)
-      Repo.update_all(from(i in Invitation, where: i.id == ^invitation.id), set: [expires_at: past])
+
+      Repo.update_all(from(i in Invitation, where: i.id == ^invitation.id),
+        set: [expires_at: past]
+      )
 
       assert [%Invitation{id: invitation_id}] = Collaborators.list_rows(ctx.repo)
       assert invitation_id == invitation.id
@@ -289,7 +296,9 @@ defmodule DarkZenith.CollaboratorsTest do
   describe "remove_collaborator/3 and cancel_invitation/3" do
     test "owner removes a collaborator; the removal is audited", ctx do
       user = user_fixture()
-      {:ok, :created, collaborator} = Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
+
+      {:ok, :created, collaborator} =
+        Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
 
       assert :ok = Collaborators.remove_collaborator(ctx.owner, ctx.repo, collaborator.id)
       refute Repo.get(Collaborator, collaborator.id)
@@ -308,7 +317,10 @@ defmodule DarkZenith.CollaboratorsTest do
     test "ids under a different repository are treated as nonexistent", ctx do
       other_repo = repository_fixture(ctx.owner)
       user = user_fixture()
-      {:ok, :created, collaborator} = Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
+
+      {:ok, :created, collaborator} =
+        Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
+
       {:ok, :created, invitation} =
         Collaborators.add_collaborator(ctx.owner, ctx.repo, unique_invited_email())
 
@@ -322,7 +334,10 @@ defmodule DarkZenith.CollaboratorsTest do
     test "non-managers cannot remove or cancel", ctx do
       outsider = user_fixture()
       user = user_fixture()
-      {:ok, :created, collaborator} = Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
+
+      {:ok, :created, collaborator} =
+        Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
+
       {:ok, :created, invitation} =
         Collaborators.add_collaborator(ctx.owner, ctx.repo, unique_invited_email())
 
@@ -335,7 +350,10 @@ defmodule DarkZenith.CollaboratorsTest do
 
     test "rows on a now-public repository can still be listed and removed", ctx do
       user = user_fixture()
-      {:ok, :created, collaborator} = Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
+
+      {:ok, :created, collaborator} =
+        Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
+
       {:ok, :created, invitation} =
         Collaborators.add_collaborator(ctx.owner, ctx.repo, unique_invited_email())
 
@@ -361,7 +379,9 @@ defmodule DarkZenith.CollaboratorsTest do
   describe "mail workers" do
     test "collaborator mail delivery marks the row sent", ctx do
       user = user_fixture()
-      {:ok, :created, collaborator} = Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
+
+      {:ok, :created, collaborator} =
+        Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
 
       flush_emails()
 
@@ -406,7 +426,9 @@ defmodule DarkZenith.CollaboratorsTest do
 
     test "a stale generation no-ops without sending", ctx do
       user = user_fixture()
-      {:ok, :created, collaborator} = Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
+
+      {:ok, :created, collaborator} =
+        Collaborators.add_collaborator(ctx.owner, ctx.repo, user.email)
 
       Repo.update_all(from(c in Collaborator, where: c.id == ^collaborator.id),
         set: [notification_generation: 2]

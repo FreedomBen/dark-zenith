@@ -85,6 +85,7 @@ defmodule DarkZenithWeb.Endpoint do
   defp save_original_method(conn, _opts) do
     Plug.Conn.put_private(conn, :dz_original_method, conn.method)
   end
+
   plug Plug.Session, @session_options
   plug DarkZenithWeb.Router
 end

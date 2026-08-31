@@ -79,7 +79,9 @@ defmodule DarkZenith.TempSpaceTest do
   end
 
   test "the boot janitor removes leftover attempt directories" do
-    base = Path.join(System.tmp_dir!(), "dz-temp-space-janitor-#{System.unique_integer([:positive])}")
+    base =
+      Path.join(System.tmp_dir!(), "dz-temp-space-janitor-#{System.unique_integer([:positive])}")
+
     leftover = Path.join(base, "dz-attempt-stale")
     File.mkdir_p!(leftover)
     File.write!(Path.join(leftover, "junk"), "x")
@@ -99,8 +101,12 @@ defmodule DarkZenith.TempSpaceTest do
 
   defp poll_until(fun, attempts \\ 50) do
     cond do
-      fun.() -> true
-      attempts == 0 -> false
+      fun.() ->
+        true
+
+      attempts == 0 ->
+        false
+
       true ->
         Process.sleep(10)
         poll_until(fun, attempts - 1)

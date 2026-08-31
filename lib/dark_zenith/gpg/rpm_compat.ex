@@ -61,7 +61,16 @@ defmodule DarkZenith.Gpg.RpmCompat do
     with {_out, 0} <-
            tool_cmd(
              gpg_path,
-             ["--homedir", home, "--batch", "--armor", "--output", public_path, "--export", fingerprint]
+             [
+               "--homedir",
+               home,
+               "--batch",
+               "--armor",
+               "--output",
+               public_path,
+               "--export",
+               fingerprint
+             ]
            ),
          {_out, 0} <-
            tool_cmd(rpmkeys, ["--dbpath", dbpath, "--import", public_path]) do

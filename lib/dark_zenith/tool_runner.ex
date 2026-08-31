@@ -26,7 +26,8 @@ defmodule DarkZenith.ToolRunner do
     env = Keyword.get(opts, :env, [])
     heartbeat = Keyword.get(opts, :heartbeat)
 
-    exe_path = System.find_executable(executable) || raise ArgumentError, "#{executable} not found"
+    exe_path =
+      System.find_executable(executable) || raise ArgumentError, "#{executable} not found"
 
     # `setsid --wait` forks a session/group leader and propagates its exit
     # status; the group id is the forked child's pid, resolved via ps.

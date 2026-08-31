@@ -126,7 +126,10 @@ defmodule DarkZenithWeb.AdminLive.Users do
   def mount(_params, _session, socket) do
     {:ok,
      socket
-     |> assign(:max_storage, Application.get_env(:dark_zenith, :max_user_storage_bytes, 53_687_091_200))
+     |> assign(
+       :max_storage,
+       Application.get_env(:dark_zenith, :max_user_storage_bytes, 53_687_091_200)
+     )
      |> assign(:max_repositories, Application.get_env(:dark_zenith, :max_user_repositories, 100))
      |> assign(:max_api_keys, Application.get_env(:dark_zenith, :max_user_api_keys, 100))
      |> reload()}

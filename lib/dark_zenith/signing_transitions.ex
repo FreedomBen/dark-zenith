@@ -213,7 +213,9 @@ defmodule DarkZenith.SigningTransitions do
     {1, _} =
       Repo.update_all(
         from(t in Transition,
-          where: t.id == ^transition.id and t.status in ["preparing", "activating", "active", "finalizing", "failed"]
+          where:
+            t.id == ^transition.id and
+              t.status in ["preparing", "activating", "active", "finalizing", "failed"]
         ),
         set: [
           status: "canceled",
@@ -271,7 +273,9 @@ defmodule DarkZenith.SigningTransitions do
     unfinished = from i in scope, where: i.status in ["pending", "executing", "failed"]
 
     reservation_ids =
-      Repo.all(from i in unfinished, where: not is_nil(i.reservation_id), select: i.reservation_id)
+      Repo.all(
+        from i in unfinished, where: not is_nil(i.reservation_id), select: i.reservation_id
+      )
 
     {_count, _} =
       Repo.update_all(unfinished,
@@ -305,9 +309,7 @@ defmodule DarkZenith.SigningTransitions do
 
         transition =
           item &&
-            Repo.one(
-              from t in Transition, where: t.id == ^item.transition_id, lock: "FOR UPDATE"
-            )
+            Repo.one(from t in Transition, where: t.id == ^item.transition_id, lock: "FOR UPDATE")
 
         claimable? =
           item && item.status == "pending" &&
@@ -704,7 +706,8 @@ defmodule DarkZenith.SigningTransitions do
         unless still_failed? do
           Repo.update_all(
             from(t in Transition,
-              where: t.id == ^transition_id and t.status == "failed" and t.resume_status == "active"
+              where:
+                t.id == ^transition_id and t.status == "failed" and t.resume_status == "active"
             ),
             set: [status: "active", resume_status: nil, last_error_code: nil, updated_at: now]
           )

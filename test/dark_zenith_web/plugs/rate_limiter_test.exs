@@ -119,7 +119,10 @@ defmodule DarkZenithWeb.Plugs.RateLimiterTest do
       build_conn()
       |> put_req_header("content-type", "application/json")
       |> bearer(token)
-      |> post(~p"/api/v1/api_keys", %{"name" => "k#{System.unique_integer([:positive])}", "scopes" => ["repo:read"]})
+      |> post(~p"/api/v1/api_keys", %{
+        "name" => "k#{System.unique_integer([:positive])}",
+        "scopes" => ["repo:read"]
+      })
     end
 
     assert create.().status == 201

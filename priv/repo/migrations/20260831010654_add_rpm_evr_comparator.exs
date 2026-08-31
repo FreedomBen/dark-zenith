@@ -288,7 +288,9 @@ defmodule DarkZenith.Repo.Migrations.AddRpmEvrComparator do
     end
 
     for name <- ["lt", "le", "eq", "ge", "gt", "ne"] do
-      execute("DROP FUNCTION dark_zenith_rpm_evr_#{name}(dark_zenith_rpm_evr, dark_zenith_rpm_evr)")
+      execute(
+        "DROP FUNCTION dark_zenith_rpm_evr_#{name}(dark_zenith_rpm_evr, dark_zenith_rpm_evr)"
+      )
     end
 
     execute("DROP FUNCTION dark_zenith_rpm_evr_cmp(dark_zenith_rpm_evr, dark_zenith_rpm_evr)")

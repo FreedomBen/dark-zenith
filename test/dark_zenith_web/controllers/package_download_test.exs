@@ -39,7 +39,11 @@ defmodule DarkZenithWeb.PackageDownloadTest do
     refute get_url == head_url
   end
 
-  test "the filename segment is cosmetic but validated", %{conn: conn, repo: repo, package: package} do
+  test "the filename segment is cosmetic but validated", %{
+    conn: conn,
+    repo: repo,
+    package: package
+  } do
     renamed = get(conn, download_path(repo, package, "anything-else.rpm"))
     assert renamed.status == 302
 

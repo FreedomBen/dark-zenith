@@ -129,7 +129,9 @@ defmodule DarkZenith.RepodataPackagesTest do
 
       entry = entry_string(Primary, package)
       assert entry =~ "  <summary>a &lt;b&gt; &amp; &quot;c&quot;</summary>\n"
-      assert entry =~ ~s(      <rpm:entry name="cap&lt;&amp;&gt;" flags="EQ" epoch="0" ver="1&quot;2"/>\n)
+
+      assert entry =~
+               ~s(      <rpm:entry name="cap&lt;&amp;&gt;" flags="EQ" epoch="0" ver="1&quot;2"/>\n)
     end
   end
 
@@ -138,7 +140,10 @@ defmodule DarkZenith.RepodataPackagesTest do
       package = package_struct_from_rpm(v4_binary())
 
       [reference_block] =
-        Regex.run(~r{<package pkgid="#{package.sha256}".*?</package>\n}s, reference("filelists.xml"))
+        Regex.run(
+          ~r{<package pkgid="#{package.sha256}".*?</package>\n}s,
+          reference("filelists.xml")
+        )
 
       assert entry_string(Filelists, package) == reference_block
     end
@@ -147,7 +152,10 @@ defmodule DarkZenith.RepodataPackagesTest do
       package = package_struct_from_rpm(minimal_binary())
 
       [reference_block] =
-        Regex.run(~r{<package pkgid="#{package.sha256}".*?</package>\n}s, reference("filelists.xml"))
+        Regex.run(
+          ~r{<package pkgid="#{package.sha256}".*?</package>\n}s,
+          reference("filelists.xml")
+        )
 
       assert entry_string(Filelists, package) == reference_block
     end

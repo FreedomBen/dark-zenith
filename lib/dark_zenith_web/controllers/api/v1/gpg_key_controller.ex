@@ -97,9 +97,14 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyController do
       case Map.get(body, "strategy") do
         strategy when strategy in ["clear_metadata_signing", "delete_signed_packages"] ->
           case DarkZenith.SigningTransitions.UserWide.start_removal(user, strategy) do
-            {:accepted, transition} -> accepted_transition(conn, transition)
-            {:error, :not_found} -> {:error, :not_found}
-            {:error, :in_use} -> {:error, :conflict, "conflict_gpg_key_in_use"}
+            {:accepted, transition} ->
+              accepted_transition(conn, transition)
+
+            {:error, :not_found} ->
+              {:error, :not_found}
+
+            {:error, :in_use} ->
+              {:error, :conflict, "conflict_gpg_key_in_use"}
 
             {:error, :transition_in_progress} ->
               {:error, :conflict, "conflict_gpg_key_transition_in_progress"}

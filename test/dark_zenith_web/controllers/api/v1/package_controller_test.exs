@@ -75,7 +75,13 @@ defmodule DarkZenithWeb.Api.V1.PackageControllerTest do
 
     test "q matches name or summary with literal pattern characters", %{conn: conn, repo: repo} do
       insert_package_from_rpm!(repo, minimal_binary(), %{name: "prefix_x50", version: "9"})
-      insert_package_from_rpm!(repo, minimal_binary(), %{name: "other", version: "9", summary: "has 50% off"})
+
+      insert_package_from_rpm!(repo, minimal_binary(), %{
+        name: "other",
+        version: "9",
+        summary: "has 50% off"
+      })
+
       insert_package_from_rpm!(repo, minimal_binary(), %{name: "x500", version: "9"})
 
       conn = get(conn, ~p"/api/v1/repos/#{repo.slug}/packages?q=50%25")
@@ -159,7 +165,10 @@ defmodule DarkZenithWeb.Api.V1.PackageControllerTest do
 
     test "pagination applies to subresources", %{conn: conn, repo: repo, package: package} do
       conn =
-        get(conn, ~p"/api/v1/repos/#{repo.slug}/packages/#{package.id}/requires?per_page=2&page=2")
+        get(
+          conn,
+          ~p"/api/v1/repos/#{repo.slug}/packages/#{package.id}/requires?per_page=2&page=2"
+        )
 
       assert %{"data" => data, "pagination" => pagination} = json_response(conn, 200)
       assert length(data) == 2

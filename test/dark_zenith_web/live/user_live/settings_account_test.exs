@@ -38,7 +38,7 @@ defmodule DarkZenithWeb.UserLive.SettingsAccountTest do
       assert html =~ "doomed"
 
       confirm =
-        lv |> element("#revoke-key-#{key.id}") |> render() 
+        lv |> element("#revoke-key-#{key.id}") |> render()
 
       assert confirm =~ "signed download URL"
 

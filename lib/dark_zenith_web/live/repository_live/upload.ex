@@ -191,8 +191,7 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
        |> push_event("start_upload", %{url: upload.url})}
     else
       _ ->
-        {:noreply,
-         assign(socket, :error, "The direct transfer failed. Start over to retry.")}
+        {:noreply, assign(socket, :error, "The direct transfer failed. Start over to retry.")}
     end
   end
 
@@ -238,8 +237,7 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
             {:noreply, assign(socket, :phase, :done)}
 
           "failed" ->
-            {:noreply,
-             assign(socket, :error, "Processing failed: #{intent.last_error_code}.")}
+            {:noreply, assign(socket, :error, "Processing failed: #{intent.last_error_code}.")}
 
           _other ->
             {:noreply,

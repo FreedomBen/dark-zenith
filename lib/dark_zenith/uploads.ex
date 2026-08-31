@@ -610,7 +610,8 @@ defmodule DarkZenith.Uploads do
     %{
       generation: intent.upload_generation,
       method: "PUT",
-      url: B2.staging_upload_url(B2.config!(), intent.staging_path, intent.declared_size, ttl: ttl),
+      url:
+        B2.staging_upload_url(B2.config!(), intent.staging_path, intent.declared_size, ttl: ttl),
       headers: %{"Content-Type" => "application/x-rpm"},
       content_length: intent.declared_size,
       expires_at: intent.upload_url_expires_at

@@ -196,7 +196,10 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyTransitionApiTest do
       ctx.conn
       |> bearer(ctx.token)
       |> put_req_header("content-type", "application/json")
-      |> post(~p"/api/v1/gpg_key/revocation", Jason.encode!(%{strategy: "clear_metadata_signing"}))
+      |> post(
+        ~p"/api/v1/gpg_key/revocation",
+        Jason.encode!(%{strategy: "clear_metadata_signing"})
+      )
 
     assert %{"data" => data} = json_response(conn, 202)
     assert data["kind"] == "clear_metadata_signing"
@@ -222,7 +225,10 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyTransitionApiTest do
       ctx.conn
       |> bearer(ctx.token)
       |> put_req_header("content-type", "application/json")
-      |> post(~p"/api/v1/gpg_key/revocation", Jason.encode!(%{strategy: "clear_metadata_signing"}))
+      |> post(
+        ~p"/api/v1/gpg_key/revocation",
+        Jason.encode!(%{strategy: "clear_metadata_signing"})
+      )
 
     assert %{"error" => %{"code" => "conflict_gpg_key_in_use"}} = json_response(conn, 409)
   end
@@ -268,6 +274,7 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyTransitionApiTest do
 
   test "transition lookup is scoped to the owner", ctx do
     pair2 = generate_key_pair()
+
     {:accepted, transition} =
       DarkZenith.SigningTransitions.UserWide.start_replacement(
         ctx.user,

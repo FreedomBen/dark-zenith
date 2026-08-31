@@ -39,8 +39,11 @@ defmodule DarkZenith.Rpm.Header do
           true -> {:ok, nindex, hsize}
         end
 
-      nil -> {:error, :truncated}
-      _ -> {:error, :bad_header_magic}
+      nil ->
+        {:error, :truncated}
+
+      _ ->
+        {:error, :bad_header_magic}
     end
   end
 
@@ -219,8 +222,8 @@ defmodule DarkZenith.Rpm.Header do
         {:error, :invalid_region}
 
       true ->
-        <<trailer_tag::signed-32, trailer_type::32, trailer_offset::signed-32,
-          trailer_count::32>> = binary_part(data, offset, 16)
+        <<trailer_tag::signed-32, trailer_type::32, trailer_offset::signed-32, trailer_count::32>> =
+          binary_part(data, offset, 16)
 
         if trailer_tag == region_tag and trailer_type == @type_bin and trailer_count == 16 and
              trailer_offset < 0 and rem(-trailer_offset, 16) == 0 and

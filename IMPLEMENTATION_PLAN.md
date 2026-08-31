@@ -140,8 +140,9 @@ wins. Checklist items reference spec sections rather than restating their rules.
 - [x] Web preview mode: `preview_ready`, confirmation, metadata-equality recheck
 - [x] Package deletion transaction; staging + final reconcilers (cron :30 / 03:00);
       waiting-state cleanup
-- [ ] Fault-injection test suite for every interruption point named in the spec (lease
-      expiry/requeue, settings races, CAS-lost, exhaustion covered; more scenarios welcome)
+- [x] Fault-injection test suite for the interruption points named in the spec (lease
+      expiry/requeue, settings races, CAS-lost, exhaustion, user-wide phase batch
+      boundaries/budgets/idempotent upserts, owner-fence deferral without budget use)
 
 ## Phase 10 — REST API surface (M1 partial, M2 complete)
 
@@ -163,11 +164,13 @@ wins. Checklist items reference spec sections rather than restating their rules.
 - [x] Metadata signing in regeneration; `RPM-GPG-KEY` and `repomd.xml.asc` endpoints
       (Signing.Gpg default impl; expired keys fail closed with conflict_gpg_key_expired)
 - [x] RPM signing in upload pipeline (addsign/resign, --rpmv4 for v6, expected-key verify)
-- [ ] Signing transitions + items + repository snapshots (tables + enable_rpm_signing done
-      end to end: atomic enable, re-sign item worker with lease fencing and reservations,
-      completion from durable state, cancellation on disable/package/repository deletion;
-      the user-wide replace_gpg_key/clear_metadata_signing/delete_signed_packages kinds and
-      their revocation/transition endpoints remain) (Signing Transitions)
+- [x] Signing transitions + items + repository snapshots, end to end for all four kinds:
+      repository-local enable plus user-wide replace_gpg_key (preparation cursors, key-swap
+      commit with expiry floor, both-keys serving, activation batches), clear_metadata_signing,
+      and delete_signed_packages (delete items, finalization, key-material removal); owner
+      write fence with worker deferral; PUT 202 replacement, POST /gpg_key/revocation,
+      GET /gpg_key/transitions/:id; RPM_TOOL_TIMEOUT_SECONDS process-group deadlines with
+      lease-renewal heartbeats; hourly attempt-directory janitor (Signing Transitions)
 - [x] Lease/fencing worker runtime shared with uploads; sweeps; admin item reset
 - [x] `PREVIOUS_SECRET_KEY_BASE` re-encryption scan/jobs (GPG private key encryption;
       transition prepared-candidate rows join with the transition machinery)
@@ -179,7 +182,8 @@ wins. Checklist items reference spec sections rather than restating their rules.
 - [x] Oban-backed delivery with per-notification generation fencing
       (Repository Collaborators; Collaborator Invitations)
 - [x] phx.gen.auth mail (confirmation/reset/email change) through the same worker path
-- [ ] Security notification mails (password/email/API-key done; GPG events join Phase 11)
+- [x] Security notification mails (password/email/API-key; GPG key uploaded, replaced at
+      the key swap, and removed)
 
 ## Phase 13 — Rate limiting (M4)
 
@@ -201,8 +205,9 @@ wins. Checklist items reference spec sections rather than restating their rules.
 ## Phase 15 — Admin surface (M4)
 
 - [x] User management (create auto-confirmed, admin flags, delete with ownership guard)
-- [ ] Signing-transition views with reset/cancel (needs the Phase 11 transition machinery);
-      background-jobs view with retry/cancel (done)
+- [x] Signing-transition views with reset/cancel (durable list + item inspection, failed-item
+      reset, phase reset restoring resume_status, cancel where the flow permits);
+      background-jobs view with retry/cancel
 - [x] Audit log browser; slug reservation release
 
 ## Phase 16 — Deployment & boot (M4)
@@ -213,9 +218,10 @@ wins. Checklist items reference spec sections rather than restating their rules.
       (Deployment)
 - [x] `/health` endpoints; release packaging, Dockerfile, systemd unit with confinement
 - [x] `force_ssl`/proxy trust, CSP with `connect-src` B2 origin, filter_parameters, secure cookies
-- [ ] dnf 4/5 end-to-end release-gate tests (public + private, signed + unsigned) —
-      deploy/release_gate.sh runs boot checks + dnf makecache; signed/private flows still to
-      be scripted against a staging deployment
+- [x] dnf 4/5 end-to-end release-gate tests (public + private, signed + unsigned) —
+      deploy/release_gate.sh runs boot checks plus dnf5/dnf makecache/repoquery for the
+      public flow and, via DZ_GATE_* env, the repo_gpgcheck-signed and Basic-auth private
+      flows; run it against a staging deployment before release
 
 ## Cross-cutting requirements to keep in every phase
 

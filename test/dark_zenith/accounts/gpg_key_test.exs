@@ -91,7 +91,12 @@ defmodule DarkZenith.Accounts.GpgKeyTest do
           gpg_key_fingerprint: ctx.pair.fingerprint
         })
 
-      package = DarkZenith.PackagesFixtures.insert_package_from_rpm!(repository, DarkZenith.RpmFixtures.minimal_binary())
+      package =
+        DarkZenith.PackagesFixtures.insert_package_from_rpm!(
+          repository,
+          DarkZenith.RpmFixtures.minimal_binary()
+        )
+
       _ = package
       DarkZenith.PackagesFixtures.sync_repository_metadata_state!(repository)
 

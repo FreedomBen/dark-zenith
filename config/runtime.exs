@@ -224,7 +224,8 @@ if config_env() == :prod do
     System.get_env("MAIL_FROM_ADDRESS") ||
       raise "MAIL_FROM_ADDRESS is required for outbound notifications"
 
-  config :dark_zenith, :mail_from,
+  config :dark_zenith,
+         :mail_from,
          {System.get_env("MAIL_FROM_NAME") || "Dark Zenith", mail_from_address}
 
   case mail_adapter_alias do

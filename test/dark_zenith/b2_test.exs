@@ -36,10 +36,16 @@ defmodule DarkZenith.B2Test do
 
     test "download URLs address the exact version and differ by method" do
       get_url =
-        B2.signed_get_url(config(), "repos/x/pkg.rpm", "4_zversion", ttl: 60, now: ~U[2026-08-30 12:00:00Z])
+        B2.signed_get_url(config(), "repos/x/pkg.rpm", "4_zversion",
+          ttl: 60,
+          now: ~U[2026-08-30 12:00:00Z]
+        )
 
       head_url =
-        B2.signed_head_url(config(), "repos/x/pkg.rpm", "4_zversion", ttl: 60, now: ~U[2026-08-30 12:00:00Z])
+        B2.signed_head_url(config(), "repos/x/pkg.rpm", "4_zversion",
+          ttl: 60,
+          now: ~U[2026-08-30 12:00:00Z]
+        )
 
       assert get_url =~ "versionId=4_zversion"
       assert head_url =~ "versionId=4_zversion"
@@ -95,7 +101,10 @@ defmodule DarkZenith.B2Test do
       Req.Test.stub(DarkZenith.B2Stub, fn conn -> Plug.Conn.send_resp(conn, 500, "") end)
       assert {:error, :storage_unavailable} = B2.head_object(config(), "k", "v")
 
-      Req.Test.stub(DarkZenith.B2Stub, fn conn -> Req.Test.transport_error(conn, :econnrefused) end)
+      Req.Test.stub(DarkZenith.B2Stub, fn conn ->
+        Req.Test.transport_error(conn, :econnrefused)
+      end)
+
       assert {:error, :storage_unavailable} = B2.head_object(config(), "k", "v")
     end
   end

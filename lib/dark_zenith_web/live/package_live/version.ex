@@ -79,13 +79,17 @@ defmodule DarkZenithWeb.PackageLive.Version do
 
           <div :if={@tab} class="mt-4">
             <ul :if={@tab_entries != []} class="divide-y divide-base-300 text-sm">
-              <li :for={{entry, index} <- Enum.with_index(@tab_entries)} id={"entry-#{index}"} class="py-1">
+              <li
+                :for={{entry, index} <- Enum.with_index(@tab_entries)}
+                id={"entry-#{index}"}
+                class="py-1"
+              >
                 {render_entry(@tab, entry)}
               </li>
             </ul>
             <p :if={@tab_entries == []} class="text-sm text-base-content/60">No entries.</p>
 
-            <div class="mt-2 flex gap-2" :if={@tab_pages > 1}>
+            <div :if={@tab_pages > 1} class="mt-2 flex gap-2">
               <button
                 :if={@tab_page > 1}
                 class="btn btn-sm"

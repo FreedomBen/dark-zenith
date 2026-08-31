@@ -225,6 +225,11 @@ defmodule DarkZenith.SigningTransitions.UserWide do
       :ok
   end
 
+  @doc false
+  def __record_phase_failure_for_tests__(transition_id, phase, code) do
+    record_phase_failure(transition_id, phase, code)
+  end
+
   defp record_phase_failure(transition_id, phase, code) do
     now = DateTime.utc_now(:second)
 
@@ -588,9 +593,7 @@ defmodule DarkZenith.SigningTransitions.UserWide do
 
   defp apply_replacement_row!(row, owner, now) do
     repository =
-      Repo.one(
-        from r in Repository, where: r.id == ^row.repository_id, lock: "FOR UPDATE"
-      )
+      Repo.one(from r in Repository, where: r.id == ^row.repository_id, lock: "FOR UPDATE")
 
     if repository do
       {1, _} =
@@ -719,9 +722,7 @@ defmodule DarkZenith.SigningTransitions.UserWide do
 
   defp apply_removal_row!(transition, row, now) do
     repository =
-      Repo.one(
-        from r in Repository, where: r.id == ^row.repository_id, lock: "FOR UPDATE"
-      )
+      Repo.one(from r in Repository, where: r.id == ^row.repository_id, lock: "FOR UPDATE")
 
     if repository do
       # Cancel the repository's own enable transition (if any) before

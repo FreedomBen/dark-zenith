@@ -83,7 +83,9 @@ defmodule DarkZenith.GpgTest do
       assert signature =~ "BEGIN PGP SIGNATURE"
 
       assert :ok = Gpg.verify_detached(pair.public, payload, signature)
-      assert {:error, :bad_signature} = Gpg.verify_detached(pair.public, payload <> "x", signature)
+
+      assert {:error, :bad_signature} =
+               Gpg.verify_detached(pair.public, payload <> "x", signature)
     end
   end
 

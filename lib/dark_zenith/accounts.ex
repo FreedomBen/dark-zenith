@@ -388,7 +388,10 @@ defmodule DarkZenith.Accounts do
         Repo.insert!(user_token)
 
         {:ok,
-         UserNotifier.deliver_update_email_instructions(user, update_email_url_fun.(encoded_token))}
+         UserNotifier.deliver_update_email_instructions(
+           user,
+           update_email_url_fun.(encoded_token)
+         )}
       end)
 
     result
@@ -522,9 +525,7 @@ defmodule DarkZenith.Accounts do
 
   defp delete_user_checked(actor, target) do
     cond do
-      Repo.exists?(
-        from r in DarkZenith.Repositories.Repository, where: r.user_id == ^target.id
-      ) ->
+      Repo.exists?(from r in DarkZenith.Repositories.Repository, where: r.user_id == ^target.id) ->
         {:error, :owns_repositories}
 
       target.is_admin and not another_confirmed_admin_remains?(target.id) ->
@@ -583,8 +584,7 @@ defmodule DarkZenith.Accounts do
               "(SELECT count(*) FROM repositories r WHERE r.user_id = ?)",
               u.id
             ),
-          api_key_count:
-            fragment("(SELECT count(*) FROM api_keys k WHERE k.user_id = ?)", u.id)
+          api_key_count: fragment("(SELECT count(*) FROM api_keys k WHERE k.user_id = ?)", u.id)
         }
     )
   end
@@ -669,7 +669,8 @@ defmodule DarkZenith.Accounts do
                   gpg_key_public: public_armored,
                   gpg_key_fingerprint: info.primary_fingerprint,
                   gpg_signing_fingerprint: info.signing_fingerprint,
-                  gpg_key_expires_at: info.expires_at && DateTime.truncate(info.expires_at, :second),
+                  gpg_key_expires_at:
+                    info.expires_at && DateTime.truncate(info.expires_at, :second),
                   gpg_key_expiry_notified_days: [],
                   updated_at: DateTime.utc_now(:second)
                 ]
@@ -732,6 +733,7 @@ defmodule DarkZenith.Accounts do
                 current
               )
             end
+
             {1, _} =
               Repo.update_all(
                 from(u in User, where: u.id == ^user.id),

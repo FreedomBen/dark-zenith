@@ -68,7 +68,8 @@ defmodule DarkZenith.Repo.Migrations.CreatePackages do
            )
 
     create constraint(:packages, :packages_header_range,
-             check: "header_start >= 0 AND header_start < header_end AND header_end <= size_package"
+             check:
+               "header_start >= 0 AND header_start < header_end AND header_end <= size_package"
            )
 
     create constraint(:packages, :packages_sha256_format, check: "sha256 ~ '^[0-9a-f]{64}$'")

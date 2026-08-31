@@ -37,8 +37,10 @@ defmodule DarkZenithWeb.AdminLive.Transitions do
               <tr :for={transition <- @transitions} id={"transition-#{transition.id}"}>
                 <td>{transition.kind}</td>
                 <td>
-                  {transition.status}<span :if={transition.resume_status}>
-                    → {transition.resume_status}</span>
+                  {transition.status}
+                  <span :if={transition.resume_status}>
+                    → {transition.resume_status}
+                  </span>
                 </td>
                 <td>{transition.phase_attempts}</td>
                 <td>
@@ -89,12 +91,12 @@ defmodule DarkZenithWeb.AdminLive.Transitions do
             Transition {@inspected.id}
           </h2>
           <p class="text-sm">
-            Repositories: {@repository_counts["applied"]} applied,
-            {@repository_counts["satisfied_deleted"]} satisfied by deletion,
-            {@repository_counts["pending"]} pending ·
-            Items: {@item_counts["succeeded"]} succeeded, {@item_counts["failed"]} failed,
-            {@item_counts["pending"]} pending, {@item_counts["executing"]} executing,
-            {@item_counts["canceled"]} canceled
+            Repositories: {@repository_counts["applied"]} applied, {@repository_counts[
+              "satisfied_deleted"
+            ]} satisfied by deletion, {@repository_counts["pending"]} pending ·
+            Items: {@item_counts["succeeded"]} succeeded, {@item_counts["failed"]} failed, {@item_counts[
+              "pending"
+            ]} pending, {@item_counts["executing"]} executing, {@item_counts["canceled"]} canceled
           </p>
 
           <button

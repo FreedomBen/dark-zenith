@@ -25,7 +25,9 @@ defmodule DarkZenith.B2.SigV4 do
     {amz_date, datestamp} = format_dates(now)
     scope = "#{datestamp}/#{Keyword.fetch!(opts, :region)}/s3/aws4_request"
 
-    headers = canonicalize_headers([{"host", host_header(uri)} | Keyword.get(opts, :signed_headers, [])])
+    headers =
+      canonicalize_headers([{"host", host_header(uri)} | Keyword.get(opts, :signed_headers, [])])
+
     signed_header_names = signed_header_names(headers)
 
     query =
@@ -54,7 +56,14 @@ defmodule DarkZenith.B2.SigV4 do
       )
 
     signature =
-      signature(canonical_request, amz_date, scope, Keyword.fetch!(opts, :secret_access_key), datestamp, Keyword.fetch!(opts, :region))
+      signature(
+        canonical_request,
+        amz_date,
+        scope,
+        Keyword.fetch!(opts, :secret_access_key),
+        datestamp,
+        Keyword.fetch!(opts, :region)
+      )
 
     base =
       %URI{uri | path: canonical_path(uri.path || "/"), query: nil, fragment: nil}
@@ -102,7 +111,14 @@ defmodule DarkZenith.B2.SigV4 do
       )
 
     signature =
-      signature(canonical_request, amz_date, scope, Keyword.fetch!(opts, :secret_access_key), datestamp, region)
+      signature(
+        canonical_request,
+        amz_date,
+        scope,
+        Keyword.fetch!(opts, :secret_access_key),
+        datestamp,
+        region
+      )
 
     authorization =
       "#{@algorithm} Credential=#{Keyword.fetch!(opts, :access_key_id)}/#{scope}," <>

@@ -290,7 +290,9 @@ defmodule DarkZenithWeb.Api.V1.CollaboratorControllerTest do
     } do
       other_repo = repository_fixture(owner, %{is_public: false})
       user = user_fixture()
-      {:ok, :created, collaborator} = Collaborators.add_collaborator(owner, other_repo, user.email)
+
+      {:ok, :created, collaborator} =
+        Collaborators.add_collaborator(owner, other_repo, user.email)
 
       cross =
         conn

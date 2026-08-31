@@ -64,7 +64,16 @@ defmodule DarkZenith.GpgFixtures do
   defp gpg(home, passphrase, args) do
     System.cmd(
       "gpg",
-      ["--homedir", home, "--batch", "--no-tty", "--pinentry-mode", "loopback", "--passphrase", passphrase | args],
+      [
+        "--homedir",
+        home,
+        "--batch",
+        "--no-tty",
+        "--pinentry-mode",
+        "loopback",
+        "--passphrase",
+        passphrase | args
+      ],
       stderr_to_stdout: true
     )
   end

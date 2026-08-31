@@ -34,8 +34,7 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
                 value="true"
                 checked={@repository.gpg_key_fingerprint != nil}
                 class="checkbox checkbox-sm"
-              />
-              Sign repository metadata (repomd.xml.asc) with your GPG key
+              /> Sign repository metadata (repomd.xml.asc) with your GPG key
             </label>
 
             <label class="flex items-center gap-2 text-sm">
@@ -45,8 +44,7 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
                 value="true"
                 checked={@repository.sign_rpms}
                 class="checkbox checkbox-sm"
-              />
-              Automatically sign uploaded RPMs
+              /> Automatically sign uploaded RPMs
             </label>
 
             <label
@@ -58,8 +56,7 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
                 name="repository[existing_package_strategy]"
                 value="resign"
                 class="checkbox checkbox-sm"
-              />
-              Re-sign all {@repository.package_count} existing packages (required to enable
+              /> Re-sign all {@repository.package_count} existing packages (required to enable
               RPM signing on a non-empty repository)
             </label>
           </div>
@@ -80,9 +77,8 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
         >
           <h2 class="font-semibold">Re-signing in progress</h2>
           <p>
-            {@signing_progress.counts["succeeded"]} signed ·
-            {@signing_progress.counts["pending"] + @signing_progress.counts["executing"]} pending ·
-            {@signing_progress.counts["failed"]} failed
+            {@signing_progress.counts["succeeded"]} signed · {@signing_progress.counts["pending"] +
+              @signing_progress.counts["executing"]} pending · {@signing_progress.counts["failed"]} failed
           </p>
           <p class="text-base-content/70">
             RPM signature verification stays off (gpgcheck=0) until every package is signed.
@@ -275,8 +271,7 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
          |> put_flash(:info, "That email was already added — showing the existing entry.")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply,
-         assign(socket, :collaborator_form, to_form(changeset, as: "collaborator"))}
+        {:noreply, assign(socket, :collaborator_form, to_form(changeset, as: "collaborator"))}
 
       {:error, :quota_exceeded} ->
         {:noreply,
@@ -292,8 +287,7 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
 
     case Collaborators.remove_collaborator(user, socket.assigns.repository, id) do
       :ok ->
-        {:noreply,
-         socket |> refresh_collaborators() |> put_flash(:info, "Collaborator removed.")}
+        {:noreply, socket |> refresh_collaborators() |> put_flash(:info, "Collaborator removed.")}
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "The collaborator could not be removed.")}
@@ -305,8 +299,7 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
 
     case Collaborators.cancel_invitation(user, socket.assigns.repository, id) do
       :ok ->
-        {:noreply,
-         socket |> refresh_collaborators() |> put_flash(:info, "Invitation canceled.")}
+        {:noreply, socket |> refresh_collaborators() |> put_flash(:info, "Invitation canceled.")}
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "The invitation could not be canceled.")}
@@ -349,7 +342,8 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
   defp assign_signing_progress(socket, repository) do
     progress =
       if repository.rpm_signing_state == "signing" and repository.signing_transition_id do
-        transition = DarkZenith.SigningTransitions.get_transition(repository.signing_transition_id)
+        transition =
+          DarkZenith.SigningTransitions.get_transition(repository.signing_transition_id)
 
         transition &&
           %{

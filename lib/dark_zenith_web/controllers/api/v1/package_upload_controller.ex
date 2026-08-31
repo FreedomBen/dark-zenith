@@ -16,7 +16,8 @@ defmodule DarkZenithWeb.Api.V1.PackageUploadController do
   def create(conn, %{"slug" => slug}) do
     with {:ok, _} <- Strict.validate_query(conn),
          {:ok, user, repository} <- RepoAccess.fetch_manageable(conn, slug, "package:upload"),
-         {:ok, body} <- Strict.validate_json_body(conn, ["filename", "size"], ["filename", "size"]),
+         {:ok, body} <-
+           Strict.validate_json_body(conn, ["filename", "size"], ["filename", "size"]),
          {:ok, size} <- parse_size(body["size"]) do
       case Uploads.create_intent(user, repository, %{
              filename: body["filename"],

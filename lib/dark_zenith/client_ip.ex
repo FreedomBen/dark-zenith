@@ -75,11 +75,11 @@ defmodule DarkZenith.ClientIp do
     end
   end
 
-  defp to_int({a, b, c, d}), do: {:ok, (a <<< 24) ||| (b <<< 16) ||| (c <<< 8) ||| d, 32}
+  defp to_int({a, b, c, d}), do: {:ok, a <<< 24 ||| b <<< 16 ||| c <<< 8 ||| d, 32}
 
   defp to_int({a, b, c, d, e, f, g, h}) do
     int =
-      Enum.reduce([a, b, c, d, e, f, g, h], 0, fn part, acc -> (acc <<< 16) ||| part end)
+      Enum.reduce([a, b, c, d, e, f, g, h], 0, fn part, acc -> acc <<< 16 ||| part end)
 
     {:ok, int, 128}
   end

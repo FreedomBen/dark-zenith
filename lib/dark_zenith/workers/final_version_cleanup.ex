@@ -9,7 +9,11 @@ defmodule DarkZenith.Workers.FinalVersionCleanup do
   use Oban.Worker,
     queue: :cleanup,
     max_attempts: 20,
-    unique: [period: :infinity, keys: [:storage_path, :version_id], states: [:available, :scheduled]]
+    unique: [
+      period: :infinity,
+      keys: [:storage_path, :version_id],
+      states: [:available, :scheduled]
+    ]
 
   alias DarkZenith.B2
   alias DarkZenith.Workers.RetryPolicy

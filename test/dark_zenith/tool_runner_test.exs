@@ -10,7 +10,11 @@ defmodule DarkZenith.ToolRunnerTest do
   end
 
   test "merges stderr and passes environment" do
-    {output, 0} = ToolRunner.cmd("sh", ["-c", "echo err >&2; echo ${DZ_TOOL_TEST}"], env: [{"DZ_TOOL_TEST", "v"}])
+    {output, 0} =
+      ToolRunner.cmd("sh", ["-c", "echo err >&2; echo ${DZ_TOOL_TEST}"],
+        env: [{"DZ_TOOL_TEST", "v"}]
+      )
+
     assert output =~ "err"
     assert output =~ "v"
   end
@@ -68,7 +72,10 @@ defmodule DarkZenith.TempSpaceJanitorTest do
 
     server =
       start_supervised!(
-        {TempSpace, name: :"janitor_#{System.unique_integer([:positive])}", base_dir: base, sampler: fn -> 10_000_000_000 end}
+        {TempSpace,
+         name: :"janitor_#{System.unique_integer([:positive])}",
+         base_dir: base,
+         sampler: fn -> 10_000_000_000 end}
       )
 
     on_exit(fn -> File.rm_rf(base) end)
@@ -105,7 +112,9 @@ defmodule DarkZenith.TempSpaceJanitorTest do
   end
 
   test "does not follow symlinks out of the base directory", ctx do
-    outside = Path.join(System.tmp_dir!(), "dz-janitor-outside-#{System.unique_integer([:positive])}")
+    outside =
+      Path.join(System.tmp_dir!(), "dz-janitor-outside-#{System.unique_integer([:positive])}")
+
     File.mkdir_p!(outside)
     File.write!(Path.join(outside, "victim"), "data")
     on_exit(fn -> File.rm_rf(outside) end)

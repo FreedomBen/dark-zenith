@@ -143,10 +143,13 @@ defmodule DarkZenith.Rpm.ExtractorTest do
     end
 
     test "requires differentially match the createrepo_c primary.xml reference", %{m: m} do
-      xml = File.read!(Path.expand("../../support/fixtures/rpms/createrepo_c/primary.xml", __DIR__))
+      xml =
+        File.read!(Path.expand("../../support/fixtures/rpms/createrepo_c/primary.xml", __DIR__))
 
       [_, fixture_block] = String.split(xml, "<name>dz-fixture</name>", parts: 2)
-      [requires_block] = Regex.run(~r{<rpm:requires>(.*?)</rpm:requires>}s, fixture_block, capture: :all_but_first)
+
+      [requires_block] =
+        Regex.run(~r{<rpm:requires>(.*?)</rpm:requires>}s, fixture_block, capture: :all_but_first)
 
       reference =
         for entry <- Regex.scan(~r{<rpm:entry (.*?)/>}, requires_block, capture: :all_but_first) do

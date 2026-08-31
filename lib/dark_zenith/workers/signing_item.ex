@@ -95,9 +95,14 @@ defmodule DarkZenith.Workers.SigningItem do
       end
 
     case result do
-      :ok -> :ok
-      {:error, {:deterministic, code}} -> SigningTransitions.item_deterministic_failure(item, token, code)
-      {:error, {:infra, code}} -> SigningTransitions.item_transient_failure(item, token, code)
+      :ok ->
+        :ok
+
+      {:error, {:deterministic, code}} ->
+        SigningTransitions.item_deterministic_failure(item, token, code)
+
+      {:error, {:infra, code}} ->
+        SigningTransitions.item_transient_failure(item, token, code)
     end
   end
 
@@ -160,11 +165,20 @@ defmodule DarkZenith.Workers.SigningItem do
 
   defp sign(owner, source_path, dir, format) do
     case DarkZenith.Signing.sign_rpm(owner, source_path, dir, format) do
-      {:ok, signed_path} -> {:ok, signed_path}
-      {:error, :expired} -> {:error, {:deterministic, "conflict_gpg_key_expired"}}
-      {:error, :validation_failed} -> {:error, {:deterministic, "validation_failed"}}
-      {:error, :rpm_verification_unavailable} -> {:error, {:infra, "rpm_verification_unavailable"}}
-      {:error, _} -> {:error, {:infra, "signing_unavailable"}}
+      {:ok, signed_path} ->
+        {:ok, signed_path}
+
+      {:error, :expired} ->
+        {:error, {:deterministic, "conflict_gpg_key_expired"}}
+
+      {:error, :validation_failed} ->
+        {:error, {:deterministic, "validation_failed"}}
+
+      {:error, :rpm_verification_unavailable} ->
+        {:error, {:infra, "rpm_verification_unavailable"}}
+
+      {:error, _} ->
+        {:error, {:infra, "signing_unavailable"}}
     end
   end
 
@@ -219,9 +233,14 @@ defmodule DarkZenith.Workers.SigningItem do
 
       item.reservation_id ->
         case Storage.adjust_reservation(item.reservation_id, delta) do
-          {:ok, _} -> :ok
-          {:error, :quota_exceeded} -> {:error, {:deterministic, "conflict_storage_quota_exceeded"}}
-          {:error, :not_found} -> create_item_reservation(item, transition, package, delta)
+          {:ok, _} ->
+            :ok
+
+          {:error, :quota_exceeded} ->
+            {:error, {:deterministic, "conflict_storage_quota_exceeded"}}
+
+          {:error, :not_found} ->
+            create_item_reservation(item, transition, package, delta)
         end
 
       true ->
@@ -305,9 +324,7 @@ defmodule DarkZenith.Workers.SigningItem do
           Repo.one!(from u in User, where: u.id == ^transition.user_id, lock: "FOR UPDATE")
 
         repository =
-          Repo.one(
-            from r in Repository, where: r.id == ^item.repository_id, lock: "FOR UPDATE"
-          )
+          Repo.one(from r in Repository, where: r.id == ^item.repository_id, lock: "FOR UPDATE")
 
         current_package =
           Repo.one(from p in Package, where: p.id == ^package.id, lock: "FOR UPDATE")
@@ -337,7 +354,16 @@ defmodule DarkZenith.Workers.SigningItem do
             {:ok, {:fail, "conflict_repository_metadata_limit_exceeded", current_item}}
 
           true ->
-            apply_commit!(owner, repository, current_package, current_item, final, final_key, final_version)
+            apply_commit!(
+              owner,
+              repository,
+              current_package,
+              current_item,
+              final,
+              final_key,
+              final_version
+            )
+
             {:ok, :committed}
         end
       end)
@@ -495,9 +521,7 @@ defmodule DarkZenith.Workers.SigningItem do
           Repo.one(from u in User, where: u.id == ^transition.user_id, lock: "FOR UPDATE")
 
         repository =
-          Repo.one(
-            from r in Repository, where: r.id == ^item.repository_id, lock: "FOR UPDATE"
-          )
+          Repo.one(from r in Repository, where: r.id == ^item.repository_id, lock: "FOR UPDATE")
 
         current_package =
           Repo.one(from p in Package, where: p.id == ^package.id, lock: "FOR UPDATE")

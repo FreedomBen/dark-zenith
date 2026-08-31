@@ -78,16 +78,24 @@ defmodule DarkZenith.Packages do
   # `version` orders by EVR with name/arch/id ascending tie-breakers;
   # `-version` reverses only the EVR ordering.
   defp sort(query, {:version, direction}) do
-    evr = dynamic([p], fragment("ROW(?, ?, ?)::dark_zenith_rpm_evr", p.epoch, p.version, p.release))
+    evr =
+      dynamic([p], fragment("ROW(?, ?, ?)::dark_zenith_rpm_evr", p.epoch, p.version, p.release))
 
     from p in query,
-      order_by: ^[{direction, evr}, asc: dynamic([p], p.name), asc: dynamic([p], p.arch), asc: dynamic([p], p.id)]
+      order_by:
+        ^[
+          {direction, evr},
+          asc: dynamic([p], p.name),
+          asc: dynamic([p], p.arch),
+          asc: dynamic([p], p.id)
+        ]
   end
 
   # Other sorts reverse only the named column; id ascending is the only
   # tie-breaker.
   defp sort(query, {field, direction}) do
-    from p in query, order_by: ^[{direction, dynamic([p], field(p, ^field))}, asc: dynamic([p], p.id)]
+    from p in query,
+      order_by: ^[{direction, dynamic([p], field(p, ^field))}, asc: dynamic([p], p.id)]
   end
 
   @doc """
@@ -141,65 +149,64 @@ defmodule DarkZenith.Packages do
   end
 
   defp delete_package_locked(actor, repository, package) do
-          repo =
-            Repo.one!(from r in Repository, where: r.id == ^repository.id, lock: "FOR UPDATE")
+    repo =
+      Repo.one!(from r in Repository, where: r.id == ^repository.id, lock: "FOR UPDATE")
 
-          case Repo.one(
-                 from p in Package,
-                   where: p.id == ^package.id and p.repository_id == ^repository.id,
-                   lock: "FOR UPDATE"
-               ) do
-            nil ->
-              {:ok, {:error, :not_found}}
+    case Repo.one(
+           from p in Package,
+             where: p.id == ^package.id and p.repository_id == ^repository.id,
+             lock: "FOR UPDATE"
+         ) do
+      nil ->
+        {:ok, {:error, :not_found}}
 
-            current ->
-              DarkZenith.SigningTransitions.cancel_items_for_package!(current.id)
-              entry_sizes = Repodata.entry_open_sizes(current)
-              overhead_now = Repodata.document_overhead(repo.package_count)
-              overhead_next = Repodata.document_overhead(repo.package_count - 1)
+      current ->
+        DarkZenith.SigningTransitions.cancel_items_for_package!(current.id)
+        entry_sizes = Repodata.entry_open_sizes(current)
+        overhead_now = Repodata.document_overhead(repo.package_count)
+        overhead_next = Repodata.document_overhead(repo.package_count - 1)
 
-              Repo.delete!(current)
+        Repo.delete!(current)
 
-              {1, _} =
-                Repo.update_all(
-                  from(r in Repository, where: r.id == ^repo.id),
-                  inc: [
-                    package_count: -1,
-                    metadata_revision: 1,
-                    primary_open_bytes:
-                      -entry_sizes.primary + overhead_next.primary - overhead_now.primary,
-                    filelists_open_bytes:
-                      -entry_sizes.filelists + overhead_next.filelists - overhead_now.filelists,
-                    other_open_bytes:
-                      -entry_sizes.other + overhead_next.other - overhead_now.other
-                  ]
-                )
+        {1, _} =
+          Repo.update_all(
+            from(r in Repository, where: r.id == ^repo.id),
+            inc: [
+              package_count: -1,
+              metadata_revision: 1,
+              primary_open_bytes:
+                -entry_sizes.primary + overhead_next.primary - overhead_now.primary,
+              filelists_open_bytes:
+                -entry_sizes.filelists + overhead_next.filelists - overhead_now.filelists,
+              other_open_bytes: -entry_sizes.other + overhead_next.other - overhead_now.other
+            ]
+          )
 
-              {1, _} =
-                Repo.update_all(
-                  from(u in User, where: u.id == ^repo.user_id),
-                  inc: [storage_bytes: -current.size_package]
-                )
+        {1, _} =
+          Repo.update_all(
+            from(u in User, where: u.id == ^repo.user_id),
+            inc: [storage_bytes: -current.size_package]
+          )
 
-              Audit.record!("package.delete",
-                actor: actor,
-                target: {:package, current.id},
-                metadata: %{
-                  "slug" => repo.slug,
-                  "nevra" =>
-                    "#{current.name}-#{current.epoch}:#{current.version}-#{current.release}." <>
-                      current.arch
-                }
-              )
+        Audit.record!("package.delete",
+          actor: actor,
+          target: {:package, current.id},
+          metadata: %{
+            "slug" => repo.slug,
+            "nevra" =>
+              "#{current.name}-#{current.epoch}:#{current.version}-#{current.release}." <>
+                current.arch
+          }
+        )
 
-              Repodata.enqueue_regeneration(repo.id)
+        Repodata.enqueue_regeneration(repo.id)
 
-              %{storage_path: current.storage_path, version_id: current.storage_version_id}
-              |> DarkZenith.Workers.FinalVersionCleanup.new()
-              |> Oban.insert!()
+        %{storage_path: current.storage_path, version_id: current.storage_version_id}
+        |> DarkZenith.Workers.FinalVersionCleanup.new()
+        |> Oban.insert!()
 
-              {:ok, :ok}
-          end
+        {:ok, :ok}
+    end
   end
 
   defp authorize(actor, repository) do
@@ -254,6 +261,13 @@ defmodule DarkZenith.Packages do
   def snapshot_query(repository_id) do
     from p in Package,
       where: p.repository_id == ^repository_id,
-      order_by: [asc: p.name, asc: p.epoch, asc: p.version, asc: p.release, asc: p.arch, asc: p.id]
+      order_by: [
+        asc: p.name,
+        asc: p.epoch,
+        asc: p.version,
+        asc: p.release,
+        asc: p.arch,
+        asc: p.id
+      ]
   end
 end

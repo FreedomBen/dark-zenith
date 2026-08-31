@@ -23,6 +23,7 @@ defmodule DarkZenith.BootCheckTest do
   test "a missing rpmkeys binary is reported" do
     previous = Application.get_env(:dark_zenith, :rpmkeys_path)
     Application.put_env(:dark_zenith, :rpmkeys_path, "/nonexistent/rpmkeys")
+
     on_exit(fn ->
       if previous do
         Application.put_env(:dark_zenith, :rpmkeys_path, previous)

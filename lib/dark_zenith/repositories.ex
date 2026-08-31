@@ -365,100 +365,100 @@ defmodule DarkZenith.Repositories do
   end
 
   defp delete_repository_locked(actor, repository) do
-          case Repo.one(from(r in Repository, where: r.id == ^repository.id, lock: "FOR UPDATE")) do
-            nil ->
-              {:ok, {:error, :not_found}}
+    case Repo.one(from(r in Repository, where: r.id == ^repository.id, lock: "FOR UPDATE")) do
+      nil ->
+        {:ok, {:error, :not_found}}
 
-            %Repository{} = current ->
-              packages =
-                Repo.all(
-                  from p in DarkZenith.Packages.Package,
-                    where: p.repository_id == ^current.id,
-                    order_by: [asc: p.id],
-                    lock: "FOR UPDATE",
-                    select: %{
-                      storage_path: p.storage_path,
-                      storage_version_id: p.storage_version_id,
-                      size_package: p.size_package
-                    }
-                )
+      %Repository{} = current ->
+        packages =
+          Repo.all(
+            from p in DarkZenith.Packages.Package,
+              where: p.repository_id == ^current.id,
+              order_by: [asc: p.id],
+              lock: "FOR UPDATE",
+              select: %{
+                storage_path: p.storage_path,
+                storage_version_id: p.storage_version_id,
+                size_package: p.size_package
+              }
+          )
 
-              intents =
-                Repo.all(
-                  from i in DarkZenith.Uploads.Intent,
-                    where: i.repository_id == ^current.id,
-                    order_by: [asc: i.id],
-                    lock: "FOR UPDATE",
-                    select: %{staging_path: i.staging_path}
-                )
+        intents =
+          Repo.all(
+            from i in DarkZenith.Uploads.Intent,
+              where: i.repository_id == ^current.id,
+              order_by: [asc: i.id],
+              lock: "FOR UPDATE",
+              select: %{staging_path: i.staging_path}
+          )
 
-              Repo.all(
-                from r in DarkZenith.Storage.Reservation,
-                  where: r.repository_id == ^current.id,
-                  order_by: [asc: r.id],
-                  lock: "FOR UPDATE",
-                  select: r.id
-              )
+        Repo.all(
+          from r in DarkZenith.Storage.Reservation,
+            where: r.repository_id == ^current.id,
+            order_by: [asc: r.id],
+            lock: "FOR UPDATE",
+            select: r.id
+        )
 
-              reservation =
-                Repo.one!(
-                  from(s in SlugReservation, where: s.slug == ^current.slug, lock: "FOR UPDATE")
-                )
+        reservation =
+          Repo.one!(
+            from(s in SlugReservation, where: s.slug == ^current.slug, lock: "FOR UPDATE")
+          )
 
-              DarkZenith.SigningTransitions.cancel_transitions_for_repository!(current.id)
-              DarkZenith.SigningTransitions.satisfy_repository_rows_for_deleted_repository!(current.id)
+        DarkZenith.SigningTransitions.cancel_transitions_for_repository!(current.id)
+        DarkZenith.SigningTransitions.satisfy_repository_rows_for_deleted_repository!(current.id)
 
-              stored_bytes = packages |> Enum.map(& &1.size_package) |> Enum.sum()
+        stored_bytes = packages |> Enum.map(& &1.size_package) |> Enum.sum()
 
-              if stored_bytes > 0 do
-                {1, _} =
-                  Repo.update_all(
-                    from(u in User, where: u.id == ^current.user_id),
-                    inc: [storage_bytes: -stored_bytes]
-                  )
-              end
+        if stored_bytes > 0 do
+          {1, _} =
+            Repo.update_all(
+              from(u in User, where: u.id == ^current.user_id),
+              inc: [storage_bytes: -stored_bytes]
+            )
+        end
 
-              now = DateTime.utc_now(:second)
+        now = DateTime.utc_now(:second)
 
-              {1, _} =
-                Repo.update_all(
-                  from(s in SlugReservation, where: s.slug == ^reservation.slug),
-                  set: [
-                    repository_id: nil,
-                    retired_at: now,
-                    repository_name: current.name,
-                    updated_at: now
-                  ]
-                )
+        {1, _} =
+          Repo.update_all(
+            from(s in SlugReservation, where: s.slug == ^reservation.slug),
+            set: [
+              repository_id: nil,
+              retired_at: now,
+              repository_name: current.name,
+              updated_at: now
+            ]
+          )
 
-              # Dependent packages, collaborators, invitations, the metadata
-              # cache, upload intents, and reservations delete through their
-              # foreign keys; workers are fenced by the removed durable rows.
-              Repo.delete!(current)
+        # Dependent packages, collaborators, invitations, the metadata
+        # cache, upload intents, and reservations delete through their
+        # foreign keys; workers are fenced by the removed durable rows.
+        Repo.delete!(current)
 
-              Audit.record!("repository.delete",
-                actor: actor,
-                target: {:repository, current.id},
-                metadata: %{"slug" => current.slug, "name" => current.name}
-              )
+        Audit.record!("repository.delete",
+          actor: actor,
+          target: {:repository, current.id},
+          metadata: %{"slug" => current.slug, "name" => current.name}
+        )
 
-              for package <- packages do
-                %{
-                  storage_path: package.storage_path,
-                  version_id: package.storage_version_id
-                }
-                |> DarkZenith.Workers.FinalVersionCleanup.new()
-                |> Oban.insert!()
-              end
+        for package <- packages do
+          %{
+            storage_path: package.storage_path,
+            version_id: package.storage_version_id
+          }
+          |> DarkZenith.Workers.FinalVersionCleanup.new()
+          |> Oban.insert!()
+        end
 
-              for intent <- intents do
-                %{staging_path: intent.staging_path}
-                |> DarkZenith.Workers.StagingCleanup.new()
-                |> Oban.insert!()
-              end
+        for intent <- intents do
+          %{staging_path: intent.staging_path}
+          |> DarkZenith.Workers.StagingCleanup.new()
+          |> Oban.insert!()
+        end
 
-              {:ok, :ok}
-          end
+        {:ok, :ok}
+    end
   end
 
   @doc "All slug reservations for the admin view, retired first, newest first."

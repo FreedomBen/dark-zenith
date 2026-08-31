@@ -33,9 +33,7 @@ defmodule DarkZenith.Collaborators do
   """
   def list_rows(%Repository{} = repository) do
     collaborators =
-      Repo.all(
-        from c in Collaborator, where: c.repository_id == ^repository.id, preload: [:user]
-      )
+      Repo.all(from c in Collaborator, where: c.repository_id == ^repository.id, preload: [:user])
 
     invitations = Repo.all(from i in Invitation, where: i.repository_id == ^repository.id)
 

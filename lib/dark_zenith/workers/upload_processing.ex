@@ -63,24 +63,22 @@ defmodule DarkZenith.Workers.UploadProcessing do
   end
 
   defp process(intent, token) do
-        case TempSpace.acquire(temp_space(), token, intent.declared_size) do
-          {:ok, dir} ->
-            try do
-              run(intent, token, dir)
-            after
-              TempSpace.release(temp_space(), token)
-            end
-
-          {:error, :upload_temp_space_unavailable} ->
-            infra_failure(intent, token, "upload_temp_space_unavailable")
+    case TempSpace.acquire(temp_space(), token, intent.declared_size) do
+      {:ok, dir} ->
+        try do
+          run(intent, token, dir)
+        after
+          TempSpace.release(temp_space(), token)
         end
+
+      {:error, :upload_temp_space_unavailable} ->
+        infra_failure(intent, token, "upload_temp_space_unavailable")
+    end
   end
 
   defp fence_blocked?(intent) do
     owner_id =
-      Repo.one(
-        from r in Repository, where: r.id == ^intent.repository_id, select: r.user_id
-      )
+      Repo.one(from r in Repository, where: r.id == ^intent.repository_id, select: r.user_id)
 
     owner_id != nil and
       DarkZenith.SigningTransitions.check_owner_mutation(owner_id, :create) != :ok
@@ -498,9 +496,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
       Repo.transact(fn ->
         # Global lock order: owner, repository, (packages), intent, reservation.
         owner =
-          Repo.one!(
-            from u in User, where: u.id == ^repository.user_id, lock: "FOR UPDATE"
-          )
+          Repo.one!(from u in User, where: u.id == ^repository.user_id, lock: "FOR UPDATE")
 
         repo = Repo.one!(from r in Repository, where: r.id == ^repository.id, lock: "FOR UPDATE")
 

@@ -84,7 +84,10 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
             </select>
           </form>
 
-          <div :if={@packages == []} class="text-base-content/60 text-sm py-8 text-center border border-dashed border-base-300 rounded-lg">
+          <div
+            :if={@packages == []}
+            class="text-base-content/60 text-sm py-8 text-center border border-dashed border-base-300 rounded-lg"
+          >
             No packages{if @package_q != "", do: " match", else: " yet"}.
           </div>
 

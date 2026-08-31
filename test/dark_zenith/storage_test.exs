@@ -27,7 +27,13 @@ defmodule DarkZenith.StorageTest do
   describe "create_reservation/5" do
     test "creates a two-hour reservation", ctx do
       assert {:ok, %Reservation{} = reservation} =
-               Storage.create_reservation(ctx.owner, ctx.repo.id, Ecto.UUID.generate(), "upload", 500)
+               Storage.create_reservation(
+                 ctx.owner,
+                 ctx.repo.id,
+                 Ecto.UUID.generate(),
+                 "upload",
+                 500
+               )
 
       assert reservation.reserved_bytes == 500
       assert reservation.kind == "upload"
@@ -74,7 +80,13 @@ defmodule DarkZenith.StorageTest do
       awaiting_intent_row_fixture(ctx.repo, ctx.owner, linked)
 
       assert {:ok, _} =
-               Storage.create_reservation(ctx.owner, ctx.repo.id, Ecto.UUID.generate(), "upload", 10)
+               Storage.create_reservation(
+                 ctx.owner,
+                 ctx.repo.id,
+                 Ecto.UUID.generate(),
+                 "upload",
+                 10
+               )
 
       assert Repo.get(Reservation, linked.id)
     end
@@ -109,7 +121,10 @@ defmodule DarkZenith.StorageTest do
         Storage.create_reservation(ctx.owner, ctx.repo.id, Ecto.UUID.generate(), "upload", 10)
 
       past = DateTime.add(DateTime.utc_now(:second), -10, :minute)
-      Repo.update_all(from(r in Reservation, where: r.id == ^reservation.id), set: [expires_at: past])
+
+      Repo.update_all(from(r in Reservation, where: r.id == ^reservation.id),
+        set: [expires_at: past]
+      )
 
       assert :ok = Storage.renew_reservation(reservation.id)
 
