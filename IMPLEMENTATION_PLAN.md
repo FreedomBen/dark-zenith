@@ -80,18 +80,19 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 5 — RPM parser, pure Elixir (M2)
 
-- [ ] Lead/signature/main header structural parsing with bounds (64 MiB headers, 65 535 entries)
+- [x] Lead/signature/main header structural parsing with bounds (64 MiB headers, 65 535 entries)
       (RPM Parsing; Package Upload & Processing step 1)
-- [ ] v4 acceptance rules (SHA-256 header + payload digest required; weak-only rejected)
-- [ ] v6 acceptance rules (RPMFORMAT/ENCODING, mandatory tags, sorted unique tags, zero padding)
-- [ ] Metadata extraction: NEVRA, i18n strings, sizes, source refs, build_time
+- [x] v4 acceptance rules (SHA-256 header + payload digest required; weak-only rejected)
+- [x] v6 acceptance rules (RPMFORMAT/ENCODING, mandatory tags, sorted unique tags, zero padding)
+- [x] Metadata extraction: NEVRA, i18n strings, sizes, source refs, build_time
       (Package Upload & Processing step 3)
-- [ ] Dependency extraction incl. weak deps, rpmlib exclusion, duplicate collapse, rich deps,
+- [x] Dependency extraction incl. weak deps, rpmlib exclusion, duplicate collapse, rich deps,
       `pre` flag set
-- [ ] File and changelog extraction with caps (262 144 files / 4 096 changelogs / 65 536 deps)
-- [ ] Validation of extracted values (charsets, control chars, XML 1.0, caret rejection)
-- [ ] Fixture corpus: accepted v4/v6, weak-digest variants, malformed headers, differential
-      parity with `createrepo_c` output
+- [x] File and changelog extraction with caps (262 144 files / 4 096 changelogs / 65 536 deps)
+- [x] Validation of extracted values (charsets, control chars, XML 1.0, caret rejection)
+- [x] Fixture corpus: accepted v4/v6, weak-digest variants, malformed headers, differential
+      parity with `createrepo_c` output (extraction parity done; generated-XML parity joins
+      the Phase 6 encoders)
 
 ## Phase 6 — Repodata generation (M1 for empty repos, M2 full)
 

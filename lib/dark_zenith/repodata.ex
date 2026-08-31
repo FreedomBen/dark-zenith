@@ -73,5 +73,30 @@ defmodule DarkZenith.Repodata do
     }
   end
 
+  @doc """
+  Uncompressed byte counts one package's entries contribute to each XML
+  artifact (the counting sink behind the maintained repository counters —
+  DESIGN.md: Metadata Generation & Storage).
+  """
+  def entry_open_sizes(package) do
+    %{
+      primary: IO.iodata_length(Primary.entry(package)),
+      filelists: IO.iodata_length(Filelists.entry(package)),
+      other: IO.iodata_length(Other.entry(package))
+    }
+  end
+
+  @doc """
+  Byte counts of each document's prologue plus epilogue at the given package
+  count, including the decimal `packages` attribute width.
+  """
+  def document_overhead(count) do
+    %{
+      primary: IO.iodata_length([Primary.prologue(count), Primary.epilogue()]),
+      filelists: IO.iodata_length([Filelists.prologue(count), Filelists.epilogue()]),
+      other: IO.iodata_length([Other.prologue(count), Other.epilogue()])
+    }
+  end
+
   defp sha256_hex(binary), do: :crypto.hash(:sha256, binary) |> Base.encode16(case: :lower)
 end
