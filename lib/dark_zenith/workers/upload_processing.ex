@@ -167,7 +167,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
     end
   end
 
-# A first web-preview pass performs the advisory duplicate and
+  # A first web-preview pass performs the advisory duplicate and
   # metadata-limit checks on the parsed staged bytes and stops before
   # signing; rpmsign work happens only in the confirmed final pass, after
   # the metadata-equality recheck (DESIGN.md: Upload RPM — Preview/Confirm).

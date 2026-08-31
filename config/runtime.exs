@@ -124,7 +124,7 @@ if config_env() == :prod do
 
   config :dark_zenith, invitation_expiry_days: invitation_expiry_days
 
-# 0 disables the per-user repository limit. The upper bound on
+  # 0 disables the per-user repository limit. The upper bound on
   # MAX_REPOSITORY_PACKAGES also caps the single-transaction work of
   # repository-local signing enablement (DESIGN.md: Configuration).
   max_user_repositories =

@@ -346,7 +346,7 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyController do
     end
   end
 
-# Each key field is capped at 1 048 576 bytes in addition to the
+  # Each key field is capped at 1 048 576 bytes in addition to the
   # endpoint-wide multipart cap (DESIGN.md: PUT /api/v1/gpg_key).
   @max_key_field_bytes 1_048_576
 

@@ -602,7 +602,7 @@ defmodule DarkZenith.Uploads do
 
   defp validate_size(_size), do: {:error, :invalid_size}
 
-# An opaque non-empty string of at most 1024 bytes with no (ASCII) control
+  # An opaque non-empty string of at most 1024 bytes with no (ASCII) control
   # characters (DESIGN.md: completion endpoint).
   defp validate_version_id(version_id)
        when is_binary(version_id) and byte_size(version_id) in 1..1024 do

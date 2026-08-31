@@ -106,7 +106,9 @@ defmodule DarkZenith.SigningTransitionsConstraintsTest do
       now = DateTime.utc_now(:second)
 
       assert_raise Ecto.ConstraintError, ~r/signing_transitions_prepared_candidate/, fn ->
-        insert_transition(Map.merge(@prepared, %{status: "activating", phase_next_attempt_at: now}))
+        insert_transition(
+          Map.merge(@prepared, %{status: "activating", phase_next_attempt_at: now})
+        )
       end
 
       assert_raise Ecto.ConstraintError, ~r/signing_transitions_prepared_candidate/, fn ->

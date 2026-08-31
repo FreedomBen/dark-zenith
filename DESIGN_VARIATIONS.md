@@ -4,6 +4,12 @@ Deviations found by reviewing the codebase against `DESIGN.md`. Each entry names
 spec rule, what the code actually does, and why it matters. Work through them with the
 checklist at the end.
 
+**Status: all items resolved** (2026-08-31). Every checklist entry below is fixed in
+code with test coverage; `mix test` reports 879 tests, 0 failures (3 excluded: the
+`:rpmsign`-tagged test, which self-enables when `rpmsign` is installed, and the new
+two-test `:fips` profile, which self-enables on a FIPS-mode host). Resolution notes
+for judgment calls are inline in the checklist.
+
 **Review scope**: all of `DESIGN.md` (1 399 lines) against `lib/`, `config/`,
 `priv/repo/migrations/`, `assets/`, and `test/`.
 
@@ -370,48 +376,70 @@ bundled fixtures) but only in the normal profile.
 ## Checklist
 
 ### Configuration
-- [ ] **A1** Wire `MAX_USER_REPOSITORIES` in `config/runtime.exs` (non-negative, `0` disables)
-- [ ] **A2** Wire `RPM_PROCESSING_CONCURRENCY` (1–64) into the Oban `rpm_processing` queue
-- [ ] **A3** Wire `RPMKEYS_PATH`, `RPMSIGN_PATH`, `GPG_PATH`
-- [ ] **A4** Change the `PHX_HOST` fallback to `localhost` (or amend the spec)
-- [ ] **A5** Enforce `RPM_TOOL_TIMEOUT_SECONDS` ∈ 60…7200
-- [ ] **A6** Enforce `MAX_REPOSITORY_PACKAGES` ≤ 1 000 000
+- [x] **A1** Wire `MAX_USER_REPOSITORIES` in `config/runtime.exs` (non-negative, `0` disables)
+- [x] **A2** Wire `RPM_PROCESSING_CONCURRENCY` (1–64) into the Oban `rpm_processing` queue
+- [x] **A3** Wire `RPMKEYS_PATH`, `RPMSIGN_PATH`, `GPG_PATH`
+- [x] **A4** Change the `PHX_HOST` fallback to `localhost` (the spec kept its default)
+- [x] **A5** Enforce `RPM_TOOL_TIMEOUT_SECONDS` ∈ 60…7200
+- [x] **A6** Enforce `MAX_REPOSITORY_PACKAGES` ≤ 1 000 000
 
 ### Response headers
-- [ ] **B1** Send `Cache-Control: no-store` from the `:browser` and `:api` pipelines
-- [ ] **B2** Send `X-Content-Type-Options: nosniff` on `/api/v1` and repository-serving responses
-- [ ] **B3** Set `Vary: Authorization, Cookie` on repository-serving `429` responses
+- [x] **B1** Send `Cache-Control: no-store` from the `:browser` and `:api` pipelines
+- [x] **B2** Send `X-Content-Type-Options: nosniff` on `/api/v1` and repository-serving responses
+- [x] **B3** Set `Vary: Authorization, Cookie` on repository-serving `429` responses (the
+      header moved into the `:repo_serving` pipeline so halted responses carry it)
 
 ### Upload intent API contract
-- [ ] **C1** Return `204` when cancelling an already `canceled`/`failed`/`expired` intent; `409` only for `succeeded`
-- [ ] **C2** Return `200` (no `Retry-After`) for idempotent completion of `preview_ready`/`succeeded`/`failed`
-- [ ] **C3** Reject control characters in `version_id`
-- [ ] **C4** Enforce the canonical `"0"` / `[1-9][0-9]*` decimal-string form for `size`
+- [x] **C1** Return `204` when cancelling an already `canceled`/`failed`/`expired` intent; `409` only for `succeeded`
+- [x] **C2** Return `200` (no `Retry-After`) for idempotent completion of `preview_ready`/`succeeded`/`failed`
+- [x] **C3** Reject control characters in `version_id`
+- [x] **C4** Enforce the canonical `"0"` / `[1-9][0-9]*` decimal-string form for `size`
 
 ### GPG key API
-- [ ] **D1** Enforce the per-field 1 048 576-byte cap on `public_key` / `private_key` with `413 payload_too_large`
+- [x] **D1** Enforce the per-field 1 048 576-byte cap on `public_key` / `private_key` with `413 payload_too_large`
 
 ### Database invariants
-- [ ] **E1** Add the `phase_next_attempt_at` check constraint to `signing_transitions`
-- [ ] **E2** Add the all-or-none prepared-candidate check constraint to `signing_transitions`
+- [x] **E1** Add the `phase_next_attempt_at` check constraint to `signing_transitions`
+- [x] **E2** Add the all-or-none prepared-candidate check constraint to `signing_transitions`
 
 ### Background work
-- [ ] **F1** Exclude reservations linked by nonterminal signing-transition items from expired-reservation cleanup (both `cleanup_expired/0` and `reclaim_expired_unlinked/1`)
-- [ ] **F2** Renew linked reservations for `pending` signing items, not only on claim
-- [ ] **F3** Rebuild missing item jobs for repository-local `enable_rpm_signing` transitions in the 60-second sweep
-- [ ] **F4** Parse the HTTP-date form of provider `Retry-After`; consider applying the policy beyond mail delivery
+- [x] **F1** Exclude reservations linked by nonterminal signing-transition items from expired-reservation cleanup (both `cleanup_expired/0` and `reclaim_expired_unlinked/1`)
+- [x] **F2** Renew linked reservations for `pending` signing items, not only on claim (the
+      60-second sweep renews every reservation linked by a pending or executing item)
+- [x] **F3** Rebuild missing item jobs for repository-local `enable_rpm_signing` transitions in the 60-second sweep
+- [x] **F4** Parse the HTTP-date form of provider `Retry-After`; consider applying the policy beyond mail delivery.
+      *Resolution*: parsing (delta-seconds plus all three HTTP-date forms via
+      `:httpd_util`) moved into `RetryPolicy.provider_delay/2` and is wired into email
+      delivery. B2 deliberately keeps flattening every infrastructure failure to
+      `:storage_unavailable` (its module contract); honoring a B2 `Retry-After` would
+      mean threading header data through every storage error path for a header B2
+      rarely sends, so that half stays as-is. Any future consumer can call the shared
+      parser.
 
 ### Audit
-- [ ] **G1** Thread the resolved client IP through every user-initiated audited action
-- [ ] **G2** Move the API-key create/revoke audit writes inside their transactions
+- [x] **G1** Thread the resolved client IP through every user-initiated audited action.
+      *Resolution*: a process-scoped audit context (`DarkZenithWeb.AuditContext` plug +
+      `on_mount` hook, `ClientIp.resolve_peer/2` for sockets) supplies the default
+      `ip` for `Audit.record!/2`, covering every context-function call site at once;
+      workers never set it so system events stay null. The review's premise that web
+      login "records null" understated the gap — web login wrote no audit event at
+      all — so `auth.login`/`auth.login_failed` with `surface: "web"` were added.
+- [x] **G2** Move the API-key create/revoke audit writes inside their transactions
+      (deduplicating the parallel LiveView writes)
 
 ### RPM signing and upload processing
-- [ ] **H1** Use `--addsign` for unsigned input and `--resign` for already-signed input (or amend the spec and reconcile `rpm_compat.ex`)
-- [ ] **H2** Run the advisory duplicate and metadata-limit checks in the web-preview pass; skip signing until the confirmed final pass
+- [x] **H1** Use `--addsign` for unsigned input and `--resign` for already-signed input.
+      The parser now records signature-header OpenPGP entries
+      (`Metadata.openpgp_signed?`) and `sign_rpm/4` takes the parsed metadata;
+      `rpm_compat.ex`'s `--addsign` on unsigned fixtures is now consistent.
+- [x] **H2** Run the advisory duplicate and metadata-limit checks in the web-preview pass; skip signing until the confirmed final pass
 
 ### Web interface
-- [ ] **I1** Render the authenticated `curl --user token … | sudo rpmkeys --import -` variant for private repositories
-- [ ] **I2** Prompt for API-key creation on the repository detail page when the user has no suitable key
+- [x] **I1** Render the authenticated `curl --user token … | sudo rpmkeys --import -` variant for private repositories
+- [x] **I2** Prompt for API-key creation on the repository detail page when the user has no suitable key
+      (`Accounts.has_usable_api_key?/2`). The spec's optional one-time filled-in
+      snippet ("may render") remains unimplemented.
 
 ### Tests
-- [ ] **J1** Add a FIPS-mode test profile covering weak-digest rejection and crypto-policy-disabled signing algorithms
+- [x] **J1** Add a FIPS-mode test profile covering weak-digest rejection and crypto-policy-disabled signing algorithms
+      (`:fips` tag, self-enabled when `/proc/sys/crypto/fips_enabled` reads `1`)
