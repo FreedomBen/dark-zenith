@@ -627,20 +627,95 @@ defmodule DarkZenith.Accounts do
   """
   def upsert_gpg_key(%User{} = user, public_armored, private_armored)
       when is_binary(public_armored) and is_binary(private_armored) do
+    do_upsert_gpg_key(user, public_armored, private_armored, "gpg_key.upload", %{})
+  end
+
+  @doc """
+  Generates a key pair server-side and stores it through the identical
+  pipeline as an upload (DESIGN.md: Server-side key generation). Returns
+  `{:ok, user, private_armored}` or `{:accepted, transition,
+  private_armored}` — the armored private key's only reveal.
+  """
+  def generate_gpg_key(%User{} = user, algorithm \\ "ed25519") do
+    with {:ok, pair} <- generate_pair(user, algorithm) do
+      case do_upsert_gpg_key(
+             user,
+             pair.public,
+             pair.private,
+             "gpg_key.generate",
+             generation_metadata(algorithm)
+           ) do
+        {:ok, updated} -> {:ok, updated, pair.private}
+        {:accepted, transition} -> {:accepted, transition, pair.private}
+        error -> error
+      end
+    end
+  end
+
+  @doc """
+  The `replace_with_generated_key` revocation strategy: generates a pair
+  server-side and starts the durable replacement of an existing key.
+  `{:error, :not_found}` when the user has no stored key.
+  """
+  def generate_gpg_key_replacement(%User{} = user, algorithm \\ "ed25519") do
+    cond do
+      algorithm not in DarkZenith.Gpg.generation_algorithms() ->
+        {:error, :validation_failed}
+
+      is_nil(Repo.get!(User, user.id).gpg_key_fingerprint) ->
+        {:error, :not_found}
+
+      true ->
+        with {:ok, pair} <- generate_pair(user, algorithm) do
+          case DarkZenith.SigningTransitions.UserWide.start_replacement(
+                 user,
+                 pair.public,
+                 pair.private,
+                 generation_metadata(algorithm)
+               ) do
+            {:accepted, transition} -> {:accepted, transition, pair.private}
+            {:error, :no_current_key} -> {:error, :not_found}
+            error -> error
+          end
+        end
+    end
+  end
+
+  defp generate_pair(user, algorithm) do
+    if algorithm in DarkZenith.Gpg.generation_algorithms() do
+      # Snapshot the current account email into the informational UID.
+      email = Repo.get!(User, user.id).email
+      DarkZenith.Gpg.generate_key_pair(algorithm, "Dark Zenith repository signing <#{email}>")
+    else
+      {:error, :validation_failed}
+    end
+  end
+
+  defp generation_metadata(algorithm), do: %{"generated" => true, "algorithm" => algorithm}
+
+  defp do_upsert_gpg_key(user, public_armored, private_armored, audit_action, extra_metadata) do
     if Repo.get!(User, user.id).gpg_key_fingerprint do
       DarkZenith.SigningTransitions.UserWide.start_replacement(
         user,
         public_armored,
-        private_armored
+        private_armored,
+        extra_metadata
       )
     else
-      case first_gpg_key_upload(user, public_armored, private_armored) do
+      case first_gpg_key_upload(
+             user,
+             public_armored,
+             private_armored,
+             audit_action,
+             extra_metadata
+           ) do
         {:error, :has_key} ->
           # Lost the first-upload race: run the replacement flow instead.
           DarkZenith.SigningTransitions.UserWide.start_replacement(
             user,
             public_armored,
-            private_armored
+            private_armored,
+            extra_metadata
           )
 
         other ->
@@ -649,7 +724,7 @@ defmodule DarkZenith.Accounts do
     end
   end
 
-  defp first_gpg_key_upload(user, public_armored, private_armored) do
+  defp first_gpg_key_upload(user, public_armored, private_armored, audit_action, extra_metadata) do
     with {:ok, info} <- DarkZenith.Gpg.validate_key_pair(public_armored, private_armored) do
       envelope = DarkZenith.Crypto.GpgKeyEnvelope.encrypt(private_armored, user.id)
 
@@ -676,10 +751,10 @@ defmodule DarkZenith.Accounts do
                 ]
               )
 
-            DarkZenith.Audit.record!("gpg_key.upload",
+            DarkZenith.Audit.record!(audit_action,
               actor: user,
               target: {:gpg_key, nil},
-              metadata: %{"fingerprint" => info.primary_fingerprint}
+              metadata: Map.put(extra_metadata, "fingerprint", info.primary_fingerprint)
             )
 
             UserNotifier.deliver_gpg_key_uploaded(user, info.primary_fingerprint)

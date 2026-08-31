@@ -230,23 +230,23 @@ Spec: DESIGN.md "Server-side key generation" (GPG Signing), plus the generation 
 under Key replacement and revocation, Web Interface, REST API, Rate Limiting, Audit
 Events, Email Delivery, and Security Considerations.
 
-- [ ] `DarkZenith.Gpg.generate_key_pair/2`: batch quick-generation in an ephemeral
+- [x] `DarkZenith.Gpg.generate_key_pair/2`: batch quick-generation in an ephemeral
       `GNUPGHOME` (sign-usage V4 primary, no passphrase, no expiry, snapshot-email UID),
       armored export, allowlisted algorithms with `ed25519` default
-- [ ] `Accounts.generate_gpg_key/2`: generated pair through the identical
+- [x] `Accounts.generate_gpg_key/2`: generated pair through the identical
       validation/storage/replacement pipeline as upload; one-time private-key return;
       `gpg_key.generate` audit for a first key, generated-flag metadata on
       `gpg_key.replace_start`; existing upload/replace notification emails
-- [ ] `POST /api/v1/gpg_key/generation`: optional JSON body (`algorithm` only), 200/202
+- [x] `POST /api/v1/gpg_key/generation`: optional JSON body (`algorithm` only), 200/202
       wrapped data objects carrying the one-time `private_key`, PUT-equivalent 409/422/503
       semantics
-- [ ] `POST /api/v1/gpg_key/revocation` strategy `replace_with_generated_key` (JSON-only,
+- [x] `POST /api/v1/gpg_key/revocation` strategy `replace_with_generated_key` (JSON-only,
       optional `algorithm`, wrapped 202 body)
-- [ ] Rate limiting: generation route + LiveView generate event in the `gpg_key_mutation`
+- [x] Rate limiting: generation route + LiveView generate event in the `gpg_key_mutation`
       bucket; add the missing web revocation-strategy events to the same bucket
-- [ ] Settings LiveView: generate form with algorithm select, one-time private-key display
+- [x] Settings LiveView: generate form with algorithm select, one-time private-key display
       with download link and never-again warning
-- [ ] Tests proving the security invariants: private key returned exactly once and only in
+- [x] Tests proving the security invariants: private key returned exactly once and only in
       generation responses, envelope-encrypted at rest, absent from resources/audit
       metadata, full validation pipeline applied to generated pairs
 

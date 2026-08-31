@@ -23,7 +23,10 @@ defmodule DarkZenithWeb.LiveRateLimit do
     DarkZenithWeb.UserLive.Settings => %{
       "create_api_key" => :api_key_create,
       "upload_gpg_key" => :gpg_key_mutation,
+      "generate_gpg_key" => :gpg_key_mutation,
       "remove_gpg_key" => :gpg_key_mutation,
+      "revoke_clear_metadata" => :gpg_key_mutation,
+      "revoke_delete_packages" => :gpg_key_mutation,
       "update_email" => :email_change
     }
   }

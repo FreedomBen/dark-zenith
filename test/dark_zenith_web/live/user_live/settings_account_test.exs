@@ -47,6 +47,51 @@ defmodule DarkZenithWeb.UserLive.SettingsAccountTest do
     end
   end
 
+  describe "GPG key generation" do
+    test "generates a first key showing the private key exactly once", %{conn: conn, user: user} do
+      {:ok, lv, html} = live(conn, ~p"/users/settings")
+      assert html =~ "Generate key pair"
+
+      html =
+        lv
+        |> form("#generate_gpg_key_form", gpg_generation: %{"algorithm" => "ed25519"})
+        |> render_submit()
+
+      # The one-time reveal block carries the armored private key and a
+      # download link, and warns it can never be shown again.
+      assert html =~ "id=\"generated-gpg-private-key\""
+      assert html =~ "BEGIN PGP PRIVATE KEY BLOCK"
+      assert html =~ "never be shown again"
+      assert html =~ "download="
+
+      info = Accounts.get_gpg_key_info(user)
+      assert html =~ info.fingerprint
+
+      # A fresh mount no longer exposes the private key anywhere.
+      {:ok, _lv, remounted} = live(build_conn() |> log_in_user(user), ~p"/users/settings")
+      refute remounted =~ "PRIVATE KEY BLOCK"
+    end
+
+    test "generating over an existing key starts a replacement", %{conn: conn, user: user} do
+      pair = generate_key_pair()
+      {:ok, _} = Accounts.upsert_gpg_key(user, pair.public, pair.private)
+
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      html =
+        lv
+        |> form("#generate_gpg_key_form", gpg_generation: %{"algorithm" => "ed25519"})
+        |> render_submit()
+
+      assert html =~ "id=\"generated-gpg-private-key\""
+      assert html =~ "id=\"gpg-transition\""
+
+      # The current key remains until the swap.
+      assert DarkZenith.Repo.get!(DarkZenith.Accounts.User, user.id).gpg_key_fingerprint ==
+               pair.fingerprint
+    end
+  end
+
   describe "GPG key management" do
     test "uploads, displays, and removes a real key", %{conn: conn} do
       pair = generate_key_pair()

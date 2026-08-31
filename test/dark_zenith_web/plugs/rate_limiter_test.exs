@@ -132,6 +132,22 @@ defmodule DarkZenithWeb.Plugs.RateLimiterTest do
     assert build_conn() |> bearer(token) |> get(~p"/api/v1/repos") |> Map.fetch!(:status) == 200
   end
 
+  test "GPG key generation consumes the gpg_key_mutation bucket", ctx do
+    override!(ctx.previous, %{general_auth: {100, 60}, gpg_key_mutation: {1, 3600}})
+
+    user = user_fixture()
+    {token, _} = Accounts.create_session_token(user)
+
+    first = build_conn() |> bearer(token) |> post(~p"/api/v1/gpg_key/generation")
+    assert first.status == 200
+
+    second = build_conn() |> bearer(token) |> post(~p"/api/v1/gpg_key/generation")
+    assert second.status == 429
+
+    # General requests still flow: the hourly bucket composed, not replaced.
+    assert build_conn() |> bearer(token) |> get(~p"/api/v1/repos") |> Map.fetch!(:status) == 200
+  end
+
   test "browser requests render an HTML 429", ctx do
     override!(ctx.previous, %{general_unauth: {1, 60}})
 

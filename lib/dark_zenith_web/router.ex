@@ -153,6 +153,7 @@ defmodule DarkZenithWeb.Router do
 
     get "/gpg_key", GpgKeyController, :show
     put "/gpg_key", GpgKeyController, :update
+    post "/gpg_key/generation", GpgKeyController, :generation
     delete "/gpg_key", GpgKeyController, :delete
     post "/gpg_key/revocation", GpgKeyController, :revocation
     get "/gpg_key/transitions/:id", GpgKeyController, :transition

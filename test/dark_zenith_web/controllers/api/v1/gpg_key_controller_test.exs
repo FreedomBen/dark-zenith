@@ -93,11 +93,97 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyControllerTest do
 
     conn = ctx.conn |> bearer(key) |> get(~p"/api/v1/gpg_key")
     assert %{"error" => %{"code" => "forbidden"}} = json_response(conn, 403)
+
+    generated = build_conn() |> bearer(key) |> post(~p"/api/v1/gpg_key/generation")
+    assert %{"error" => %{"code" => "forbidden"}} = json_response(generated, 403)
   end
 
   test "requires authentication", ctx do
     conn = get(ctx.conn, ~p"/api/v1/gpg_key")
     assert %{"error" => %{"code" => "unauthenticated"}} = json_response(conn, 401)
+
+    generated = post(build_conn(), ~p"/api/v1/gpg_key/generation")
+    assert %{"error" => %{"code" => "unauthenticated"}} = json_response(generated, 401)
+  end
+
+  describe "POST /api/v1/gpg_key/generation" do
+    test "generates a first key and reveals the private key exactly once", ctx do
+      conn = ctx.conn |> bearer(ctx.token) |> post(~p"/api/v1/gpg_key/generation")
+
+      assert %{"data" => %{"gpg_key" => key, "private_key" => private}} =
+               json_response(conn, 200)
+
+      assert private =~ "BEGIN PGP PRIVATE KEY BLOCK"
+      assert key["fingerprint"]
+      assert key["signing_fingerprint"] == key["fingerprint"]
+      assert key["expires_at"] == nil
+      assert key["public_key"] =~ "BEGIN PGP PUBLIC KEY"
+      refute Map.has_key?(key, "private_key")
+
+      # Never retrievable again.
+      read = build_conn() |> bearer(ctx.token) |> get(~p"/api/v1/gpg_key")
+      assert %{"data" => read_data} = json_response(read, 200)
+      refute inspect(read_data) =~ "PRIVATE KEY BLOCK"
+    end
+
+    test "accepts an explicit algorithm in a JSON body", ctx do
+      conn =
+        ctx.conn
+        |> bearer(ctx.token)
+        |> put_req_header("content-type", "application/json")
+        |> post(~p"/api/v1/gpg_key/generation", Jason.encode!(%{algorithm: "ed25519"}))
+
+      assert %{"data" => %{"gpg_key" => _, "private_key" => _}} = json_response(conn, 200)
+    end
+
+    test "rejects unknown algorithms and unknown fields", ctx do
+      bad_algorithm =
+        ctx.conn
+        |> bearer(ctx.token)
+        |> put_req_header("content-type", "application/json")
+        |> post(~p"/api/v1/gpg_key/generation", Jason.encode!(%{algorithm: "rsa2048"}))
+
+      assert %{"error" => %{"code" => "validation_failed"}} = json_response(bad_algorithm, 422)
+
+      unknown_field =
+        build_conn()
+        |> bearer(ctx.token)
+        |> put_req_header("content-type", "application/json")
+        |> post(~p"/api/v1/gpg_key/generation", Jason.encode!(%{algo: "ed25519"}))
+
+      assert %{"error" => %{"code" => "validation_failed"}} = json_response(unknown_field, 422)
+
+      assert Accounts.get_gpg_key_info(ctx.user) == nil
+    end
+
+    test "generating over an existing key returns 202 with the one-time private key", ctx do
+      pair = generate_key_pair()
+      {:ok, _} = Accounts.upsert_gpg_key(ctx.user, pair.public, pair.private)
+
+      conn = ctx.conn |> bearer(ctx.token) |> post(~p"/api/v1/gpg_key/generation")
+
+      assert %{"data" => %{"transition" => transition, "private_key" => private}} =
+               json_response(conn, 202)
+
+      assert get_resp_header(conn, "retry-after") == ["2"]
+      assert transition["kind"] == "replace_gpg_key"
+      assert transition["status"] == "preparing"
+      assert private =~ "BEGIN PGP PRIVATE KEY BLOCK"
+
+      # The retained transition resource never exposes the candidate.
+      poll =
+        build_conn()
+        |> bearer(ctx.token)
+        |> get(~p"/api/v1/gpg_key/transitions/#{transition["id"]}")
+
+      refute inspect(json_response(poll, 200)) =~ "PRIVATE KEY"
+
+      # A second generation is refused while the replacement is unresolved.
+      again = build_conn() |> bearer(ctx.token) |> post(~p"/api/v1/gpg_key/generation")
+
+      assert %{"error" => %{"code" => "conflict_gpg_key_transition_in_progress"}} =
+               json_response(again, 409)
+    end
   end
 end
 
@@ -260,6 +346,75 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyTransitionApiTest do
       })
 
     assert %{"data" => %{"kind" => "replace_gpg_key"}} = json_response(conn, 202)
+  end
+
+  test "replace_with_generated_key starts a replacement with a one-time private key", ctx do
+    conn =
+      ctx.conn
+      |> bearer(ctx.token)
+      |> put_req_header("content-type", "application/json")
+      |> post(
+        ~p"/api/v1/gpg_key/revocation",
+        Jason.encode!(%{strategy: "replace_with_generated_key", algorithm: "ed25519"})
+      )
+
+    assert %{"data" => %{"transition" => transition, "private_key" => private}} =
+             json_response(conn, 202)
+
+    assert get_resp_header(conn, "retry-after") == ["2"]
+    assert transition["kind"] == "replace_gpg_key"
+    assert private =~ "BEGIN PGP PRIVATE KEY BLOCK"
+  end
+
+  test "algorithm is accepted only alongside replace_with_generated_key", ctx do
+    conn =
+      ctx.conn
+      |> bearer(ctx.token)
+      |> put_req_header("content-type", "application/json")
+      |> post(
+        ~p"/api/v1/gpg_key/revocation",
+        Jason.encode!(%{strategy: "clear_metadata_signing", algorithm: "ed25519"})
+      )
+
+    assert %{"error" => %{"code" => "validation_failed"}} = json_response(conn, 422)
+  end
+
+  test "replace_with_generated_key rejects unknown algorithms and multipart bodies", ctx do
+    bad_algorithm =
+      ctx.conn
+      |> bearer(ctx.token)
+      |> put_req_header("content-type", "application/json")
+      |> post(
+        ~p"/api/v1/gpg_key/revocation",
+        Jason.encode!(%{strategy: "replace_with_generated_key", algorithm: "rsa2048"})
+      )
+
+    assert %{"error" => %{"code" => "validation_failed"}} = json_response(bad_algorithm, 422)
+
+    multipart =
+      build_conn()
+      |> bearer(ctx.token)
+      |> put_req_header("content-type", "multipart/form-data; boundary=test")
+      |> post(~p"/api/v1/gpg_key/revocation", %{"strategy" => "replace_with_generated_key"})
+
+    assert %{"error" => %{"code" => "validation_failed"}} = json_response(multipart, 422)
+  end
+
+  test "replace_with_generated_key without a stored key is not found", ctx do
+    _ = ctx
+    keyless = user_fixture()
+    {token, _} = Accounts.create_session_token(keyless)
+
+    conn =
+      build_conn()
+      |> bearer(token)
+      |> put_req_header("content-type", "application/json")
+      |> post(
+        ~p"/api/v1/gpg_key/revocation",
+        Jason.encode!(%{strategy: "replace_with_generated_key"})
+      )
+
+    assert %{"error" => %{"code" => "not_found"}} = json_response(conn, 404)
   end
 
   test "unknown strategies are rejected", ctx do

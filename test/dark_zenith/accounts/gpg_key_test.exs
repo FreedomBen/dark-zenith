@@ -57,6 +57,72 @@ defmodule DarkZenith.Accounts.GpgKeyTest do
     end
   end
 
+  describe "generate_gpg_key/2" do
+    test "generates, validates, and stores a first key, revealing the private key once", ctx do
+      assert {:ok, user, private_armored} = Accounts.generate_gpg_key(ctx.user, "ed25519")
+
+      assert private_armored =~ "BEGIN PGP PRIVATE KEY BLOCK"
+      assert user.gpg_key_fingerprint
+      assert user.gpg_signing_fingerprint == user.gpg_key_fingerprint
+      assert user.gpg_key_expires_at == nil
+      assert user.gpg_key_public =~ "BEGIN PGP PUBLIC KEY BLOCK"
+
+      # The stored envelope decrypts to exactly the revealed private key.
+      assert {:ok, decrypted} = GpgKeyEnvelope.decrypt(user.gpg_key_private, user.id)
+      assert decrypted == private_armored
+
+      # Audited as generation with the algorithm, never with key material.
+      event = Enum.find(Audit.list_events(), &(&1.action == "gpg_key.generate"))
+      assert event
+      assert event.metadata["algorithm"] == "ed25519"
+      assert event.metadata["fingerprint"] == user.gpg_key_fingerprint
+      refute inspect(event.metadata) =~ "PRIVATE KEY"
+      refute Enum.any?(Audit.list_events(), &(&1.action == "gpg_key.upload"))
+
+      assert_enqueued(worker: EmailDelivery, args: %{subject: "A GPG signing key was uploaded"})
+    end
+
+    test "generating over an existing key starts the replacement transition", ctx do
+      {:ok, _} = Accounts.upsert_gpg_key(ctx.user, ctx.pair.public, ctx.pair.private)
+
+      assert {:accepted, transition, private_armored} =
+               Accounts.generate_gpg_key(ctx.user, "ed25519")
+
+      assert transition.kind == "replace_gpg_key"
+      assert transition.status == "preparing"
+      assert private_armored =~ "BEGIN PGP PRIVATE KEY BLOCK"
+
+      # The current key is untouched; the candidate is encrypted in the
+      # prepared fields and decrypts to the revealed private key.
+      user = Repo.get!(Accounts.User, ctx.user.id)
+      assert user.gpg_key_fingerprint == ctx.pair.fingerprint
+
+      assert {:ok, decrypted} =
+               GpgKeyEnvelope.decrypt(transition.prepared_gpg_key_private, user.id)
+
+      assert decrypted == private_armored
+
+      event = Enum.find(Audit.list_events(), &(&1.action == "gpg_key.replace_start"))
+      assert event.metadata["generated"] == true
+      assert event.metadata["algorithm"] == "ed25519"
+      refute inspect(event.metadata) =~ "PRIVATE KEY"
+    end
+
+    test "rejects algorithms outside the allowlist without touching state", ctx do
+      assert {:error, :validation_failed} = Accounts.generate_gpg_key(ctx.user, "dsa1024")
+      assert Repo.get!(Accounts.User, ctx.user.id).gpg_key_fingerprint == nil
+      refute Enum.any?(Audit.list_events(), &String.starts_with?(&1.action, "gpg_key."))
+    end
+
+    test "refused while a user-wide transition is unresolved", ctx do
+      {:ok, _} = Accounts.upsert_gpg_key(ctx.user, ctx.pair.public, ctx.pair.private)
+      other = generate_key_pair()
+      {:accepted, _} = Accounts.upsert_gpg_key(ctx.user, other.public, other.private)
+
+      assert {:error, :transition_in_progress} = Accounts.generate_gpg_key(ctx.user, "ed25519")
+    end
+  end
+
   describe "metadata signing end to end" do
     test "a repository created with the fingerprint carries a real signature", ctx do
       {:ok, user} = Accounts.upsert_gpg_key(ctx.user, ctx.pair.public, ctx.pair.private)

@@ -158,6 +158,28 @@ defmodule DarkZenithWeb.UserLive.Settings do
       <section class="space-y-4">
         <h2 class="text-lg font-semibold">GPG signing key</h2>
 
+        <div
+          :if={@generated_gpg_private_key}
+          class="alert alert-warning block space-y-2"
+          id="generated-gpg-private-key"
+        >
+          <p class="font-semibold">
+            Your generated private key — copy or download it now.
+          </p>
+          <p class="text-xs">
+            Dark Zenith keeps an encrypted copy for signing, but the key will
+            never be shown again. Store this backup somewhere safe.
+          </p>
+          <pre class="bg-base-200 rounded-lg p-3 text-xs overflow-x-auto select-all">{@generated_gpg_private_key}</pre>
+          <a
+            class="btn btn-sm"
+            href={"data:application/pgp-keys;base64," <> Base.encode64(@generated_gpg_private_key)}
+            download="dark-zenith-signing-key.asc"
+          >
+            Download private key
+          </a>
+        </div>
+
         <div :if={@gpg} class="space-y-2 text-sm" id="gpg-key-info">
           <p>
             <span class="font-semibold">Fingerprint:</span>
@@ -278,6 +300,35 @@ defmodule DarkZenithWeb.UserLive.Settings do
             {if @gpg, do: "Replace key pair", else: "Upload key pair"}
           </.button>
         </.form>
+
+        <.form
+          :if={@gpg == nil or @gpg.transition == nil}
+          for={@gpg_generation_form}
+          id="generate_gpg_key_form"
+          phx-submit="generate_gpg_key"
+        >
+          <p class="text-sm text-base-content/70 mb-2">
+            {if @gpg,
+              do: "Or have Dark Zenith generate the replacement key pair for you.",
+              else: "Or have Dark Zenith generate a key pair for you."} The private key is
+            shown exactly once so you can keep an offline backup.
+          </p>
+          <.input
+            field={@gpg_generation_form[:algorithm]}
+            type="select"
+            label="Algorithm"
+            options={[
+              {"Ed25519 (recommended)", "ed25519"},
+              {"RSA-4096", "rsa4096"},
+              {"RSA-3072", "rsa3072"},
+              {"ECDSA P-256", "nistp256"},
+              {"ECDSA P-384", "nistp384"}
+            ]}
+          />
+          <.button phx-disable-with="Generating..." class="btn btn-secondary mt-2">
+            Generate key pair
+          </.button>
+        </.form>
       </section>
     </Layouts.app>
     """
@@ -325,6 +376,7 @@ defmodule DarkZenithWeb.UserLive.Settings do
       |> assign(:current_password, nil)
       |> assign(:trigger_submit, false)
       |> assign(:created_key, nil)
+      |> assign(:generated_gpg_private_key, nil)
       |> reload_account_sections()
 
     {:ok, socket}
@@ -338,6 +390,7 @@ defmodule DarkZenithWeb.UserLive.Settings do
     |> assign(:key_form, to_form(%{"name" => ""}, as: "api_key"))
     |> assign_gpg_sections(user)
     |> assign(:gpg_form, to_form(%{"public_key" => "", "private_key" => ""}, as: "gpg"))
+    |> assign(:gpg_generation_form, to_form(%{"algorithm" => "ed25519"}, as: "gpg_generation"))
   end
 
   @impl true
@@ -469,6 +522,51 @@ defmodule DarkZenithWeb.UserLive.Settings do
 
       {:error, _infra} ->
         {:noreply, put_flash(socket, :error, "Key validation infrastructure is unavailable.")}
+    end
+  end
+
+  def handle_event("generate_gpg_key", params, socket) do
+    user = socket.assigns.current_scope.user
+    algorithm = get_in(params, ["gpg_generation", "algorithm"]) || "ed25519"
+
+    case Accounts.generate_gpg_key(user, algorithm) do
+      {:ok, _user, private_armored} ->
+        {:noreply,
+         socket
+         |> reload_account_sections()
+         |> assign(:generated_gpg_private_key, private_armored)
+         |> put_flash(:info, "GPG key generated. Save the private key now: it is shown once.")}
+
+      {:accepted, _transition, private_armored} ->
+        {:noreply,
+         socket
+         |> reload_account_sections()
+         |> assign(:generated_gpg_private_key, private_armored)
+         |> put_flash(
+           :info,
+           "Key replacement started with your generated key: repositories and packages " <>
+             "are being re-signed. Save the private key now: it is shown once."
+         )}
+
+      {:error, :transition_in_progress} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Another key transition is unresolved (or a repository is mid re-sign); " <>
+             "wait for it to finish."
+         )}
+
+      {:error, :validation_failed} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Key generation was rejected: the chosen algorithm is not supported by this server."
+         )}
+
+      {:error, _infra} ->
+        {:noreply, put_flash(socket, :error, "Key generation infrastructure is unavailable.")}
     end
   end
 

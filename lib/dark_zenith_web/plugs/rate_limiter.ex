@@ -98,7 +98,7 @@ defmodule DarkZenithWeb.Plugs.RateLimiter do
   defp specialized_api("POST", ["api", "v1", "api_keys"], %{id: id}), do: [{:api_key_create, id}]
 
   defp specialized_api(method, ["api", "v1", "gpg_key" | rest], %{id: id})
-       when method in ["PUT", "DELETE", "POST"] and rest in [[], ["revocation"]],
+       when method in ["PUT", "DELETE", "POST"] and rest in [[], ["revocation"], ["generation"]],
        do: [{:gpg_key_mutation, id}]
 
   defp specialized_api("POST", ["api", "v1", "repos", _slug, "collaborators"], %{id: id}),

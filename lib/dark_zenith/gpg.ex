@@ -14,6 +14,7 @@ defmodule DarkZenith.Gpg do
   @min_expiry_days 30
   @allowed_rsa_bits [3072, 4096]
   @allowed_curves ~w(nistp256 nistp384 ed25519)
+  @generation_algorithms ~w(ed25519 rsa3072 rsa4096 nistp256 nistp384)
 
   defmodule KeyInfo do
     @moduledoc "The validated key pair's identity and signing selection."
@@ -38,6 +39,50 @@ defmodule DarkZenith.Gpg do
         {:ok, info}
       end
     end)
+  end
+
+  @doc "The allowlisted `generate_key_pair/2` algorithm identifiers."
+  def generation_algorithms, do: @generation_algorithms
+
+  @doc """
+  Generates a passphrase-free, non-expiring, sign-capable V4 primary key
+  (no subkeys) in an ephemeral home and returns the armored
+  `%{public: ..., private: ...}` pair (DESIGN.md: Server-side key
+  generation). Callers validate the result with `validate_key_pair/2`
+  exactly like an upload. Algorithms outside `generation_algorithms/0`
+  are `{:error, :validation_failed}` without invoking `gpg`.
+  """
+  def generate_key_pair(algorithm, uid) when is_binary(uid) do
+    if algorithm in @generation_algorithms do
+      with_ephemeral_home(fn home ->
+        with {_output, 0} <-
+               gpg(home, [
+                 "--batch",
+                 "--pinentry-mode",
+                 "loopback",
+                 "--passphrase",
+                 "",
+                 "--quick-generate-key",
+                 uid,
+                 algorithm,
+                 "sign",
+                 "never"
+               ]),
+             {:ok, listing} <- list_keys(home, "--list-secret-keys"),
+             [%{fingerprint: fingerprint}] when is_binary(fingerprint) <-
+               parse_listing(listing, "sec", "ssb"),
+             {public, 0} <- gpg(home, ["--armor", "--export", fingerprint]),
+             {private, 0} <- gpg(home, ["--armor", "--export-secret-keys", fingerprint]) do
+          {:ok, %{public: public, private: private}}
+        else
+          {:error, :gpg_unavailable} -> {:error, :signing_unavailable}
+          {:error, :signing_unavailable} -> {:error, :signing_unavailable}
+          _other -> {:error, :validation_failed}
+        end
+      end)
+    else
+      {:error, :validation_failed}
+    end
   end
 
   @doc """

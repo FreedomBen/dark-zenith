@@ -14,6 +14,7 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyController do
   alias DarkZenithWeb.Api.Strict
 
   @upload_fields ~w(public_key private_key)
+  @generation_algorithms DarkZenith.Gpg.generation_algorithms()
 
   def show(conn, _params) do
     with {:ok, _} <- Strict.validate_query(conn),
@@ -52,10 +53,103 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyController do
   end
 
   @doc """
+  `POST /api/v1/gpg_key/generation`: generates a key pair server-side and
+  stores it with PUT semantics. The response data object is the only place
+  the armored private key ever appears — `{"gpg_key", "private_key"}` on a
+  first key, `{"transition", "private_key"}` on a replacement.
+  """
+  def generation(conn, _params) do
+    with {:ok, _} <- Strict.validate_query(conn),
+         {:ok, user} <- require_session_principal(conn),
+         {:ok, algorithm} <- generation_algorithm(conn) do
+      case Accounts.generate_gpg_key(user, algorithm) do
+        {:ok, _user, private_armored} ->
+          json(conn, %{
+            "data" => %{
+              "gpg_key" => data(Accounts.get_gpg_key_info(user)),
+              "private_key" => private_armored
+            }
+          })
+
+        {:accepted, transition, private_armored} ->
+          accepted_generated(conn, transition, private_armored)
+
+        other ->
+          generation_error(other)
+      end
+    end
+  end
+
+  defp generation_algorithm(conn) do
+    content_type = List.first(Plug.Conn.get_req_header(conn, "content-type") || [])
+
+    cond do
+      content_type != nil and String.starts_with?(content_type, "application/json") ->
+        with {:ok, body} <- Strict.validate_json_body(conn, ["algorithm"]) do
+          validate_algorithm(Map.get(body, "algorithm"))
+        end
+
+      conn.body_params == %{} ->
+        # An absent body selects the default algorithm.
+        {:ok, "ed25519"}
+
+      true ->
+        {:error, :invalid_request}
+    end
+  end
+
+  defp validate_algorithm(nil), do: {:ok, "ed25519"}
+
+  defp validate_algorithm(value) when is_binary(value) do
+    trimmed = String.trim(value)
+
+    if trimmed in @generation_algorithms do
+      {:ok, trimmed}
+    else
+      {:error, :validation_failed, %{"algorithm" => ["is not a supported algorithm"]}}
+    end
+  end
+
+  defp validate_algorithm(_other),
+    do: {:error, :validation_failed, %{"algorithm" => ["is not a supported algorithm"]}}
+
+  defp generation_error(result) do
+    case result do
+      {:error, :not_found} ->
+        {:error, :not_found}
+
+      {:error, :validation_failed} ->
+        {:error, :validation_failed}
+
+      {:error, :transition_in_progress} ->
+        {:error, :conflict, "conflict_gpg_key_transition_in_progress"}
+
+      {:error, :signing_unavailable} ->
+        {:error, :service_unavailable, "signing_unavailable", 30}
+
+      {:error, :rpm_verification_unavailable} ->
+        {:error, :service_unavailable, "rpm_verification_unavailable", 30}
+    end
+  end
+
+  defp accepted_generated(conn, transition, private_armored) do
+    conn
+    |> put_status(202)
+    |> put_resp_header("retry-after", "2")
+    |> json(%{
+      "data" => %{
+        "transition" => DarkZenithWeb.Api.V1.GpgTransitionJson.render(transition),
+        "private_key" => private_armored
+      }
+    })
+  end
+
+  @doc """
   `POST /api/v1/gpg_key/revocation`: removes or replaces an in-use key with
   an explicit strategy. Multipart bodies are accepted only with
   `strategy=replace_key`, so key material can never accompany a
-  non-replacement strategy.
+  non-replacement strategy; `replace_with_generated_key` is JSON-only and
+  is the one strategy accepting the optional `algorithm` field.
   """
   def revocation(conn, _params) do
     with {:ok, _} <- Strict.validate_query(conn),
@@ -93,9 +187,15 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyController do
   end
 
   defp json_revocation(conn, user) do
-    with {:ok, body} <- Strict.validate_json_body(conn, ["strategy"], ["strategy"]) do
-      case Map.get(body, "strategy") do
-        strategy when strategy in ["clear_metadata_signing", "delete_signed_packages"] ->
+    with {:ok, body} <- Strict.validate_json_body(conn, ["strategy", "algorithm"], ["strategy"]) do
+      strategy = Map.get(body, "strategy")
+
+      cond do
+        strategy != "replace_with_generated_key" and Map.has_key?(body, "algorithm") ->
+          {:error, :validation_failed,
+           %{"algorithm" => ["is only supported with strategy replace_with_generated_key"]}}
+
+        strategy in ["clear_metadata_signing", "delete_signed_packages"] ->
           case DarkZenith.SigningTransitions.UserWide.start_removal(user, strategy) do
             {:accepted, transition} ->
               accepted_transition(conn, transition)
@@ -110,7 +210,18 @@ defmodule DarkZenithWeb.Api.V1.GpgKeyController do
               {:error, :conflict, "conflict_gpg_key_transition_in_progress"}
           end
 
-        _other ->
+        strategy == "replace_with_generated_key" ->
+          with {:ok, algorithm} <- validate_algorithm(Map.get(body, "algorithm")) do
+            case Accounts.generate_gpg_key_replacement(user, algorithm) do
+              {:accepted, transition, private_armored} ->
+                accepted_generated(conn, transition, private_armored)
+
+              other ->
+                generation_error(other)
+            end
+          end
+
+        true ->
           {:error, :validation_failed, %{"strategy" => ["is not a supported strategy"]}}
       end
     end

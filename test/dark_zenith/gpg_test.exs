@@ -89,6 +89,58 @@ defmodule DarkZenith.GpgTest do
     end
   end
 
+  describe "generate_key_pair/2" do
+    test "generates an Ed25519 pair that passes the full upload validation pipeline" do
+      uid =
+        "Dark Zenith repository signing <gen-#{System.unique_integer([:positive])}@example.com>"
+
+      assert {:ok, pair} = Gpg.generate_key_pair("ed25519", uid)
+
+      assert pair.public =~ "BEGIN PGP PUBLIC KEY BLOCK"
+      assert pair.private =~ "BEGIN PGP PRIVATE KEY BLOCK"
+
+      assert {:ok, info} = Gpg.validate_key_pair(pair.public, pair.private)
+      # A sign-capable primary with no subkeys: the primary is the signer.
+      assert info.primary_fingerprint == info.signing_fingerprint
+      assert info.expires_at == nil
+    end
+
+    test "the generated key carries the requested UID snapshot" do
+      uid = "Dark Zenith repository signing <uid-snap@example.com>"
+      assert {:ok, pair} = Gpg.generate_key_pair("ed25519", uid)
+
+      path =
+        Path.join(System.tmp_dir!(), "dz-uid-check-#{System.unique_integer([:positive])}.asc")
+
+      File.write!(path, pair.public)
+
+      try do
+        {listing, 0} =
+          System.cmd("gpg", ["--batch", "--with-colons", "--show-keys", path],
+            stderr_to_stdout: true
+          )
+
+        assert listing =~ "uid-snap@example.com"
+        assert listing =~ "Dark Zenith repository signing"
+      after
+        File.rm(path)
+      end
+    end
+
+    test "honors an allowlisted non-default algorithm" do
+      assert {:ok, pair} = Gpg.generate_key_pair("nistp256", "Alt <alt@example.com>")
+      assert {:ok, _info} = Gpg.validate_key_pair(pair.public, pair.private)
+    end
+
+    test "rejects algorithms outside the allowlist without generating" do
+      assert {:error, :validation_failed} =
+               Gpg.generate_key_pair("rsa2048", "Bad <bad@example.com>")
+
+      assert {:error, :validation_failed} =
+               Gpg.generate_key_pair("brainpoolP256r1", "Bad <bad@example.com>")
+    end
+  end
+
   describe "RPM signing compatibility" do
     @tag :rpmsign
     test "the real fixture check passes for an accepted key when rpmsign exists" do

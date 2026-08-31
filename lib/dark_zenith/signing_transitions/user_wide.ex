@@ -38,7 +38,12 @@ defmodule DarkZenith.SigningTransitions.UserWide do
   current key and every repository fingerprint remain unchanged until the
   key-swap commit.
   """
-  def start_replacement(%User{} = user, public_armored, private_armored) do
+  def start_replacement(
+        %User{} = user,
+        public_armored,
+        private_armored,
+        extra_audit_metadata \\ %{}
+      ) do
     with {:ok, info} <- DarkZenith.Gpg.validate_key_pair(public_armored, private_armored) do
       envelope = DarkZenith.Crypto.GpgKeyEnvelope.encrypt(private_armored, user.id)
 
@@ -79,7 +84,12 @@ defmodule DarkZenith.SigningTransitions.UserWide do
               Audit.record!("gpg_key.replace_start",
                 actor: user,
                 target: {:signing_transition, transition.id},
-                metadata: %{"target_fingerprint" => info.primary_fingerprint}
+                metadata:
+                  Map.put(
+                    extra_audit_metadata,
+                    "target_fingerprint",
+                    info.primary_fingerprint
+                  )
               )
 
               {:ok, {:accepted, transition}}

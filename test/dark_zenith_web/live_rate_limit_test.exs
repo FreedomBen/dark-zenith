@@ -37,6 +37,51 @@ defmodule DarkZenithWeb.LiveRateLimitTest do
     assert length(DarkZenith.Accounts.list_api_keys(user)) == 1
   end
 
+  test "the GPG generate event consumes the gpg_key_mutation bucket", ctx do
+    Application.put_env(
+      :dark_zenith,
+      :rate_limit_overrides,
+      Map.merge(ctx.previous, %{gpg_key_mutation: {0, 3600}})
+    )
+
+    user = user_fixture()
+    {:ok, lv, _html} = build_conn() |> log_in_user(user) |> live(~p"/users/settings")
+
+    html =
+      lv
+      |> form("#generate_gpg_key_form", gpg_generation: %{"algorithm" => "ed25519"})
+      |> render_submit()
+
+    assert html =~ "Too many requests"
+    assert DarkZenith.Accounts.get_gpg_key_info(user) == nil
+  end
+
+  test "web revocation-strategy events consume the gpg_key_mutation bucket", ctx do
+    Application.put_env(
+      :dark_zenith,
+      :rate_limit_overrides,
+      Map.merge(ctx.previous, %{gpg_key_mutation: {0, 3600}})
+    )
+
+    user = user_fixture()
+    pair = DarkZenith.GpgFixtures.generate_key_pair()
+    {:ok, user} = DarkZenith.Accounts.upsert_gpg_key(user, pair.public, pair.private)
+
+    {:ok, _repo} =
+      DarkZenith.Repositories.create_repository(user, %{
+        slug: "lv-gpg-#{System.unique_integer([:positive])}",
+        name: "L",
+        gpg_key_fingerprint: pair.fingerprint
+      })
+
+    {:ok, lv, _html} = build_conn() |> log_in_user(user) |> live(~p"/users/settings")
+
+    html = lv |> element("#revoke-clear-metadata") |> render_click()
+    assert html =~ "Too many requests"
+
+    refute DarkZenith.Repo.get!(DarkZenith.Accounts.User, user.id).gpg_key_transition_id
+  end
+
   test "registration submits use the auth-attempt email bucket", ctx do
     Application.put_env(
       :dark_zenith,
