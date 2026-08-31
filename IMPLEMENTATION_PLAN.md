@@ -116,7 +116,7 @@ wins. Checklist items reference spec sections rather than restating their rules.
 - [x] Caching headers + strong ETag/If-None-Match matrix, `Vary` (Caching headers)
 - [x] Basic/Bearer auth, anonymous challenge, masking rules (Private Repository Authentication)
 - [x] `dark-zenith.repo` endpoint (+ `RPM-GPG-KEY` completes in Phase 11) (.repo File Endpoint)
-- [ ] Package download 302 to signed B2 URL for exact version (needs Phase 8)
+- [x] Package download 302 to signed B2 URL for exact version
 
 ## Phase 8 — B2 / S3 client (M2)
 
@@ -130,25 +130,28 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 9 — Upload pipeline (M2)
 
-- [ ] Storage reservations table + user-lock quota accounting (Storage Reservations)
-- [ ] Upload intents table + full state machine checks (Upload Intents)
-- [ ] Intent create/refresh/complete/cancel endpoints incl. idempotency + CAS rules
-- [ ] Temp-space ETS ledger, leases, janitor, `upload_temp_space_unavailable` (Package Upload & Processing)
-- [ ] Processing worker: download, `rpmkeys` verify, parse, validate, limits, duplicate,
-      reservation adjust, final write, fenced commit (steps 1–10)
-- [ ] Web preview mode: `preview_ready`, confirmation, metadata-equality recheck
-- [ ] Package deletion transaction; staging + final reconcilers; waiting-state cleanup
-- [ ] Fault-injection test suite for every interruption point named in the spec
+- [x] Storage reservations table + user-lock quota accounting (Storage Reservations)
+- [x] Upload intents table + full state machine checks (Upload Intents)
+- [x] Intent create/refresh/complete/cancel endpoints incl. idempotency + CAS rules
+- [x] Temp-space ETS ledger, leases, janitor, `upload_temp_space_unavailable` (Package Upload & Processing)
+- [x] Processing worker: download, `rpmkeys` verify, parse, validate, limits, duplicate,
+      reservation adjust, final write, fenced commit (steps 1–10; RPM signing dispatch joins
+      in Phase 11)
+- [x] Web preview mode: `preview_ready`, confirmation, metadata-equality recheck
+- [ ] Package deletion transaction (done); staging + final reconcilers pending;
+      waiting-state cleanup (done)
+- [ ] Fault-injection test suite for every interruption point named in the spec (lease
+      expiry/requeue, settings races, CAS-lost, exhaustion covered; more scenarios welcome)
 
 ## Phase 10 — REST API surface (M1 partial, M2 complete)
 
 - [x] JSON envelope, error codes table, decimal-string bigint contract (API Contract Details)
 - [x] Strict query/body parsing (unknown fields, duplicate keys, malformed encoding)
-- [ ] Pagination envelope + deterministic orderings (done); package filters/sorts incl. EVR sort
+- [x] Pagination envelope + deterministic orderings; package filters/sorts incl. EVR sort
 - [x] Auth plugs: bearer precedence, cookie fallback, scope checks, 404 masking, 401/403 split
 - [x] `POST /auth/login`, `DELETE /auth/logout` (session tokens)
-- [ ] Repos CRUD (done); api_keys (done); collaborators (done); packages
-      list/detail/subresources/delete pending
+- [x] Repos CRUD; api_keys; collaborators; packages list/detail/subresources/delete;
+      package-uploads intent endpoints
 - [x] Request caps: 1 MiB JSON, GPG multipart caps, `413 payload_too_large`
 
 ## Phase 11 — GPG signing (M3)
