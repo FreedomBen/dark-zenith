@@ -196,9 +196,10 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 15 — Admin surface (M4)
 
-- [ ] User management (create auto-confirmed, admin flags, delete with ownership guard)
-- [ ] Signing-transition views with reset/cancel; Oban dashboard mount
-- [ ] Audit log browser; slug reservation release
+- [x] User management (create auto-confirmed, admin flags, delete with ownership guard)
+- [ ] Signing-transition views with reset/cancel (needs the Phase 11 transition machinery);
+      background-jobs view with retry/cancel (done)
+- [x] Audit log browser; slug reservation release
 
 ## Phase 16 — Deployment & boot (M4)
 

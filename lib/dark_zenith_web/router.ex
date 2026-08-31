@@ -163,6 +163,19 @@ defmodule DarkZenithWeb.Router do
     end
 
     post "/users/update-password", UserSessionController, :update_password
+
+    live_session :admin,
+      on_mount: [
+        {DarkZenithWeb.UserAuth, :require_authenticated},
+        {DarkZenithWeb.AdminAuth, :require_admin},
+        {DarkZenithWeb.LiveRateLimit, :default}
+      ] do
+      live "/admin", AdminLive.Users, :index
+      live "/admin/users", AdminLive.Users, :index
+      live "/admin/audit", AdminLive.Audit, :index
+      live "/admin/slugs", AdminLive.Slugs, :index
+      live "/admin/jobs", AdminLive.Jobs, :index
+    end
   end
 
   scope "/", DarkZenithWeb do

@@ -52,15 +52,33 @@ defmodule DarkZenith.Audit do
   end
 
   @doc """
-  Lists audit events, newest first. Options: `:limit` (default 100).
+  Lists audit events, newest first. Options: `:limit` (default 100),
+  `:action` (prefix match), `:actor_email` (exact), `:target_type`.
   """
   def list_events(opts \\ []) do
     limit = Keyword.get(opts, :limit, 100)
 
-    Repo.all(
+    base =
       from event in Event,
         order_by: [desc: event.inserted_at, desc: event.id],
         limit: ^limit
-    )
+
+    base
+    |> filter_prefix(:action, opts[:action])
+    |> filter_eq(:actor_email, opts[:actor_email])
+    |> filter_eq(:target_type, opts[:target_type])
+    |> Repo.all()
   end
+
+  defp filter_prefix(query, _field, nil), do: query
+  defp filter_prefix(query, _field, ""), do: query
+
+  defp filter_prefix(query, field, value) do
+    pattern = String.replace(value, ["\\", "%", "_"], fn c -> "\\" <> c end) <> "%"
+    from e in query, where: like(field(e, ^field), ^pattern)
+  end
+
+  defp filter_eq(query, _field, nil), do: query
+  defp filter_eq(query, _field, ""), do: query
+  defp filter_eq(query, field, value), do: from(e in query, where: field(e, ^field) == ^value)
 end

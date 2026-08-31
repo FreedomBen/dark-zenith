@@ -387,6 +387,14 @@ defmodule DarkZenith.Repositories do
     end
   end
 
+  @doc "All slug reservations for the admin view, retired first, newest first."
+  def list_slug_reservations do
+    Repo.all(
+      from s in SlugReservation,
+        order_by: [asc: is_nil(s.retired_at), desc: s.updated_at, asc: s.slug]
+    )
+  end
+
   ## Slug reservation administration
 
   @doc """

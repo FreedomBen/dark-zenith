@@ -43,6 +43,9 @@
         <li>
           {@current_scope.user.email}
         </li>
+        <li :if={@current_scope.user.is_admin}>
+          <.link href={~p"/admin"}>Admin</.link>
+        </li>
         <li>
           <.link href={~p"/users/settings"}>Settings</.link>
         </li>

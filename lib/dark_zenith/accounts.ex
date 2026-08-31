@@ -449,6 +449,146 @@ defmodule DarkZenith.Accounts do
     Repo.delete_all(from(t in SessionToken, where: t.expires_at <= ^now))
   end
 
+  ## Admin user management (DESIGN.md: User Lifecycle)
+
+  @doc """
+  Creates an auto-confirmed account from the admin UI: no confirmation
+  email is sent, pending invitations convert, and the creation is audited.
+  """
+  def admin_create_user(%User{} = actor, attrs) do
+    changeset = User.registration_changeset(%User{}, attrs)
+
+    cond do
+      not (actor.is_admin and not is_nil(actor.confirmed_at)) ->
+        {:error, :forbidden}
+
+      not changeset.valid? ->
+        {:error, %{changeset | action: :insert}}
+
+      true ->
+        changeset =
+          Ecto.Changeset.put_change(changeset, :confirmed_at, DateTime.utc_now(:second))
+
+        Repo.transact(fn ->
+          EmailLock.acquire!(Ecto.Changeset.get_field(changeset, :email))
+
+          with {:ok, user} <- Repo.insert(changeset) do
+            :ok = DarkZenith.Collaborators.convert_invitations_for_user(user)
+
+            DarkZenith.Audit.record!("admin.user_create",
+              actor: actor,
+              target: {:user, user.id},
+              metadata: %{"email" => user.email}
+            )
+
+            {:ok, user}
+          end
+        end)
+    end
+  end
+
+  @doc """
+  Deletes a user account (admin-only, never self) under the shared
+  admin-invariant lock. Rejected while the target still owns repositories.
+  Records upload staging keys and releases linked reservations before the
+  cascades remove the rows, and deletes pending invitations addressed to
+  the target's email so re-registration cannot re-attach to old invites.
+  """
+  def admin_delete_user(%User{} = actor, target_id) do
+    Repo.transact(fn ->
+      DarkZenith.Accounts.Bootstrap.acquire_admin_invariant_lock!()
+
+      reloaded_actor = Repo.get(User, actor.id)
+
+      cond do
+        is_nil(reloaded_actor) or not reloaded_actor.is_admin or
+            is_nil(reloaded_actor.confirmed_at) ->
+          {:error, :not_admin}
+
+        actor.id == target_id ->
+          {:error, :cannot_target_self}
+
+        true ->
+          case Repo.get(User, target_id) do
+            nil ->
+              {:error, :user_not_found}
+
+            %User{} = target ->
+              delete_user_checked(reloaded_actor, target)
+          end
+      end
+    end)
+  end
+
+  defp delete_user_checked(actor, target) do
+    cond do
+      Repo.exists?(
+        from r in DarkZenith.Repositories.Repository, where: r.user_id == ^target.id
+      ) ->
+        {:error, :owns_repositories}
+
+      target.is_admin and not another_confirmed_admin_remains?(target.id) ->
+        {:error, :last_admin}
+
+      true ->
+        intents =
+          Repo.all(
+            from i in DarkZenith.Uploads.Intent,
+              where: i.user_id == ^target.id,
+              select: %{staging_path: i.staging_path, reservation_id: i.reservation_id}
+          )
+
+        # Pending invitations addressed to the deleted email must not
+        # silently re-attach on a later re-registration.
+        Repo.delete_all(
+          from inv in DarkZenith.Collaborators.Invitation, where: inv.email == ^target.email
+        )
+
+        # The cascades remove the intents; only then can their linked
+        # reservations (owned by each repository owner) be released without
+        # violating the intent state constraint.
+        Repo.delete!(target)
+
+        for intent <- intents do
+          if intent.reservation_id do
+            DarkZenith.Storage.release_reservation(intent.reservation_id)
+          end
+        end
+
+        DarkZenith.Audit.record!("admin.user_delete",
+          actor: actor,
+          target: {:user, target.id},
+          metadata: %{"email" => target.email}
+        )
+
+        for intent <- intents do
+          %{staging_path: intent.staging_path}
+          |> DarkZenith.Workers.StagingCleanup.new()
+          |> Oban.insert!()
+        end
+
+        {:ok, :ok}
+    end
+  end
+
+  @doc "Lists users with usage counts for the admin view (newest first)."
+  def admin_list_users do
+    Repo.all(
+      from u in User,
+        order_by: [desc: u.inserted_at, asc: u.id],
+        select: %{
+          user: u,
+          repository_count:
+            fragment(
+              "(SELECT count(*) FROM repositories r WHERE r.user_id = ?)",
+              u.id
+            ),
+          api_key_count:
+            fragment("(SELECT count(*) FROM api_keys k WHERE k.user_id = ?)", u.id)
+        }
+    )
+  end
+
   ## GPG key management (DESIGN.md: GPG Signing)
 
   @doc "The user's GPG key info map, or nil when no key is stored."
