@@ -260,7 +260,21 @@ if config_env() == :prod do
       config :dark_zenith, DarkZenith.Mailer, adapter: mail_adapter
   end
 
+  # Public URL used in generated links and the browser-upload CORS origin
+  # (DESIGN.md: Configuration). PHX_SCHEME=http supports local deployments.
   host = System.get_env("PHX_HOST") || "example.com"
+
+  url_scheme =
+    case System.get_env("PHX_SCHEME") || "https" do
+      scheme when scheme in ["http", "https"] -> scheme
+      other -> raise "PHX_SCHEME must be http or https, got: #{inspect(other)}"
+    end
+
+  url_port =
+    case Integer.parse(System.get_env("PHX_URL_PORT") || "443") do
+      {value, ""} when value in 1..65_535 -> value
+      _ -> raise "PHX_URL_PORT must be a port number"
+    end
 
   config :dark_zenith, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
@@ -269,7 +283,7 @@ if config_env() == :prod do
          DarkZenith.ClientIp.parse_trusted_proxies(System.get_env("TRUSTED_PROXIES") || "")
 
   config :dark_zenith, DarkZenithWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+    url: [host: host, port: url_port, scheme: url_scheme],
     http: [
       port: String.to_integer(System.get_env("PORT") || "4000"),
       # Enable IPv6 and bind on all interfaces.
