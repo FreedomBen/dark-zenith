@@ -16,4 +16,11 @@ defmodule DarkZenithWeb.PageControllerTest do
 
     assert html =~ "data-phx-theme"
   end
+
+  test "GET / does not brand the page title with Phoenix Framework", %{conn: conn} do
+    conn = get(conn, ~p"/")
+    html = html_response(conn, 200)
+
+    refute html =~ "Phoenix Framework"
+  end
 end
