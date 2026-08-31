@@ -30,4 +30,3 @@ config :logger, level: :info
 # Boot checks refuse startup on an unusable RPM toolchain (DESIGN.md:
 # Deployment).
 config :dark_zenith, boot_checks_on_boot: true
-

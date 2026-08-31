@@ -155,11 +155,21 @@ mono everywhere in the UI.
 - **Default is dark.** A first-time visitor (no stored `phx:theme`) gets `night`
   regardless of OS preference. The existing three-way toggle (system / light / dark)
   remains; choosing "system" opts back into `prefers-color-scheme`.
-- Implementation: the pre-paint script in `root.html.heex` falls back to `"dark"` instead
-  of `"system"` when nothing is stored; the daisyUI blocks set `night` as
+- Implementation: the pre-paint theme script falls back to `"dark"` instead of
+  `"system"` when nothing is stored; the daisyUI blocks set `night` as
   `default: true` (no-JS fallback) with theme names `night` → `data-theme="dark"`,
   `day` → `data-theme="light"` kept as today's `dark`/`light` attribute values so the
   toggle JS is unchanged.
+- The app's CSP is `script-src 'self'` with no `unsafe-inline` and no hashes (see
+  `DESIGN.md` Security Considerations) — under it the stock Phoenix **inline** theme
+  script never executes, so the script ships as an external same-origin file
+  (`assets/js/theme.js`), loaded parser-blocking in `<head>` (no `defer`) so it still
+  runs before first paint. Pages must carry no inline `<script>` at all; the CSP stays
+  exactly as strict as it is.
+- Because absence-of-key now means "never chose" (→ dark), an explicit "system" choice
+  is **stored** as `phx:theme = "system"` rather than removing the key (the stock
+  Phoenix behavior). The unforced default applies the theme without writing storage, and
+  sets `data-theme-source="default"` so it is distinguishable from an explicit choice.
 - Both themes are fully specified; no page may look designed-for-dark-only in Day.
 
 ## App shell
@@ -313,8 +323,9 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
 
 ## Rollout checklist
 
-- [ ] U1 — Foundations: self-hosted fonts (+ licenses), `night`/`day` daisyUI themes
-      replacing the stock pair, dark-default theme JS, topbar recolor
+- [x] U1 — Foundations: self-hosted fonts (+ licenses), `night`/`day` daisyUI themes
+      replacing the stock pair, dark-default theme JS (moved to external
+      `assets/js/theme.js` for the strict CSP), topbar recolor
 - [ ] U2 — Identity: `zenith_mark` component, wordmark, favicon set, footer (needs
       `SOURCE_URL` spec note in `DESIGN.md`)
 - [ ] U3 — Shell: top nav (logo, links, account dropdown, mobile menu), `Layouts.app`
