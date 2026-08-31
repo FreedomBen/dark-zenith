@@ -318,8 +318,8 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
    filtering identical to repo browsing, pagination, rate limiting, whether the REST API
    gains a matching endpoint). Blocking for the nav search field; the rest of this
    document does not depend on it.
-2. **`SOURCE_URL` config** — footer Source link target (default: the upstream project
-   repository), one row in the configuration table.
+2. **`SOURCE_URL` config** — specified in `DESIGN.md` (Web Interface footer paragraph
+   plus a Configuration table row); default is the upstream project repository.
 
 ## Rollout checklist
 

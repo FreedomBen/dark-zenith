@@ -824,6 +824,8 @@ Parser/verifier fixtures include strongly digested accepted v4/v6 packages and v
 
 The web UI is built with Phoenix LiveView. Public pages are accessible to everyone; actions that modify data (creating repos, uploading packages) require authentication and the matching authorization checks. All user- and RPM-derived strings are rendered as plain text with standard HTML escaping — never as raw HTML — and the package `url` is the only RPM-derived value rendered as a hyperlink (restricted to `http`/`https` at upload validation).
 
+Every web page renders a footer showing the application name and version plus a `Source` link and the license identifier `AGPL-3.0-or-later`. The link target comes from the `SOURCE_URL` configuration entry and is how a deployment offers Corresponding Source to network users under AGPL §13: the default points at the upstream project repository, and operators running a modified version must set `SOURCE_URL` to the source of the code they actually run.
+
 ### Landing Page (`GET /`)
 
 - Brief description of what Dark Zenith provides.
@@ -1259,6 +1261,7 @@ Dark Zenith is configured via environment variables and/or `config/runtime.exs`:
 | `REGISTRATION_ENABLED` | `false` | Whether new account registration is open |
 | `ADMIN_EMAIL` | — | Email for the initial admin account, created on first boot if no users exist |
 | `ADMIN_PASSWORD` | — | Password for the initial admin account |
+| `SOURCE_URL` | `https://github.com/FreedomBen/dark-zenith` | URL of the corresponding source for the running code, rendered as the web UI footer's `Source` link (see Web Interface). Operators deploying a modified version must point this at their modified source to satisfy AGPL §13. |
 
 ---
 
