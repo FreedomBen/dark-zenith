@@ -10,8 +10,32 @@ defmodule DarkZenithWeb.Router do
     plug :put_root_layout, html: {DarkZenithWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug :put_content_security_policy
     plug :fetch_current_scope_for_user
     plug DarkZenithWeb.Plugs.RateLimiter, surface: :browser
+  end
+
+  # LiveView-compatible CSP whose connect-src permits only the app's own
+  # origins plus the exact B2 endpoint origin needed for browser uploads
+  # (DESIGN.md: Security Considerations).
+  defp put_content_security_policy(conn, _opts) do
+    b2_origin =
+      case Application.get_env(:dark_zenith, :b2) do
+        nil ->
+          ""
+
+        settings ->
+          uri = URI.parse(Keyword.fetch!(settings, :endpoint))
+          port = if uri.port in [nil, URI.default_port(uri.scheme)], do: "", else: ":#{uri.port}"
+          " #{uri.scheme}://#{uri.host}#{port}"
+      end
+
+    policy =
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " <>
+        "img-src 'self' data:; connect-src 'self' ws: wss:#{b2_origin}; " <>
+        "frame-ancestors 'none'; base-uri 'self'"
+
+    put_resp_header(conn, "content-security-policy", policy)
   end
 
   pipeline :api do
@@ -45,6 +69,12 @@ defmodule DarkZenithWeb.Router do
     plug :fetch_session
     plug DarkZenithWeb.Plugs.RepoServingAuth
     plug DarkZenithWeb.Plugs.RateLimiter, surface: :repo_serving
+  end
+
+  # Liveness probe: no session, auth, or rate limiting (DESIGN.md:
+  # Deployment; Rate Limiting exclusions).
+  scope "/", DarkZenithWeb do
+    get "/health", HealthController, :show
   end
 
   scope "/", DarkZenithWeb do

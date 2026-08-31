@@ -51,6 +51,10 @@ config :dark_zenith, Oban,
      ]}
   ]
 
+# Request logging never records credentials or key material (DESIGN.md:
+# Security Considerations).
+config :phoenix, :filter_parameters, ["password", "token", "key", "secret", "gpg"]
+
 # Configure the endpoint
 config :dark_zenith, DarkZenithWeb.Endpoint,
   url: [host: "localhost"],

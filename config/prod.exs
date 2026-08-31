@@ -31,3 +31,14 @@ config :logger, level: :info
 
 # Runtime production configuration, including reading
 # of environment variables, is done on config/runtime.exs.
+
+# Boot checks refuse startup on an unusable RPM toolchain (DESIGN.md:
+# Deployment).
+config :dark_zenith, boot_checks_on_boot: true
+
+# TLS redirect + HSTS behind the trusted proxy; the endpoint strips
+# X-Forwarded-Proto from untrusted peers before this runs.
+config :dark_zenith, DarkZenithWeb.Endpoint,
+  force_ssl: [hsts: true, rewrite_on: [:x_forwarded_proto]]
+
+config :dark_zenith, secure_cookies: true

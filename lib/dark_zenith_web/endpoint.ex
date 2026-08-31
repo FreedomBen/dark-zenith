@@ -4,11 +4,15 @@ defmodule DarkZenithWeb.Endpoint do
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
+  # Secure/http_only/SameSite=Lax session cookies (DESIGN.md: Security
+  # Considerations); :secure_cookies is set in prod configuration.
   @session_options [
     store: :cookie,
     key: "_dark_zenith_key",
     signing_salt: "1FSpVC28",
-    same_site: "Lax"
+    same_site: "Lax",
+    http_only: true,
+    secure: Application.compile_env(:dark_zenith, :secure_cookies, false)
   ]
 
   socket "/live", Phoenix.LiveView.Socket,
@@ -52,10 +56,31 @@ defmodule DarkZenithWeb.Endpoint do
     json_decoder: Phoenix.json_library()
 
   plug Plug.MethodOverride
+  # Forwarded scheme headers are honored only from trusted proxies
+  # (DESIGN.md: Security Considerations); anything else is stripped before
+  # force_ssl sees it, so a direct HTTP client cannot spoof HTTPS.
+  plug :normalize_forwarded_proto
   # Plug.Head rewrites HEAD to GET for routing; repository-serving download
   # responses need the original method to sign a method-specific B2 URL.
   plug :save_original_method
   plug Plug.Head
+
+  defp normalize_forwarded_proto(conn, _opts) do
+    trusted =
+      Enum.any?(
+        Application.get_env(:dark_zenith, :trusted_proxies) || [],
+        fn {network, prefix} -> DarkZenith.ClientIp.in_cidr?(conn.remote_ip, network, prefix) end
+      )
+
+    if trusted do
+      conn
+    else
+      conn
+      |> Plug.Conn.delete_req_header("x-forwarded-proto")
+      |> Plug.Conn.delete_req_header("cf-connecting-ip")
+      |> Plug.Conn.delete_req_header("x-forwarded-for")
+    end
+  end
 
   defp save_original_method(conn, _opts) do
     Plug.Conn.put_private(conn, :dz_original_method, conn.method)

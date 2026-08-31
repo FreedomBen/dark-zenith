@@ -76,7 +76,8 @@ wins. Checklist items reference spec sections rather than restating their rules.
       operator class (API Contract Details)
 - [x] ExUnit conformance fixtures for the upstream librpm comparison corpus
       (corpus + 400 random pairs differentially validated against rpm 6.0.1 on 2026-08-30)
-- [ ] Release-time differential check against RPM 6 tooling (wire into Phase 16 boot/release tests)
+- [x] Release-time differential check against RPM 6 tooling (BootCheck.check_evr_comparator,
+      run at prod boot and by deploy/release_gate.sh)
 
 ## Phase 5 — RPM parser, pure Elixir (M2)
 
@@ -203,12 +204,15 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 16 — Deployment & boot (M4)
 
-- [ ] `config/runtime.exs` covering the full Configuration table with validation ranges
-- [ ] Boot probes: rpmkeys/rpmsign/gpg version + fixture verification, mail adapter check
+- [x] `config/runtime.exs` covering the full Configuration table with validation ranges
+      (built up phase by phase; RPM tool paths/timeouts read from app env with defaults)
+- [x] Boot probes: rpmkeys/rpmsign/gpg version + fixture verification, mail adapter check
       (Deployment)
-- [ ] `/health` endpoints; release packaging, Dockerfile, systemd unit with confinement
-- [ ] `force_ssl`/proxy trust, CSP with `connect-src` B2 origin, filter_parameters, secure cookies
-- [ ] dnf 4/5 end-to-end release-gate tests (public + private, signed + unsigned)
+- [x] `/health` endpoints; release packaging, Dockerfile, systemd unit with confinement
+- [x] `force_ssl`/proxy trust, CSP with `connect-src` B2 origin, filter_parameters, secure cookies
+- [ ] dnf 4/5 end-to-end release-gate tests (public + private, signed + unsigned) —
+      deploy/release_gate.sh runs boot checks + dnf makecache; signed/private flows still to
+      be scripted against a staging deployment
 
 ## Cross-cutting requirements to keep in every phase
 

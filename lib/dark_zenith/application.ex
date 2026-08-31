@@ -15,6 +15,7 @@ defmodule DarkZenith.Application do
       DarkZenith.RateLimit,
       {Oban, Application.fetch_env!(:dark_zenith, Oban)},
       DarkZenith.Jobs.GpgKeyReencryption,
+      DarkZenith.BootCheck,
       {DNSCluster, query: Application.get_env(:dark_zenith, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: DarkZenith.PubSub},
       # Start a worker by calling: DarkZenith.Worker.start_link(arg)

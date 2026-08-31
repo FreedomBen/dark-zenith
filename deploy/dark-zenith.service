@@ -1,0 +1,37 @@
+# Example systemd unit (DESIGN.md: Deployment). The native RPM/GPG tools
+# process attacker-supplied material, so the unit confines the service and
+# keeps the working directory on tmpfs so uploads, signing working copies,
+# temporary keyrings, and decrypted key material stay off persistent
+# storage.
+[Unit]
+Description=Dark Zenith RPM repository
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=darkzenith
+Group=darkzenith
+WorkingDirectory=/opt/dark-zenith
+EnvironmentFile=/etc/dark-zenith/env
+Environment=RPM_UPLOAD_TMPDIR=/var/lib/dark-zenith/tmp
+ExecStart=/opt/dark-zenith/bin/dark_zenith start
+ExecStop=/opt/dark-zenith/bin/dark_zenith stop
+Restart=on-failure
+RestartSec=5
+
+# Confinement
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dark-zenith/tmp
+TemporaryFileSystem=/var/lib/dark-zenith/tmp:mode=0700
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
