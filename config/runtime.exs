@@ -144,6 +144,45 @@ if config_env() == :prod do
     config :dark_zenith, rpm_upload_tmpdir: tmpdir
   end
 
+  # B2 storage settings: all five are required together once any is set.
+  b2_vars = ~w(B2_KEY_ID B2_APPLICATION_KEY B2_BUCKET B2_ENDPOINT B2_REGION)
+  b2_values = Enum.map(b2_vars, &System.get_env/1)
+
+  cond do
+    Enum.all?(b2_values, &is_binary/1) ->
+      [key_id, application_key, bucket, endpoint, region] = b2_values
+
+      config :dark_zenith, :b2,
+        key_id: key_id,
+        application_key: application_key,
+        bucket: bucket,
+        endpoint: endpoint,
+        region: region
+
+    Enum.any?(b2_values, &is_binary/1) ->
+      missing = b2_vars |> Enum.zip(b2_values) |> Enum.filter(fn {_, v} -> is_nil(v) end)
+      raise "incomplete B2 configuration; missing #{inspect(Enum.map(missing, &elem(&1, 0)))}"
+
+    true ->
+      :ok
+  end
+
+  b2_signed_url_ttl =
+    case Integer.parse(System.get_env("B2_SIGNED_URL_TTL") || "1800") do
+      {value, ""} when value >= 1 and value <= 604_800 -> value
+      _ -> raise "B2_SIGNED_URL_TTL must be an integer from 1 through 604800"
+    end
+
+  config :dark_zenith, b2_signed_url_ttl: b2_signed_url_ttl
+
+  b2_upload_url_ttl =
+    case Integer.parse(System.get_env("B2_UPLOAD_URL_TTL") || "3600") do
+      {value, ""} when value >= 60 and value <= 3600 -> value
+      _ -> raise "B2_UPLOAD_URL_TTL must be an integer from 60 through 3600"
+    end
+
+  config :dark_zenith, b2_upload_url_ttl: b2_upload_url_ttl
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :dark_zenith, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")

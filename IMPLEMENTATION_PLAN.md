@@ -120,12 +120,13 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 8 — B2 / S3 client (M2)
 
-- [ ] SigV4 presigned `PutObject` (signed content type/length) and `GetObject`/`HeadObject`
-      URLs, path-style (Upload Intents; Deployment)
-- [ ] Server-side `HeadObject` contract checks (length, content type, forbidden metadata)
-- [ ] `CopyObject` with `MetadataDirective=REPLACE` + fallback rule (step 9)
-- [ ] Version-aware delete, `ListObjectVersions` pagination
-- [ ] Retry/error mapping to `storage_unavailable`; no SDK auto-retry on non-idempotent writes
+- [x] SigV4 presigned `PutObject` (signed content type/length) and `GetObject`/`HeadObject`
+      URLs, path-style (Upload Intents; Deployment) — signer verified against AWS doc vectors
+- [x] Server-side `HeadObject` contract checks (length, content type, forbidden metadata)
+- [x] `CopyObject` with `MetadataDirective=REPLACE` + fallback rule (step 9; the PutObject
+      fallback path is chosen by the Phase 9 pipeline)
+- [x] Version-aware delete, `ListObjectVersions` pagination
+- [x] Retry/error mapping to `storage_unavailable`; no SDK auto-retry on non-idempotent writes
 
 ## Phase 9 — Upload pipeline (M2)
 
