@@ -48,6 +48,16 @@ defmodule DarkZenith.TempSpace do
     GenServer.call(server, :reserved_bytes)
   end
 
+  @doc """
+  The hourly janitor (DESIGN.md: Signing Transition Items): removes
+  app-owned attempt directories older than one hour whose encoded token is
+  not a current lease. Never follows symlinks or touches paths outside the
+  base directory.
+  """
+  def hourly_janitor(server \\ __MODULE__) do
+    GenServer.call(server, :hourly_janitor)
+  end
+
   ## GenServer
 
   @impl true
@@ -105,6 +115,29 @@ defmodule DarkZenith.TempSpace do
     {:reply, total_reserved(state), state}
   end
 
+  def handle_call(:hourly_janitor, _from, state) do
+    cutoff = System.os_time(:second) - 3600
+
+    removed =
+      case File.ls(state.base_dir) do
+        {:ok, entries} ->
+          for entry <- entries,
+              String.starts_with?(entry, "dz-attempt-"),
+              token = String.replace_prefix(entry, "dz-attempt-", ""),
+              not Map.has_key?(state.leases, token),
+              path = Path.join(state.base_dir, Path.basename(entry)),
+              older_than?(path, cutoff) do
+            File.rm_rf(path)
+            entry
+          end
+
+        _ ->
+          []
+      end
+
+    {:reply, {:ok, length(removed)}, state}
+  end
+
   @impl true
   def handle_info({:DOWN, monitor, :process, _pid, _reason}, state) do
     token =
@@ -143,6 +176,17 @@ defmodule DarkZenith.TempSpace do
         Process.demonitor(lease.monitor, [:flush])
         File.rm_rf(lease.dir)
         %{state | leases: leases}
+    end
+  end
+
+  # lstat, never following: the app only creates real directories, so a
+  # symlink at an attempt path is foreign garbage and is unlinked (rm_rf
+  # removes the link itself) regardless of age.
+  defp older_than?(path, cutoff) do
+    case File.lstat(path, time: :posix) do
+      {:ok, %File.Stat{type: :symlink}} -> true
+      {:ok, %File.Stat{mtime: mtime}} -> mtime <= cutoff
+      _ -> false
     end
   end
 

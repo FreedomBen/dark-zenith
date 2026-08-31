@@ -112,11 +112,14 @@ defmodule DarkZenith.Gpg do
   defp gpg(home, args) do
     gpg_path = Application.get_env(:dark_zenith, :gpg_path, "gpg")
 
-    System.cmd(gpg_path, ["--homedir", home, "--no-tty" | args],
-      env: [{"LC_ALL", "C"}],
-      stderr_to_stdout: true
-    )
+    case DarkZenith.ToolRunner.cmd(gpg_path, ["--homedir", home, "--no-tty" | args],
+           env: [{"LC_ALL", "C"}]
+         ) do
+      {:error, :timeout} -> {:error, :gpg_unavailable}
+      result -> result
+    end
   rescue
+    ArgumentError -> {:error, :gpg_unavailable}
     ErlangError -> {:error, :gpg_unavailable}
   end
 

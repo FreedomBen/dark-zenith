@@ -25,7 +25,7 @@ FROM fedora:43 AS app
 # rpm/rpmkeys verify every upload; rpm-sign and gnupg2 back GPG key
 # validation and signing. These tools process attacker-supplied material:
 # run the container unprivileged with a tmpfs RPM_UPLOAD_TMPDIR.
-RUN dnf install -y rpm rpm-sign gnupg2 ncurses-libs openssl-libs libstdc++ && dnf clean all
+RUN dnf install -y rpm rpm-sign gnupg2 ncurses-libs openssl-libs libstdc++ util-linux procps-ng && dnf clean all
 
 RUN useradd --system --home /app --shell /sbin/nologin darkzenith
 WORKDIR /app

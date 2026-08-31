@@ -46,6 +46,7 @@ config :dark_zenith, Oban,
        {"* * * * *", DarkZenith.Workers.SigningTransitionSweep},
        {"*/15 * * * *", DarkZenith.Workers.UploadWaitingCleanup},
        {"0 * * * *", DarkZenith.Workers.UploadTerminalCleanup},
+       {"30 * * * *", DarkZenith.Workers.AttemptDirJanitor},
        {"30 * * * *", DarkZenith.Workers.StagingReconciler},
        {"0 3 * * *", DarkZenith.Workers.FinalReconciler},
        {"0 8 * * *", DarkZenith.Workers.GpgExpiryScan}

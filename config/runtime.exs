@@ -148,6 +148,14 @@ if config_env() == :prod do
 
   config :dark_zenith, signing_preparation_batch_size: signing_preparation_batch_size
 
+  rpm_tool_timeout_seconds =
+    case Integer.parse(System.get_env("RPM_TOOL_TIMEOUT_SECONDS") || "1800") do
+      {value, ""} when value >= 1 -> value
+      _ -> raise "RPM_TOOL_TIMEOUT_SECONDS must be a positive integer"
+    end
+
+  config :dark_zenith, rpm_tool_timeout_seconds: rpm_tool_timeout_seconds
+
   if tmpdir = System.get_env("RPM_UPLOAD_TMPDIR") do
     config :dark_zenith, rpm_upload_tmpdir: tmpdir
   end

@@ -345,6 +345,24 @@ defmodule DarkZenith.SigningTransitions do
       (transition.status == "failed" and transition.resume_status == "active")
   end
 
+  @doc """
+  Extends an executing item's lease under its fencing token; `:halt` means
+  the claim was canceled or superseded.
+  """
+  def renew_item_lease(item_id, token) do
+    now = DateTime.utc_now(:second)
+
+    {count, _} =
+      Repo.update_all(
+        from(i in Item,
+          where: i.id == ^item_id and i.status == "executing" and i.lease_token == ^token
+        ),
+        set: [lease_expires_at: DateTime.add(now, @item_lease_seconds, :second), updated_at: now]
+      )
+
+    if count == 1, do: :ok, else: :halt
+  end
+
   @doc "Marks a claimed item canceled (its package/repository is gone)."
   def cancel_claimed_item(item, token) do
     now = DateTime.utc_now(:second)

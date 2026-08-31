@@ -514,6 +514,25 @@ defmodule DarkZenith.Uploads do
     Repo.get!(Intent, intent.id)
   end
 
+  @doc """
+  Extends a processing intent's execution lease under its fencing token;
+  `:halt` means the claim was canceled or superseded and the worker must
+  discard its attempt.
+  """
+  def renew_intent_lease(intent_id, token) do
+    now = DateTime.utc_now(:second)
+
+    {count, _} =
+      Repo.update_all(
+        from(i in Intent,
+          where: i.id == ^intent_id and i.status == "processing" and i.lease_token == ^token
+        ),
+        set: [lease_expires_at: DateTime.add(now, 900, :second), updated_at: now]
+      )
+
+    if count == 1, do: :ok, else: :halt
+  end
+
   @doc false
   def lock_intent!(id) do
     Repo.one(from i in Intent, where: i.id == ^id, lock: "FOR UPDATE")

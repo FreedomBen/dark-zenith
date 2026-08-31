@@ -46,7 +46,7 @@ defmodule DarkZenith.Gpg.RpmCompat do
           target
         ]
 
-    case System.cmd(rpmsign, args, env: [{"LC_ALL", "C"}], stderr_to_stdout: true) do
+    case tool_cmd(rpmsign, args) do
       {_output, 0} -> :ok
       _other -> {:error, :validation_failed}
     end
@@ -59,16 +59,12 @@ defmodule DarkZenith.Gpg.RpmCompat do
     public_path = Path.join(work, "public.asc")
 
     with {_out, 0} <-
-           System.cmd(
+           tool_cmd(
              gpg_path,
-             ["--homedir", home, "--batch", "--armor", "--output", public_path, "--export", fingerprint],
-             stderr_to_stdout: true
+             ["--homedir", home, "--batch", "--armor", "--output", public_path, "--export", fingerprint]
            ),
          {_out, 0} <-
-           System.cmd(rpmkeys, ["--dbpath", dbpath, "--import", public_path],
-             env: [{"LC_ALL", "C"}],
-             stderr_to_stdout: true
-           ) do
+           tool_cmd(rpmkeys, ["--dbpath", dbpath, "--import", public_path]) do
       :ok
     else
       _other -> {:error, :rpm_verification_unavailable}
@@ -78,10 +74,7 @@ defmodule DarkZenith.Gpg.RpmCompat do
   end
 
   defp verify_fixture(rpmkeys, dbpath, path) do
-    case System.cmd(rpmkeys, ["--dbpath", dbpath, "--checksig", "--verbose", path],
-           env: [{"LC_ALL", "C"}],
-           stderr_to_stdout: true
-         ) do
+    case tool_cmd(rpmkeys, ["--dbpath", dbpath, "--checksig", "--verbose", path]) do
       {output, 0} ->
         if output =~ ~r/signature.*: OK/i and not (output =~ " BAD") do
           :ok
@@ -94,5 +87,15 @@ defmodule DarkZenith.Gpg.RpmCompat do
     end
   rescue
     ErlangError -> {:error, :rpm_verification_unavailable}
+  end
+
+  # Deadline-guarded native tool call; a timeout reads as tool absence.
+  defp tool_cmd(binary, args) do
+    case DarkZenith.ToolRunner.cmd(binary, args, env: [{"LC_ALL", "C"}]) do
+      {:error, :timeout} -> {"", 124}
+      result -> result
+    end
+  rescue
+    ArgumentError -> {"", 127}
   end
 end

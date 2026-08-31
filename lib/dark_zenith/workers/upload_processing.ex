@@ -137,7 +137,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
          {:ok, sign_snapshot, owner} <- signing_snapshot(repository),
          :ok <- download_source(config, intent, source_path),
          {:ok, measured_size, sha256} <- measure(source_path, intent),
-         :ok <- verify_integrity(source_path, dir),
+         :ok <- verify_integrity(source_path, dir, intent, token),
          {:ok, metadata} <- parse_metadata(source_path),
          {:ok, final} <-
            signing_step(sign_snapshot, owner, source_path, dir, metadata, measured_size, sha256),
@@ -225,7 +225,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
   # Step 2: rpmkeys against an isolated empty database. Any BAD digest or
   # signature rejects; NOTFOUND/NOKEY signers and absent digests pass, but at
   # least one digest must verify OK.
-  defp verify_integrity(source_path, dir) do
+  defp verify_integrity(source_path, dir, intent, token) do
     dbpath = Path.join(dir, "rpmdb")
     File.mkdir_p!(dbpath)
     File.chmod!(dbpath, 0o700)
@@ -233,14 +233,17 @@ defmodule DarkZenith.Workers.UploadProcessing do
     rpmkeys = Application.get_env(:dark_zenith, :rpmkeys_path, "rpmkeys")
 
     try do
-      {output, _status} =
-        System.cmd(rpmkeys, ["--dbpath", dbpath, "--checksig", "--verbose", source_path],
-          env: [{"LC_ALL", "C"}],
-          stderr_to_stdout: true
-        )
-
-      analyze_checksig(output)
+      case DarkZenith.ToolRunner.cmd(
+             rpmkeys,
+             ["--dbpath", dbpath, "--checksig", "--verbose", source_path],
+             env: [{"LC_ALL", "C"}],
+             heartbeat: {300_000, fn -> Uploads.renew_intent_lease(intent.id, token) end}
+           ) do
+        {:error, :timeout} -> {:error, {:infra, "rpm_verification_unavailable"}}
+        {output, _status} -> analyze_checksig(output)
+      end
     rescue
+      ArgumentError -> {:error, {:infra, "rpm_verification_unavailable"}}
       ErlangError -> {:error, {:infra, "rpm_verification_unavailable"}}
     end
   end

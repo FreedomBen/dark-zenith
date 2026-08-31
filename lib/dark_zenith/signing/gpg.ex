@@ -177,12 +177,15 @@ defmodule DarkZenith.Signing.Gpg do
     end
   end
 
+  # Hard RPM_TOOL_TIMEOUT_SECONDS deadline with a process-group kill.
   defp run_cmd(binary, args) do
-    case System.cmd(binary, args, env: [{"LC_ALL", "C"}], stderr_to_stdout: true) do
+    case DarkZenith.ToolRunner.cmd(binary, args, env: [{"LC_ALL", "C"}]) do
       {output, 0} -> {:ok, output}
+      {:error, :timeout} -> {:error, :missing_tool}
       {output, _status} -> {:error, output}
     end
   rescue
+    ArgumentError -> {:error, :missing_tool}
     ErlangError -> {:error, :missing_tool}
   end
 

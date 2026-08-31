@@ -83,7 +83,7 @@ defmodule DarkZenith.Workers.SigningItem do
     result =
       with :ok <- fingerprint_check(owner, transition),
            :ok <- download(config, item, source_path),
-           :ok <- verify_source(source_path, dir),
+           :ok <- verify_source(source_path, dir, item, token),
            {:ok, metadata} <- parse(source_path),
            {:ok, signed_path} <- sign(owner, source_path, dir, metadata.rpm_format),
            {:ok, final} <- signed_values(signed_path, metadata),
@@ -123,24 +123,30 @@ defmodule DarkZenith.Workers.SigningItem do
     end
   end
 
-  defp verify_source(source_path, dir) do
+  defp verify_source(source_path, dir, item, token) do
     dbpath = Path.join(dir, "rpmdb")
     File.mkdir_p!(dbpath)
     rpmkeys = Application.get_env(:dark_zenith, :rpmkeys_path, "rpmkeys")
 
     try do
-      {output, _status} =
-        System.cmd(rpmkeys, ["--dbpath", dbpath, "--checksig", "--verbose", source_path],
-          env: [{"LC_ALL", "C"}],
-          stderr_to_stdout: true
-        )
+      case DarkZenith.ToolRunner.cmd(
+             rpmkeys,
+             ["--dbpath", dbpath, "--checksig", "--verbose", source_path],
+             env: [{"LC_ALL", "C"}],
+             heartbeat: {300_000, fn -> SigningTransitions.renew_item_lease(item.id, token) end}
+           ) do
+        {:error, :timeout} ->
+          {:error, {:infra, "rpm_verification_unavailable"}}
 
-      if output =~ "digest: OK" and not (output =~ " BAD") do
-        :ok
-      else
-        {:error, {:deterministic, "validation_failed"}}
+        {output, _status} ->
+          if output =~ "digest: OK" and not (output =~ " BAD") do
+            :ok
+          else
+            {:error, {:deterministic, "validation_failed"}}
+          end
       end
     rescue
+      ArgumentError -> {:error, {:infra, "rpm_verification_unavailable"}}
       ErlangError -> {:error, {:infra, "rpm_verification_unavailable"}}
     end
   end
