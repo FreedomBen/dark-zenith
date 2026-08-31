@@ -79,7 +79,8 @@ defmodule DarkZenith.Repositories do
       Repo.transact(fn ->
         lock_user_row!(owner.id)
 
-        with :ok <- check_repository_quota(owner.id),
+        with :ok <- DarkZenith.SigningTransitions.check_owner_mutation(owner.id, :create),
+             :ok <- check_repository_quota(owner.id),
              :ok <- claim_slug(changeset, repository_id, owner, now),
              {:ok, generation, repomd_xml_asc} <- generate_initial_metadata(owner, changeset) do
           repository =
@@ -206,9 +207,17 @@ defmodule DarkZenith.Repositories do
       owner = Repo.get!(User, repository.user_id)
       changeset = Repository.update_changeset(repository, attrs, owner)
 
+      signing_change? =
+        Map.has_key?(changeset.changes, :gpg_key_fingerprint) or
+          Map.has_key?(changeset.changes, :sign_rpms)
+
       cond do
         not changeset.valid? ->
           {:error, %{changeset | action: :update}}
+
+        signing_change? and
+            DarkZenith.SigningTransitions.check_owner_mutation(owner.id, :create) != :ok ->
+          {:error, :gpg_key_transition_in_progress}
 
         enabling_on_non_empty?(changeset, repository) ->
           enable_rpm_signing_with_transition(actor, repository, changeset, owner)
@@ -342,6 +351,20 @@ defmodule DarkZenith.Repositories do
         Repo.transact(fn ->
           lock_user_row!(repository.user_id)
 
+          case DarkZenith.SigningTransitions.check_owner_mutation(repository.user_id, :delete) do
+            {:error, reason} ->
+              {:ok, {:error, reason}}
+
+            :ok ->
+              delete_repository_locked(actor, repository)
+          end
+        end)
+
+      result
+    end
+  end
+
+  defp delete_repository_locked(actor, repository) do
           case Repo.one(from(r in Repository, where: r.id == ^repository.id, lock: "FOR UPDATE")) do
             nil ->
               {:ok, {:error, :not_found}}
@@ -383,6 +406,7 @@ defmodule DarkZenith.Repositories do
                 )
 
               DarkZenith.SigningTransitions.cancel_transitions_for_repository!(current.id)
+              DarkZenith.SigningTransitions.satisfy_repository_rows_for_deleted_repository!(current.id)
 
               stored_bytes = packages |> Enum.map(& &1.size_package) |> Enum.sum()
 
@@ -435,10 +459,6 @@ defmodule DarkZenith.Repositories do
 
               {:ok, :ok}
           end
-        end)
-
-      result
-    end
   end
 
   @doc "All slug reservations for the admin view, retired first, newest first."

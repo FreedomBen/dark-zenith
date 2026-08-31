@@ -52,6 +52,17 @@ defmodule DarkZenith.Workers.UploadProcessing do
         :ok
 
       {:ok, intent, token} ->
+        if fence_blocked?(intent) do
+          # An owner-level key transition blocks package creation: no external
+          # work, one minute ahead, no budget consumed.
+          defer_for_fence(intent, token)
+        else
+          process(intent, token)
+        end
+    end
+  end
+
+  defp process(intent, token) do
         case TempSpace.acquire(temp_space(), token, intent.declared_size) do
           {:ok, dir} ->
             try do
@@ -63,8 +74,19 @@ defmodule DarkZenith.Workers.UploadProcessing do
           {:error, :upload_temp_space_unavailable} ->
             infra_failure(intent, token, "upload_temp_space_unavailable")
         end
-    end
   end
+
+  defp fence_blocked?(intent) do
+    owner_id =
+      Repo.one(
+        from r in Repository, where: r.id == ^intent.repository_id, select: r.user_id
+      )
+
+    owner_id != nil and
+      DarkZenith.SigningTransitions.check_owner_mutation(owner_id, :create) != :ok
+  end
+
+  defp defer_for_fence(intent, token), do: restore_and_requeue(intent, token, 60)
 
   @impl Oban.Worker
   def backoff(%Oban.Job{attempt: attempt}), do: RetryPolicy.backoff(attempt)
@@ -497,6 +519,9 @@ defmodule DarkZenith.Workers.UploadProcessing do
           settings_changed?(repo, owner, sign_snapshot) ->
             {:ok, {:settings_changed, current}}
 
+          DarkZenith.SigningTransitions.check_owner_mutation(owner.id, :create) != :ok ->
+            {:ok, {:fence_deferred, current}}
+
           sign_snapshot.sign_rpms and key_expired?(owner) ->
             {:ok, {:fail, "conflict_gpg_key_expired", current}}
 
@@ -532,6 +557,10 @@ defmodule DarkZenith.Workers.UploadProcessing do
       {:settings_changed, current} ->
         _ = B2.delete_version(config, candidate.storage_path, candidate.storage_version_id)
         restore_and_requeue(current, token)
+
+      {:fence_deferred, current} ->
+        _ = B2.delete_version(config, candidate.storage_path, candidate.storage_version_id)
+        restore_and_requeue(current, token, 60)
 
       {:fail, code, _current} ->
         _ = B2.delete_version(config, candidate.storage_path, candidate.storage_version_id)
@@ -754,8 +783,9 @@ defmodule DarkZenith.Workers.UploadProcessing do
 
   # The pre-claim attempt count is restored so a settings race does not
   # consume a retry; a fresh attempt uses current settings.
-  defp restore_and_requeue(current, token) do
+  defp restore_and_requeue(current, token, delay_seconds \\ 0) do
     now = DateTime.utc_now(:second)
+    next_at = DateTime.add(now, delay_seconds, :second)
 
     {:ok, _} =
       Repo.transact(fn ->
@@ -769,7 +799,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
                 status: "queued",
                 lease_token: nil,
                 lease_expires_at: nil,
-                next_attempt_at: now,
+                next_attempt_at: next_at,
                 updated_at: now
               ],
               inc: [attempts: -1]
@@ -779,7 +809,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
         {:ok, :ok}
       end)
 
-    Uploads.enqueue_processing(current.id, now)
+    Uploads.enqueue_processing(current.id, next_at)
     :ok
   end
 

@@ -130,6 +130,17 @@ defmodule DarkZenith.Packages do
         Repo.transact(fn ->
           Repo.one!(from u in User, where: u.id == ^repository.user_id, lock: "FOR UPDATE")
 
+          case DarkZenith.SigningTransitions.check_owner_mutation(repository.user_id, :delete) do
+            {:error, reason} -> {:ok, {:error, reason}}
+            :ok -> delete_package_locked(actor, repository, package)
+          end
+        end)
+
+      result
+    end
+  end
+
+  defp delete_package_locked(actor, repository, package) do
           repo =
             Repo.one!(from r in Repository, where: r.id == ^repository.id, lock: "FOR UPDATE")
 
@@ -189,10 +200,6 @@ defmodule DarkZenith.Packages do
 
               {:ok, :ok}
           end
-        end)
-
-      result
-    end
   end
 
   defp authorize(actor, repository) do

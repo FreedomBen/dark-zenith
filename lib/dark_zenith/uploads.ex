@@ -54,7 +54,8 @@ defmodule DarkZenith.Uploads do
 
       result =
         Repo.transact(fn ->
-          with {:ok, reservation} <-
+          with :ok <- DarkZenith.SigningTransitions.check_owner_mutation(owner.id, :create),
+               {:ok, reservation} <-
                  Storage.create_reservation(owner, repository.id, package_id, "upload", size) do
             intent =
               Repo.insert!(%Intent{

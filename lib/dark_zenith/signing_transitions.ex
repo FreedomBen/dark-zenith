@@ -17,7 +17,7 @@ defmodule DarkZenith.SigningTransitions do
   alias DarkZenith.Audit
   alias DarkZenith.Repo
   alias DarkZenith.Repositories.{MetadataCache, Repository}
-  alias DarkZenith.SigningTransitions.{Item, Transition}
+  alias DarkZenith.SigningTransitions.{Item, Transition, TransitionRepository}
   alias DarkZenith.Storage
   alias DarkZenith.Workers.RetryPolicy
 
@@ -49,6 +49,79 @@ defmodule DarkZenith.SigningTransitions do
       %{"pending" => 0, "executing" => 0, "succeeded" => 0, "failed" => 0, "canceled" => 0},
       counts
     )
+  end
+
+  ## The owner-level write fence (DESIGN.md: Signing Transition Repositories)
+
+  @doc """
+  The user-wide transition fence for an owner, or nil. `scope: :all` blocks
+  creations and deletions (replacement preparing/activating; removal
+  preparing); `scope: :creations` blocks repository/package creation and
+  signing-setting changes but admits explicit deletions (removal after
+  preparation). Replacement `active` blocks nothing.
+  """
+  def user_fence(user_id) do
+    transition =
+      Repo.one(
+        from t in Transition,
+          join: u in User,
+          on: u.gpg_key_transition_id == t.id,
+          where: u.id == ^user_id
+      )
+
+    transition && fence_for(transition)
+  end
+
+  defp fence_for(transition) do
+    phase =
+      if transition.status == "failed", do: transition.resume_status, else: transition.status
+
+    scope =
+      case {transition.kind, phase} do
+        {"replace_gpg_key", p} when p in ["preparing", "activating"] -> :all
+        {"replace_gpg_key", _} -> nil
+        {_removal, "preparing"} -> :all
+        {_removal, p} when p in ["activating", "active", "finalizing"] -> :creations
+        _ -> nil
+      end
+
+    scope && %{transition: transition, scope: scope}
+  end
+
+  @doc """
+  Guards an owner mutation against the fence. `op` is `:create` (repository
+  or package creation, signing-setting changes) or `:delete` (explicit
+  repository/package deletion).
+  """
+  def check_owner_mutation(user_id, op) when op in [:create, :delete] do
+    case user_fence(user_id) do
+      nil -> :ok
+      %{scope: :all} -> {:error, :gpg_key_transition_in_progress}
+      %{scope: :creations} when op == :create -> {:error, :gpg_key_transition_in_progress}
+      %{scope: :creations} -> :ok
+    end
+  end
+
+  @doc """
+  Marks pending snapshot rows for a deleted repository satisfied inside the
+  deletion transaction; deletion can only reduce the affected state.
+  """
+  def satisfy_repository_rows_for_deleted_repository!(repository_id) do
+    now = DateTime.utc_now(:second)
+
+    {_count, _} =
+      Repo.update_all(
+        from(sr in TransitionRepository,
+          join: t in Transition,
+          on: t.id == sr.transition_id,
+          where:
+            sr.repository_id == ^repository_id and sr.application_status == "pending" and
+              t.status in ["preparing", "activating", "active", "finalizing", "failed"]
+        ),
+        set: [application_status: "satisfied_deleted", applied_at: now]
+      )
+
+    :ok
   end
 
   ## Enable RPM signing (repository-local)
@@ -355,6 +428,39 @@ defmodule DarkZenith.SigningTransitions do
 
       :ok
     end
+  end
+
+  @doc """
+  Owner-fence deferral for a claimed repository-local item: released back to
+  pending one minute ahead with its pre-claim attempt value restored, so the
+  pause consumes none of the budget.
+  """
+  def defer_item(item, token) do
+    now = DateTime.utc_now(:second)
+    next_at = DateTime.add(now, 60, :second)
+
+    {count, _} =
+      Repo.update_all(
+        from(i in Item,
+          where: i.id == ^item.id and i.status == "executing" and i.lease_token == ^token
+        ),
+        set: [
+          status: "pending",
+          lease_token: nil,
+          lease_expires_at: nil,
+          next_attempt_at: next_at,
+          updated_at: now
+        ],
+        inc: [attempts: -1]
+      )
+
+    if count == 1 do
+      %{item_id: item.id}
+      |> DarkZenith.Workers.SigningItem.new(scheduled_at: next_at)
+      |> Oban.insert!()
+    end
+
+    :ok
   end
 
   def fail_transition!(transition_id, code) do

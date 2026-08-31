@@ -22,6 +22,7 @@ defmodule DarkZenith.Accounts.User do
     field :gpg_key_expires_at, :utc_datetime
     field :gpg_key_expiry_notified_days, {:array, :integer}, default: []
     field :previous_gpg_key_public, :string
+    field :gpg_key_transition_id, :binary_id
 
     timestamps(type: :utc_datetime)
   end

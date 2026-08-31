@@ -320,6 +320,10 @@ defmodule DarkZenith.Workers.SigningItem do
           not transition_still_valid?(current_transition, repository, owner) ->
             {:ok, {:fail, "conflict_gpg_key_transition_in_progress", current_item}}
 
+          current_transition.kind == "enable_rpm_signing" and
+              SigningTransitions.check_owner_mutation(owner.id, :create) != :ok ->
+            {:ok, {:fence_deferred, current_item}}
+
           over_metadata_limit?(repository, current_package, final) ->
             {:ok, {:fail, "conflict_repository_metadata_limit_exceeded", current_item}}
 
@@ -341,6 +345,11 @@ defmodule DarkZenith.Workers.SigningItem do
       {:cancel_item, current_item} ->
         _ = B2.delete_version(config, final_key, final_version)
         SigningTransitions.cancel_claimed_item(current_item, token)
+        :ok
+
+      {:fence_deferred, current_item} ->
+        _ = B2.delete_version(config, final_key, final_version)
+        SigningTransitions.defer_item(current_item, token)
         :ok
 
       {:fail, code, _current_item} ->
