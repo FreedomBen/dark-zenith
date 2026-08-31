@@ -194,20 +194,33 @@ defmodule DarkZenithWeb.AdminTransitionsLiveTest do
   end
 
   defp failed_user_wide!(owner, attrs \\ %{}) do
-    transition =
-      Repo.insert!(
-        struct!(
-          %Transition{
-            kind: "replace_gpg_key",
-            user_id: owner.id,
-            status: "failed",
-            resume_status: "preparing",
-            last_error_code: "database_unavailable",
-            phase_attempts: 20
-          },
-          attrs
-        )
+    attrs =
+      Map.merge(
+        %{
+          kind: "replace_gpg_key",
+          status: "failed",
+          resume_status: "preparing",
+          last_error_code: "database_unavailable",
+          phase_attempts: 20
+        },
+        Map.new(attrs)
       )
+
+    # A pre-swap replacement row carries the prepared candidate fields
+    # (signing_transitions_prepared_candidate check).
+    attrs =
+      if attrs.kind == "replace_gpg_key" and attrs.resume_status == "preparing" do
+        Map.merge(attrs, %{
+          prepared_gpg_key_private: "prepared-private-envelope",
+          prepared_gpg_key_public: "prepared-public",
+          prepared_primary_fingerprint: String.duplicate("A", 40),
+          prepared_signing_fingerprint: String.duplicate("B", 40)
+        })
+      else
+        attrs
+      end
+
+    transition = Repo.insert!(struct!(%Transition{user_id: owner.id}, attrs))
 
     {1, _} =
       Repo.update_all(

@@ -15,13 +15,29 @@ defmodule DarkZenith.SigningTransitionsUserWideTest do
   alias DarkZenith.Uploads
 
   defp attach_transition!(user, attrs) do
-    transition =
-      Repo.insert!(
-        struct!(
-          %Transition{user_id: user.id, phase_attempts: 0},
-          Map.merge(%{status: "preparing"}, Map.new(attrs))
+    attrs = Map.merge(%{status: "preparing"}, Map.new(attrs))
+
+    # A pre-swap replacement row must carry the prepared candidate fields to
+    # satisfy the signing_transitions_prepared_candidate check.
+    attrs =
+      if Map.get(attrs, :kind) == "replace_gpg_key" and
+           (attrs.status == "preparing" or
+              (attrs.status == "failed" and Map.get(attrs, :resume_status) == "preparing")) do
+        Map.merge(
+          %{
+            prepared_gpg_key_private: "prepared-private-envelope",
+            prepared_gpg_key_public: "prepared-public",
+            prepared_primary_fingerprint: String.duplicate("A", 40),
+            prepared_signing_fingerprint: String.duplicate("B", 40)
+          },
+          attrs
         )
-      )
+      else
+        attrs
+      end
+
+    transition =
+      Repo.insert!(struct!(%Transition{user_id: user.id, phase_attempts: 0}, attrs))
 
     {1, _} =
       Repo.update_all(
@@ -247,7 +263,11 @@ defmodule DarkZenith.SigningTransitionsFenceDeferralTest do
         kind: "replace_gpg_key",
         user_id: owner.id,
         status: "preparing",
-        phase_next_attempt_at: DateTime.utc_now(:second)
+        phase_next_attempt_at: DateTime.utc_now(:second),
+        prepared_gpg_key_private: "prepared-private-envelope",
+        prepared_gpg_key_public: "prepared-public",
+        prepared_primary_fingerprint: String.duplicate("A", 40),
+        prepared_signing_fingerprint: String.duplicate("B", 40)
       })
 
     {1, _} =
