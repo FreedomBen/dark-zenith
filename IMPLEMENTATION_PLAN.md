@@ -105,9 +105,8 @@ wins. Checklist items reference spec sections rather than restating their rules.
 - [x] Counting-sink byte accounting for the four repository counters (Metadata Generation & Storage)
 - [x] Oban regeneration job: snapshot transaction, tmp-file streaming, revision CAS, re-enqueue,
       debounce (Metadata Generation & Storage)
-- [ ] `MAX_REPOSITORY_PACKAGES` / `MAX_REPODATA_OPEN_BYTES` enforcement incl. grandfathered
-      ceilings (regeneration ceilings + config done; the upload-time advisory/final checks land
-      with the Phase 9 pipeline)
+- [x] `MAX_REPOSITORY_PACKAGES` / `MAX_REPODATA_OPEN_BYTES` enforcement incl. grandfathered
+      ceilings (regeneration ceilings + config; upload pipeline advisory + final locked checks)
 
 ## Phase 7 — Repo-serving endpoints (M1)
 
@@ -139,8 +138,8 @@ wins. Checklist items reference spec sections rather than restating their rules.
       reservation adjust, final write, fenced commit (steps 1–10; RPM signing dispatch joins
       in Phase 11)
 - [x] Web preview mode: `preview_ready`, confirmation, metadata-equality recheck
-- [ ] Package deletion transaction (done); staging + final reconcilers pending;
-      waiting-state cleanup (done)
+- [x] Package deletion transaction; staging + final reconcilers (cron :30 / 03:00);
+      waiting-state cleanup
 - [ ] Fault-injection test suite for every interruption point named in the spec (lease
       expiry/requeue, settings races, CAS-lost, exhaustion covered; more scenarios welcome)
 
@@ -196,7 +195,8 @@ wins. Checklist items reference spec sections rather than restating their rules.
 - [x] Repo create/settings/delete and collaborator management
 - [x] Upload flow LiveView (direct-to-B2 via the DirectUpload hook, preview/confirm)
 - [x] Account: API keys, GPG key management, auth pages incl. reset-page API-key revocation
-- [ ] HTML escaping guarantees; `url` as the only RPM-derived hyperlink
+- [x] HTML escaping guarantees; `url` as the only RPM-derived hyperlink (regression tests
+      render hostile summary/description/license/vendor across all package pages)
 
 ## Phase 15 — Admin surface (M4)
 

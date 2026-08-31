@@ -114,3 +114,60 @@ defmodule DarkZenithWeb.PackageLiveTest do
     end
   end
 end
+
+defmodule DarkZenithWeb.PackageEscapingTest do
+  # DESIGN.md (Web Interface): RPM-derived strings render as plain text with
+  # HTML escaping; `url` is the only RPM-derived hyperlink.
+  use DarkZenithWeb.ConnCase, async: true
+
+  import Phoenix.LiveViewTest
+  import DarkZenith.AccountsFixtures
+  import DarkZenith.PackagesFixtures
+  import DarkZenith.RepositoriesFixtures
+  import DarkZenith.RpmFixtures
+
+  @hostile ~s|<script>alert("dz")</script>|
+
+  setup do
+    owner = user_fixture()
+    repo = repository_fixture(owner, %{is_public: true})
+
+    package =
+      insert_package_from_rpm!(repo, minimal_binary(), %{
+        summary: @hostile,
+        description: ~s|<img src=x onerror="alert('dz')">|,
+        license: @hostile,
+        rpm_vendor: @hostile,
+        url: "https://example.com/upstream"
+      })
+
+    %{repo: repo, package: package}
+  end
+
+  test "package pages escape RPM-derived strings", %{conn: conn, repo: repo, package: package} do
+    for path <- [
+          ~p"/repos/#{repo.slug}",
+          ~p"/repos/#{repo.slug}/packages/#{package.name}",
+          ~p"/repos/#{repo.slug}/package-versions/#{package.id}"
+        ] do
+      {:ok, _lv, html} = live(conn, path)
+      refute html =~ "<script>alert", "unescaped script tag rendered at #{path}"
+      refute html =~ "<img src=x", "unescaped attribute injection rendered at #{path}"
+    end
+
+    {:ok, _lv, html} = live(conn, ~p"/repos/#{repo.slug}/package-versions/#{package.id}")
+    assert html =~ "&lt;script&gt;alert"
+    assert html =~ ~s|href="https://example.com/upstream"|
+  end
+
+  test "only url renders as a hyperlink", %{conn: conn, repo: repo, package: package} do
+    {:ok, _lv, html} = live(conn, ~p"/repos/#{repo.slug}/package-versions/#{package.id}")
+
+    hrefs =
+      Regex.scan(~r/href="([^"]+)"/, html)
+      |> Enum.map(&List.last/1)
+      |> Enum.filter(&String.contains?(&1, "example.com"))
+
+    assert hrefs == ["https://example.com/upstream"]
+  end
+end
