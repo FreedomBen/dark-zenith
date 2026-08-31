@@ -85,7 +85,7 @@ defmodule DarkZenith.Workers.SigningItem do
            :ok <- download(config, item, source_path),
            :ok <- verify_source(source_path, dir, item, token),
            {:ok, metadata} <- parse(source_path),
-           {:ok, signed_path} <- sign(owner, source_path, dir, metadata.rpm_format),
+           {:ok, signed_path} <- sign(owner, source_path, dir, metadata),
            {:ok, final} <- signed_values(signed_path, metadata),
            :ok <- reserve_delta(item, transition, package, final.size),
            {:ok, final_key} <- compose_key(package, item),
@@ -163,8 +163,8 @@ defmodule DarkZenith.Workers.SigningItem do
     end
   end
 
-  defp sign(owner, source_path, dir, format) do
-    case DarkZenith.Signing.sign_rpm(owner, source_path, dir, format) do
+  defp sign(owner, source_path, dir, metadata) do
+    case DarkZenith.Signing.sign_rpm(owner, source_path, dir, metadata) do
       {:ok, signed_path} ->
         {:ok, signed_path}
 

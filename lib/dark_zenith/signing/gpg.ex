@@ -37,7 +37,7 @@ defmodule DarkZenith.Signing.Gpg do
   end
 
   @impl true
-  def sign_rpm(owner, source_path, workdir, format) do
+  def sign_rpm(owner, source_path, workdir, metadata) do
     cond do
       is_nil(owner.gpg_key_private) or is_nil(owner.gpg_signing_fingerprint) ->
         {:error, :unavailable}
@@ -47,7 +47,7 @@ defmodule DarkZenith.Signing.Gpg do
 
       true ->
         with {:ok, private_armored} <- decrypt(owner) do
-          do_sign_rpm(owner, private_armored, source_path, workdir, format)
+          do_sign_rpm(owner, private_armored, source_path, workdir, metadata)
         end
     end
   end
@@ -63,7 +63,7 @@ defmodule DarkZenith.Signing.Gpg do
   # rpmsign against an ephemeral GNUPGHOME (argument vectors only), then
   # verified in an isolated RPM database: every digest OK plus at least one
   # OK signature; anything else rejects.
-  defp do_sign_rpm(owner, private_armored, source_path, workdir, format) do
+  defp do_sign_rpm(owner, private_armored, source_path, workdir, metadata) do
     home = Path.join(workdir, "gnupg")
     File.mkdir_p!(home)
     File.chmod!(home, 0o700)
@@ -76,7 +76,7 @@ defmodule DarkZenith.Signing.Gpg do
     rpmsign = Application.get_env(:dark_zenith, :rpmsign_path, "rpmsign")
 
     with :ok <- import_private(gpg_path, home, private_armored, workdir),
-         :ok <- run_rpmsign(rpmsign, home, signed_path, owner.gpg_signing_fingerprint, format),
+         :ok <- run_rpmsign(rpmsign, home, signed_path, owner.gpg_signing_fingerprint, metadata),
          :ok <- verify_signed(owner, workdir, signed_path) do
       {:ok, signed_path}
     end
@@ -96,10 +96,12 @@ defmodule DarkZenith.Signing.Gpg do
     File.rm(Path.join(workdir, "signing-key.asc"))
   end
 
-  defp run_rpmsign(rpmsign, home, signed_path, signing_fingerprint, format) do
-    # Existing OpenPGP package signatures are replaced (--resign); unsigned
-    # inputs are signed (--addsign). --resign handles both on RPM 6.
-    format_args = if format == 6, do: ["--rpmv4"], else: []
+  # Unsigned RPMs are signed with --addsign; RPMs already carrying an
+  # OpenPGP package signature are re-signed with --resign so the existing
+  # signature is replaced (DESIGN.md: RPM signing step 4).
+  defp run_rpmsign(rpmsign, home, signed_path, signing_fingerprint, metadata) do
+    format_args = if metadata.rpm_format == 6, do: ["--rpmv4"], else: []
+    mode = if metadata.openpgp_signed?, do: "--resign", else: "--addsign"
 
     args =
       format_args ++
@@ -108,7 +110,7 @@ defmodule DarkZenith.Signing.Gpg do
           "_gpg_path #{home}",
           "--key-id",
           signing_fingerprint <> "!",
-          "--resign",
+          mode,
           signed_path
         ]
 

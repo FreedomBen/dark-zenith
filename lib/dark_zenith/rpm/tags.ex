@@ -11,15 +11,30 @@ defmodule DarkZenith.Rpm.Tags do
   def region_immutable, do: 63
 
   ## Signature header tags
+  def sig_dsa_header, do: 267
+  def sig_rsa_header, do: 268
   def sig_sha1, do: 269
   def sig_longsize, do: 270
   def sig_longarchivesize, do: 271
   def sig_sha256, do: 273
+  def sig_openpgp_v6, do: 278
   def sig_sha3_256, do: 279
   def sig_reserved_v6, do: 999
   def sig_size, do: 1000
+  def sig_pgp, do: 1002
   def sig_md5, do: 1004
+  def sig_gpg, do: 1005
   def sig_payloadsize, do: 1007
+
+  @doc """
+  Signature-header tags that carry an OpenPGP package signature: the v4
+  header-only (DSA/RSA) and header+payload (PGP/GPG) entries plus the v6
+  OPENPGP array. Their presence selects `rpmsign --resign` over
+  `--addsign` (DESIGN.md: RPM signing step 4).
+  """
+  def openpgp_signature_tags do
+    [sig_dsa_header(), sig_rsa_header(), sig_openpgp_v6(), sig_pgp(), sig_gpg()]
+  end
 
   ## Main header tags
   def i18n_table, do: 100

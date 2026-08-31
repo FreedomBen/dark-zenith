@@ -14,7 +14,7 @@ defmodule DarkZenith.Signing do
               owner :: struct(),
               source_path :: Path.t(),
               workdir :: Path.t(),
-              format :: 4 | 6
+              metadata :: DarkZenith.Rpm.Metadata.t()
             ) ::
               {:ok, Path.t()}
               | {:error, :unavailable}
@@ -34,12 +34,14 @@ defmodule DarkZenith.Signing do
 
   @doc """
   Signs one RPM file with the owner's exact signing key, preserving the
-  package's v4/v6 format (`--rpmv4` compatibility signature for v6), and
-  verifies the output against the owner's public key. Returns the signed
-  file path inside `workdir`.
+  package's v4/v6 format (`--rpmv4` compatibility signature for v6) and
+  choosing `--addsign` for unsigned input or `--resign` when the parsed
+  source already carries an OpenPGP package signature, then verifies the
+  output against the owner's public key. Returns the signed file path
+  inside `workdir`.
   """
-  def sign_rpm(owner, source_path, workdir, format) do
-    impl().sign_rpm(owner, source_path, workdir, format)
+  def sign_rpm(owner, source_path, workdir, metadata) do
+    impl().sign_rpm(owner, source_path, workdir, metadata)
   end
 
   defp impl do

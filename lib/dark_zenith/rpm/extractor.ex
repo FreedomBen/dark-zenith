@@ -65,6 +65,7 @@ defmodule DarkZenith.Rpm.Extractor do
       {:ok,
        %Metadata{
          rpm_format: parsed.format,
+         openpgp_signed?: openpgp_signed?(parsed.signature),
          name: name,
          epoch: epoch,
          version: version,
@@ -97,6 +98,12 @@ defmodule DarkZenith.Rpm.Extractor do
          changelogs: changelogs
        }}
     end
+  end
+
+  # Whether the signature header carries an OpenPGP package signature
+  # (selects --resign over --addsign; DESIGN.md: RPM signing step 4).
+  defp openpgp_signed?(signature) do
+    Enum.any?(Tags.openpgp_signature_tags(), &Header.has?(signature, &1))
   end
 
   ## Scalar fields

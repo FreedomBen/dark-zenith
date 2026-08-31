@@ -53,13 +53,24 @@ defmodule DarkZenith.Workers.UploadProcessingTest do
           |> Plug.Conn.send_resp(200, binary)
 
         {"PUT", "/dz-bucket/repos/" <> _} when copy_status == 200 ->
-          assert [source] = Plug.Conn.get_req_header(conn, "x-amz-copy-source")
-          assert source =~ "versionId=4_zstaged"
-          assert Plug.Conn.get_req_header(conn, "x-amz-metadata-directive") == ["REPLACE"]
+          case Plug.Conn.get_req_header(conn, "x-amz-copy-source") do
+            [source] ->
+              assert source =~ "versionId=4_zstaged"
+              assert Plug.Conn.get_req_header(conn, "x-amz-metadata-directive") == ["REPLACE"]
 
-          conn
-          |> Plug.Conn.put_resp_header("x-amz-version-id", "4_zfinal")
-          |> Plug.Conn.send_resp(200, "<CopyObjectResult><ETag>\"x\"</ETag></CopyObjectResult>")
+              conn
+              |> Plug.Conn.put_resp_header("x-amz-version-id", "4_zfinal")
+              |> Plug.Conn.send_resp(
+                200,
+                "<CopyObjectResult><ETag>\"x\"</ETag></CopyObjectResult>"
+              )
+
+            [] ->
+              # A signed package uploads the local output with PutObject.
+              conn
+              |> Plug.Conn.put_resp_header("x-amz-version-id", "4_zfinal")
+              |> Plug.Conn.send_resp(200, "")
+          end
 
         {"PUT", "/dz-bucket/repos/" <> _} ->
           Plug.Conn.send_resp(conn, copy_status, "")
@@ -245,6 +256,19 @@ defmodule DarkZenith.Workers.UploadProcessingTest do
     assert Repo.get!(Package, intent.package_id).name == "dz-fixture"
   end
 
+  test "a web preview surfaces the advisory duplicate check before confirmation", ctx do
+    # The same NEVRA already exists in the repository.
+    api_intent = queued_intent!(ctx, ctx.binary)
+    assert :ok = perform_job(UploadProcessing, %{"intent_id" => api_intent.id})
+
+    intent = queued_intent!(ctx, ctx.binary, "web_preview")
+    assert :ok = perform_job(UploadProcessing, %{"intent_id" => intent.id})
+
+    failed = reload(intent)
+    assert failed.status == "failed"
+    assert failed.last_error_code == "conflict_duplicate_package"
+  end
+
   test "only the initiating user can confirm a preview", ctx do
     intent = queued_intent!(ctx, ctx.binary, "web_preview")
     assert :ok = perform_job(UploadProcessing, %{"intent_id" => intent.id})
@@ -361,5 +385,110 @@ defmodule DarkZenith.Workers.UploadProcessingLimitsTest do
     failed = Repo.get!(Intent, intent.id)
     assert failed.status == "failed"
     assert failed.last_error_code == "conflict_repository_metadata_limit_exceeded"
+  end
+end
+
+defmodule DarkZenith.Workers.UploadProcessingPreviewSigningTest do
+  # Not async: overrides the signing implementation.
+  use DarkZenith.DataCase, async: false
+  use Oban.Testing, repo: DarkZenith.Repo
+
+  import DarkZenith.AccountsFixtures
+  import DarkZenith.RpmFixtures
+
+  alias DarkZenith.Packages.Package
+  alias DarkZenith.Repositories.Repository
+  alias DarkZenith.Uploads
+  alias DarkZenith.Uploads.Intent
+  alias DarkZenith.Workers.UploadProcessing
+
+  test "a web preview does not sign; signing runs in the confirmed final pass" do
+    Application.put_env(:dark_zenith, :signing_impl, DarkZenith.SigningStub)
+
+    on_exit(fn ->
+      Application.delete_env(:dark_zenith, :signing_impl)
+      Application.delete_env(:dark_zenith, :signing_stub_rpm_result)
+    end)
+
+    pair = DarkZenith.GpgFixtures.generate_key_pair()
+    owner = user_fixture()
+    {:ok, owner} = DarkZenith.Accounts.upsert_gpg_key(owner, pair.public, pair.private)
+
+    {:ok, repo} =
+      DarkZenith.Repositories.create_repository(owner, %{
+        slug: "signed-preview-#{System.unique_integer([:positive])}",
+        name: "Signed",
+        gpg_key_fingerprint: pair.fingerprint,
+        sign_rpms: true
+      })
+
+    repo = Repo.get!(Repository, repo.id)
+    binary = v4_binary()
+
+    {:ok, intent, _upload} =
+      Uploads.create_intent(owner, repo, %{
+        filename: "upload.rpm",
+        size: byte_size(binary),
+        mode: "web_preview"
+      })
+
+    stub_signed_pipeline(intent, binary)
+    {:ok, queued} = Uploads.complete_intent(owner, intent, 1, "4_zstaged")
+
+    # If the preview pass invoked signing, this stub result would requeue
+    # the intent as signing_unavailable instead of reaching preview_ready.
+    Application.put_env(:dark_zenith, :signing_stub_rpm_result, {:error, :unavailable})
+
+    assert :ok = perform_job(UploadProcessing, %{"intent_id" => queued.id})
+    assert Repo.get!(Intent, intent.id).status == "preview_ready"
+
+    # Confirmation runs the signing step for real.
+    Application.put_env(:dark_zenith, :signing_stub_rpm_result, :copy)
+    {:ok, confirmed} = Uploads.confirm_preview(owner, Repo.get!(Intent, intent.id))
+    assert :ok = perform_job(UploadProcessing, %{"intent_id" => confirmed.id})
+
+    assert Repo.get!(Intent, intent.id).status == "succeeded"
+    assert Repo.get!(Package, intent.package_id).storage_version_id == "4_zfinal"
+  end
+
+  defp stub_signed_pipeline(intent, binary) do
+    staging = "/dz-bucket/" <> intent.staging_path
+    length = Integer.to_string(byte_size(binary))
+
+    Req.Test.stub(DarkZenith.B2Stub, fn conn ->
+      conn = Plug.Conn.delete_resp_header(conn, "cache-control")
+
+      case {conn.method, conn.request_path} do
+        {"HEAD", ^staging} ->
+          conn
+          |> Plug.Conn.put_resp_header("content-length", length)
+          |> Plug.Conn.put_resp_header("content-type", "application/x-rpm")
+          |> Plug.Conn.put_resp_header("x-amz-version-id", "4_zstaged")
+          |> Plug.Conn.send_resp(200, "")
+
+        {"GET", ^staging} ->
+          conn
+          |> Plug.Conn.put_resp_header("content-type", "application/x-rpm")
+          |> Plug.Conn.send_resp(200, binary)
+
+        {"PUT", "/dz-bucket/repos/" <> _} ->
+          # The signed package uploads the local output with PutObject.
+          assert Plug.Conn.get_req_header(conn, "x-amz-copy-source") == []
+
+          conn
+          |> Plug.Conn.put_resp_header("x-amz-version-id", "4_zfinal")
+          |> Plug.Conn.send_resp(200, "")
+
+        {"HEAD", "/dz-bucket/repos/" <> _} ->
+          conn
+          |> Plug.Conn.put_resp_header("content-length", length)
+          |> Plug.Conn.put_resp_header("content-type", "application/x-rpm")
+          |> Plug.Conn.put_resp_header("x-amz-version-id", "4_zfinal")
+          |> Plug.Conn.send_resp(200, "")
+
+        {"DELETE", _} ->
+          Plug.Conn.send_resp(conn, 204, "")
+      end
+    end)
   end
 end

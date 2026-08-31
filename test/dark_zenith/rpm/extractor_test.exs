@@ -6,6 +6,35 @@ defmodule DarkZenith.Rpm.ExtractorTest do
   alias DarkZenith.Rpm
   alias DarkZenith.Rpm.{Header, Parser, Tags}
 
+  describe "openpgp signature detection" do
+    test "pristine unsigned fixtures report no package signature" do
+      for binary <- [v4_binary(), v6_binary(), v4_source_binary(), minimal_binary()] do
+        assert {:ok, metadata} = Rpm.parse(binary)
+        assert metadata.openpgp_signed? == false
+      end
+    end
+
+    test "a v4 signature-header OpenPGP entry flips openpgp_signed?" do
+      # Retag the MD5 signature entry (BIN) to each v4 OpenPGP signature
+      # tag; strictly-increasing tag order is preserved (1000 < tag < 1007).
+      binary = v4_binary()
+      md5_index = find_entry(binary, 96, Tags.sig_md5())
+      assert md5_index
+
+      for tag <- [Tags.sig_pgp(), Tags.sig_gpg()] do
+        signed = patch_entry(binary, 96, md5_index, tag: tag)
+        assert {:ok, metadata} = Rpm.parse(signed)
+        assert metadata.openpgp_signed? == true
+      end
+    end
+
+    test "the tag set covers the v4 header-only and v6 OpenPGP entries" do
+      assert Tags.sig_dsa_header() in Tags.openpgp_signature_tags()
+      assert Tags.sig_rsa_header() in Tags.openpgp_signature_tags()
+      assert Tags.sig_openpgp_v6() in Tags.openpgp_signature_tags()
+    end
+  end
+
   describe "v4 fixture extraction" do
     setup do
       {:ok, metadata} = Rpm.parse(v4_binary())

@@ -7,6 +7,7 @@ defmodule DarkZenith.Rpm.Metadata do
 
   defstruct [
     :rpm_format,
+    :openpgp_signed?,
     :name,
     :epoch,
     :version,

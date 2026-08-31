@@ -102,7 +102,7 @@ defmodule DarkZenith.SigningStub do
   def sign_repomd(owner, repomd_xml), do: DarkZenith.Signing.Gpg.sign_repomd(owner, repomd_xml)
 
   @impl true
-  def sign_rpm(_owner, source_path, workdir, _format) do
+  def sign_rpm(_owner, source_path, workdir, _metadata) do
     case Application.get_env(:dark_zenith, :signing_stub_rpm_result, :copy) do
       :copy ->
         signed = Path.join(workdir, "signed.rpm")

@@ -137,10 +137,22 @@ defmodule DarkZenith.Workers.UploadProcessing do
          {:ok, measured_size, sha256} <- measure(source_path, intent),
          :ok <- verify_integrity(source_path, dir, intent, token),
          {:ok, metadata} <- parse_metadata(source_path),
-         {:ok, final} <-
-           signing_step(sign_snapshot, owner, source_path, dir, metadata, measured_size, sha256),
          :ok <-
-           continue(intent, token, repository, final, sign_snapshot, config) do
+           continue(
+             intent,
+             token,
+             repository,
+             %{
+               source_path: source_path,
+               dir: dir,
+               metadata: metadata,
+               size: measured_size,
+               sha256: sha256
+             },
+             sign_snapshot,
+             owner,
+             config
+           ) do
       :ok
     else
       {:repo, nil} ->
@@ -155,17 +167,40 @@ defmodule DarkZenith.Workers.UploadProcessing do
     end
   end
 
-  defp continue(intent, token, repository, final, sign_snapshot, config) do
+# A first web-preview pass performs the advisory duplicate and
+  # metadata-limit checks on the parsed staged bytes and stops before
+  # signing; rpmsign work happens only in the confirmed final pass, after
+  # the metadata-equality recheck (DESIGN.md: Upload RPM — Preview/Confirm).
+  defp continue(intent, token, repository, staged, sign_snapshot, owner, config) do
     cond do
       intent.mode == "web_preview" and is_nil(intent.preview_metadata) ->
-        preview_transition(intent, token, final.metadata)
+        now = DateTime.utc_now(:second)
+
+        candidate =
+          candidate_package(intent, repository, staged.metadata, staged.size, staged.sha256, now)
+
+        with :ok <- advisory_limits(repository, candidate),
+             :ok <- advisory_duplicate(repository, staged.metadata) do
+          preview_transition(intent, token, staged.metadata)
+        end
 
       intent.mode == "web_preview" and
-          intent.preview_metadata != Uploads.preview_metadata(final.metadata) ->
+          intent.preview_metadata != Uploads.preview_metadata(staged.metadata) ->
         {:error, {:deterministic, "validation_failed"}}
 
       true ->
-        finalize(intent, token, repository, final, sign_snapshot, config)
+        with {:ok, final} <-
+               signing_step(
+                 sign_snapshot,
+                 owner,
+                 staged.source_path,
+                 staged.dir,
+                 staged.metadata,
+                 staged.size,
+                 staged.sha256
+               ) do
+          finalize(intent, token, repository, final, sign_snapshot, config)
+        end
     end
   end
 
@@ -305,7 +340,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
         {:error, {:deterministic, "validation_failed"}}
 
       true ->
-        case DarkZenith.Signing.sign_rpm(owner, source_path, dir, metadata.rpm_format) do
+        case DarkZenith.Signing.sign_rpm(owner, source_path, dir, metadata) do
           {:ok, signed_path} ->
             signed_final(signed_path, metadata)
 
