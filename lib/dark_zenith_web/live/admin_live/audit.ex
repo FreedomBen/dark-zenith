@@ -15,7 +15,7 @@ defmodule DarkZenithWeb.AdminLive.Audit do
           <:subtitle><DarkZenithWeb.AdminComponents.admin_nav active="audit" /></:subtitle>
         </.header>
 
-        <form phx-change="filter" class="flex gap-2">
+        <form id="audit-filters" phx-change="filter" class="flex gap-2">
           <input
             type="text"
             name="action"
