@@ -50,7 +50,7 @@ wins. Checklist items reference spec sections rather than restating their rules.
 - [x] `DarkZenith.Release.promote_admin/1` with the shared admin advisory lock (Initial Setup)
 - [x] Admin-invariant advisory lock: admin-flag mutations, last-admin guarantee (admin
       deletes arrive with user deletion in Phase 3+) (User Lifecycle)
-- [ ] Normalized-email advisory lock shared by registration/provisioning/email-change/invitations
+- [x] Normalized-email advisory lock shared by registration/provisioning/email-change/invitations
       (User Lifecycle)
 - [x] Audit events table + append-only recorder (Audit Events)
 
@@ -66,9 +66,9 @@ wins. Checklist items reference spec sections rather than restating their rules.
       enable-on-non-empty needs Phase 11 transitions) (REST API — PATCH)
 - [x] Repository deletion transaction (hard delete, retire slug; intent/item cancelation
       joins in Phases 9/11) (Package Upload & Processing)
-- [ ] Collaborators + invitations tables, quota, idempotent add, conversion on
+- [x] Collaborators + invitations tables, quota, idempotent add, conversion on
       registration/email-change, expiry cleanup (Repository Collaborators; Collaborator Invitations)
-- [ ] Authorization module: owner/collaborator/admin/public matrix (Authorization)
+- [x] Authorization module: owner/collaborator/admin/public matrix (Authorization)
 
 ## Phase 4 — EVR ordering in PostgreSQL (M1)
 
@@ -142,7 +142,8 @@ wins. Checklist items reference spec sections rather than restating their rules.
 - [ ] Pagination envelope + deterministic orderings (done); package filters/sorts incl. EVR sort
 - [x] Auth plugs: bearer precedence, cookie fallback, scope checks, 404 masking, 401/403 split
 - [x] `POST /auth/login`, `DELETE /auth/logout` (session tokens)
-- [ ] Repos CRUD (done); api_keys (done); packages list/detail/subresources/delete; collaborators
+- [ ] Repos CRUD (done); api_keys (done); collaborators (done); packages
+      list/detail/subresources/delete pending
 - [x] Request caps: 1 MiB JSON, GPG multipart caps, `413 payload_too_large`
 
 ## Phase 11 — GPG signing (M3)
@@ -161,7 +162,7 @@ wins. Checklist items reference spec sections rather than restating their rules.
 ## Phase 12 — Email delivery (M2)
 
 - [ ] Swoosh mailer + `MAIL_ADAPTER` alias mapping, boot validation (Email Delivery)
-- [ ] Oban-backed delivery with per-notification generation fencing
+- [x] Oban-backed delivery with per-notification generation fencing
       (Repository Collaborators; Collaborator Invitations)
 - [ ] phx.gen.auth mail (confirmation/reset/email change) through the same worker path
 - [ ] Security notification mails (password/email/GPG/API-key events)
@@ -177,7 +178,7 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 - [ ] Landing, repo list/detail, setup instructions done; package list/detail/version pages
       pending (Web Interface)
-- [ ] Repo create/settings/delete done; collaborator management pending
+- [x] Repo create/settings/delete and collaborator management
 - [ ] Upload flow LiveView (direct-to-B2, preview/confirm)
 - [ ] Account: API keys, GPG key management, auth pages incl. reset-page API-key revocation
 - [ ] HTML escaping guarantees; `url` as the only RPM-derived hyperlink

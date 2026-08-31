@@ -213,4 +213,114 @@ defmodule DarkZenithWeb.RepositoryLiveTest do
       refute Repositories.get_repository_by_slug(repo.slug)
     end
   end
+
+  describe "collaborator management" do
+    alias DarkZenith.Collaborators
+
+    defp settings_lv(conn, owner, repo) do
+      {:ok, lv, html} =
+        conn
+        |> log_in_user(owner)
+        |> live(~p"/repos/#{repo.slug}/settings")
+
+      {lv, html}
+    end
+
+    test "owners add registered users and unregistered emails", %{conn: conn} do
+      owner = user_fixture()
+      repo = repository_fixture(owner, %{is_public: false})
+      user = user_fixture()
+      {lv, html} = settings_lv(conn, owner, repo)
+
+      assert html =~ "Manage Collaborators"
+
+      lv
+      |> form("#add_collaborator_form", collaborator: %{email: user.email})
+      |> render_submit()
+
+      html = render(lv)
+      assert html =~ user.email
+      assert html =~ "queued"
+
+      invited = "pending#{System.unique_integer([:positive])}@example.com"
+
+      lv
+      |> form("#add_collaborator_form", collaborator: %{email: invited})
+      |> render_submit()
+
+      html = render(lv)
+      assert html =~ invited
+      assert html =~ "invitation"
+      # Invitations display their expiration.
+      assert html =~ "Expires"
+    end
+
+    test "adding the owner's email shows a validation error", %{conn: conn} do
+      owner = user_fixture()
+      repo = repository_fixture(owner, %{is_public: false})
+      {lv, _html} = settings_lv(conn, owner, repo)
+
+      html =
+        lv
+        |> form("#add_collaborator_form", collaborator: %{email: owner.email})
+        |> render_submit()
+
+      assert html =~ "cannot invite the repository owner"
+    end
+
+    test "idempotent adds surface the existing row instead of duplicating", %{conn: conn} do
+      owner = user_fixture()
+      repo = repository_fixture(owner, %{is_public: false})
+      user = user_fixture()
+      {:ok, :created, _} = Collaborators.add_collaborator(owner, repo, user.email)
+      {lv, _html} = settings_lv(conn, owner, repo)
+
+      lv
+      |> form("#add_collaborator_form", collaborator: %{email: user.email})
+      |> render_submit()
+
+      assert render(lv) =~ "already"
+      assert length(Collaborators.list_rows(repo)) == 1
+    end
+
+    test "public repositories list and remove rows but disable adding", %{conn: conn} do
+      owner = user_fixture()
+      repo = repository_fixture(owner, %{is_public: false})
+      user = user_fixture()
+      {:ok, :created, collaborator} = Collaborators.add_collaborator(owner, repo, user.email)
+      {:ok, repo} = Repositories.update_repository(owner, repo, %{"is_public" => true})
+
+      {lv, html} = settings_lv(conn, owner, repo)
+
+      assert html =~ user.email
+      assert html =~ "Make the repository private to add collaborators"
+      refute has_element?(lv, "#add_collaborator_form")
+
+      lv |> element("#remove-collaborator-#{collaborator.id}") |> render_click()
+      assert Collaborators.list_rows(repo) == []
+    end
+
+    test "removal warns about outstanding signed URLs and cancellation works", %{conn: conn} do
+      owner = user_fixture()
+      repo = repository_fixture(owner, %{is_public: false})
+      user = user_fixture()
+      {:ok, :created, collaborator} = Collaborators.add_collaborator(owner, repo, user.email)
+
+      {:ok, :created, invitation} =
+        Collaborators.add_collaborator(
+          owner,
+          repo,
+          "pending#{System.unique_integer([:positive])}@example.com"
+        )
+
+      {lv, html} = settings_lv(conn, owner, repo)
+
+      assert html =~ "signed lifetime"
+
+      lv |> element("#remove-collaborator-#{collaborator.id}") |> render_click()
+      lv |> element("#cancel-invitation-#{invitation.id}") |> render_click()
+
+      assert Collaborators.list_rows(repo) == []
+    end
+  end
 end
