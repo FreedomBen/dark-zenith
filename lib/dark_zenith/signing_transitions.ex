@@ -489,6 +489,22 @@ defmodule DarkZenith.SigningTransitions do
   completes.
   """
   def check_completion(transition_id) do
+    case Repo.one(from t in Transition, where: t.id == ^transition_id, select: t.kind) do
+      "replace_gpg_key" ->
+        DarkZenith.SigningTransitions.UserWide.check_replace_completion(transition_id)
+
+      "delete_signed_packages" ->
+        DarkZenith.SigningTransitions.UserWide.check_delete_completion(transition_id)
+
+      "enable_rpm_signing" ->
+        check_enable_completion(transition_id)
+
+      _clear_or_missing ->
+        :not_yet
+    end
+  end
+
+  defp check_enable_completion(transition_id) do
     now = DateTime.utc_now(:second)
 
     {:ok, result} =
@@ -606,6 +622,7 @@ defmodule DarkZenith.SigningTransitions do
       )
 
     Enum.each(active_ids, &check_completion/1)
+    DarkZenith.SigningTransitions.UserWide.sweep()
     :ok
   end
 

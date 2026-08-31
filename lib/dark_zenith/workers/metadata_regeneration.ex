@@ -31,14 +31,35 @@ defmodule DarkZenith.Workers.MetadataRegeneration do
   alias DarkZenith.Workers.RetryPolicy
 
   @impl Oban.Worker
-  def perform(%Oban.Job{args: %{"repository_id" => repository_id}}) do
+  def perform(%Oban.Job{args: %{"repository_id" => repository_id}} = job) do
     case snapshot(repository_id) do
-      {:ok, :absent} -> :ok
-      {:ok, :current} -> :ok
-      {:ok, repository, packages} -> regenerate(repository, packages)
-      {:error, _} = error -> error
+      {:ok, :absent} ->
+        :ok
+
+      {:ok, :current} ->
+        :ok
+
+      {:ok, repository, packages} ->
+        with {:error, _} = error <- regenerate(repository, packages) do
+          record_exhaustion(job, repository_id)
+          error
+        end
+
+      {:error, _} = error ->
+        record_exhaustion(job, repository_id)
+        error
     end
   end
+
+  # The twentieth failed regeneration attempt marks the owner's unresolved
+  # user-wide transition failed so a permanently stale cache stays visible
+  # outside Oban retention (DESIGN.md: Key replacement step 7).
+  defp record_exhaustion(%Oban.Job{attempt: attempt, max_attempts: max}, repository_id)
+       when attempt >= max do
+    DarkZenith.SigningTransitions.UserWide.record_regeneration_exhaustion(repository_id)
+  end
+
+  defp record_exhaustion(_job, _repository_id), do: :ok
 
   @impl Oban.Worker
   def backoff(%Oban.Job{attempt: attempt}), do: RetryPolicy.backoff(attempt)

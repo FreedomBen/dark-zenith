@@ -63,6 +63,24 @@ defmodule DarkZenith.Accounts.UserNotifier do
     """)
   end
 
+  @doc "Security notification for a replaced GPG key (sent at the key swap)."
+  def deliver_gpg_key_replaced(user, fingerprint) do
+    deliver(user.email, "Your GPG signing key was replaced", """
+
+    ==============================
+
+    Hi #{user.email},
+
+    Your Dark Zenith GPG signing key was replaced. The new key fingerprint
+    is #{fingerprint}. Repositories and packages are being re-signed; both
+    the previous and new public keys are served until that completes.
+
+    If you did not do this, remove the key and change your password.
+
+    ==============================
+    """)
+  end
+
   @doc "Security notification for a removed GPG key."
   def deliver_gpg_key_removed(user) do
     deliver(user.email, "Your GPG signing key was removed", """

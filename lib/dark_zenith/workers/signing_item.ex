@@ -49,6 +49,9 @@ defmodule DarkZenith.Workers.SigningItem do
             # cancellation.
             SigningTransitions.cancel_claimed_item(item, token)
 
+          transition.kind == "delete_signed_packages" ->
+            delete_item(item, transition, token, package)
+
           true ->
             run_with_temp_space(item, transition, token, package)
         end
@@ -85,7 +88,7 @@ defmodule DarkZenith.Workers.SigningItem do
            {:ok, signed_path} <- sign(owner, source_path, dir, metadata.rpm_format),
            {:ok, final} <- signed_values(signed_path, metadata),
            :ok <- reserve_delta(item, transition, package, final.size),
-           {:ok, final_key} <- compose_key(package, transition),
+           {:ok, final_key} <- compose_key(package, item),
            {:ok, final_version} <- upload(config, final_key, final.path),
            :ok <- verify_final(config, final_key, final_version, final.size) do
         commit(item, transition, token, package, final, final_key, final_version, config)
@@ -246,8 +249,8 @@ defmodule DarkZenith.Workers.SigningItem do
       )
   end
 
-  defp compose_key(package, transition) do
-    repository = Repo.get(Repository, transition.repository_id)
+  defp compose_key(package, item) do
+    repository = Repo.get(Repository, item.repository_id)
 
     if repository do
       write_id = Ecto.UUID.generate()
@@ -297,7 +300,7 @@ defmodule DarkZenith.Workers.SigningItem do
 
         repository =
           Repo.one(
-            from r in Repository, where: r.id == ^transition.repository_id, lock: "FOR UPDATE"
+            from r in Repository, where: r.id == ^item.repository_id, lock: "FOR UPDATE"
           )
 
         current_package =
@@ -359,12 +362,21 @@ defmodule DarkZenith.Workers.SigningItem do
     end
   end
 
-  defp transition_still_valid?(transition, repository, owner) do
+  defp transition_still_valid?(%{kind: "enable_rpm_signing"} = transition, repository, owner) do
     transition.status in ["active", "failed"] and repository.sign_rpms and
       repository.signing_transition_id == transition.id and
       owner.gpg_signing_fingerprint == transition.target_fingerprint and
       not key_expired?(owner)
   end
+
+  # Replacement items require the swapped key to still match the target.
+  defp transition_still_valid?(%{kind: "replace_gpg_key"} = transition, repository, owner) do
+    transition.status in ["active", "failed"] and repository.sign_rpms and
+      owner.gpg_signing_fingerprint == transition.target_fingerprint and
+      not key_expired?(owner)
+  end
+
+  defp transition_still_valid?(_transition, _repository, _owner), do: false
 
   defp key_expired?(%{gpg_key_expires_at: nil}), do: false
 
@@ -443,6 +455,104 @@ defmodule DarkZenith.Workers.SigningItem do
         from r in DarkZenith.Storage.Reservation, where: r.id == ^item.reservation_id
       )
     end
+
+    {1, _} =
+      Repo.update_all(
+        from(i in Item, where: i.id == ^item.id),
+        set: [
+          status: "succeeded",
+          reservation_id: nil,
+          lease_token: nil,
+          lease_expires_at: nil,
+          last_error_code: nil,
+          completed_at: now,
+          updated_at: now
+        ]
+      )
+
+    Repodata.enqueue_regeneration(repository.id)
+
+    %{storage_path: package.storage_path, version_id: package.storage_version_id}
+    |> DarkZenith.Workers.FinalVersionCleanup.new()
+    |> Oban.insert!()
+  end
+
+  ## delete_signed_packages items (DESIGN.md: Signing Transition Items)
+
+  # No download, temporary-space lease, or RPM/GPG work: one fenced
+  # transaction applies the standard package deletion or cancels on a
+  # missing/mismatched package.
+  defp delete_item(item, transition, token, package) do
+    {:ok, result} =
+      Repo.transact(fn ->
+        owner =
+          Repo.one(from u in User, where: u.id == ^transition.user_id, lock: "FOR UPDATE")
+
+        repository =
+          Repo.one(
+            from r in Repository, where: r.id == ^item.repository_id, lock: "FOR UPDATE"
+          )
+
+        current_package =
+          Repo.one(from p in Package, where: p.id == ^package.id, lock: "FOR UPDATE")
+
+        current_item = Repo.one!(from i in Item, where: i.id == ^item.id, lock: "FOR UPDATE")
+
+        cond do
+          current_item.status != "executing" or current_item.lease_token != token ->
+            {:ok, :lost}
+
+          is_nil(owner) or is_nil(repository) or is_nil(current_package) or
+            current_package.storage_path != item.expected_storage_path or
+              current_package.storage_version_id != item.expected_storage_version_id ->
+            {:ok, {:cancel_item, current_item}}
+
+          true ->
+            apply_delete_commit!(owner, repository, current_package, current_item)
+            {:ok, :committed}
+        end
+      end)
+
+    case result do
+      :committed ->
+        SigningTransitions.check_completion(transition.id)
+        :ok
+
+      :lost ->
+        :ok
+
+      {:cancel_item, current_item} ->
+        SigningTransitions.cancel_claimed_item(current_item, token)
+        :ok
+    end
+  end
+
+  defp apply_delete_commit!(owner, repository, package, item) do
+    now = DateTime.utc_now(:second)
+    entry_sizes = Repodata.entry_open_sizes(package)
+    overhead_now = Repodata.document_overhead(repository.package_count)
+    overhead_next = Repodata.document_overhead(repository.package_count - 1)
+
+    Repo.delete!(package)
+
+    {1, _} =
+      Repo.update_all(
+        from(r in Repository, where: r.id == ^repository.id),
+        inc: [
+          package_count: -1,
+          metadata_revision: 1,
+          primary_open_bytes: -entry_sizes.primary + overhead_next.primary - overhead_now.primary,
+          filelists_open_bytes:
+            -entry_sizes.filelists + overhead_next.filelists - overhead_now.filelists,
+          other_open_bytes: -entry_sizes.other + overhead_next.other - overhead_now.other
+        ]
+      )
+
+    {1, _} =
+      Repo.update_all(
+        from(u in User, where: u.id == ^owner.id),
+        inc: [storage_bytes: -package.size_package]
+      )
 
     {1, _} =
       Repo.update_all(

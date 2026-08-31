@@ -140,6 +140,14 @@ if config_env() == :prod do
 
   config :dark_zenith, max_repodata_open_bytes: max_repodata_open_bytes
 
+  signing_preparation_batch_size =
+    case Integer.parse(System.get_env("SIGNING_PREPARATION_BATCH_SIZE") || "1000") do
+      {value, ""} when value >= 1 and value <= 10_000 -> value
+      _ -> raise "SIGNING_PREPARATION_BATCH_SIZE must be an integer from 1 through 10000"
+    end
+
+  config :dark_zenith, signing_preparation_batch_size: signing_preparation_batch_size
+
   if tmpdir = System.get_env("RPM_UPLOAD_TMPDIR") do
     config :dark_zenith, rpm_upload_tmpdir: tmpdir
   end
