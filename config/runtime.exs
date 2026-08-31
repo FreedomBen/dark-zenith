@@ -106,6 +106,24 @@ if config_env() == :prod do
 
   config :dark_zenith, max_user_api_keys: max_user_api_keys
 
+  # 0 disables the combined collaborator/invitation limit per repository.
+  max_repository_collaborators =
+    case Integer.parse(System.get_env("MAX_REPOSITORY_COLLABORATORS") || "1000") do
+      {value, ""} when value >= 0 -> value
+      _ -> raise "MAX_REPOSITORY_COLLABORATORS must be a non-negative integer"
+    end
+
+  config :dark_zenith, max_repository_collaborators: max_repository_collaborators
+
+  # 0 disables invitation expiry (expires_at stored as null).
+  invitation_expiry_days =
+    case Integer.parse(System.get_env("INVITATION_EXPIRY_DAYS") || "30") do
+      {value, ""} when value >= 0 -> value
+      _ -> raise "INVITATION_EXPIRY_DAYS must be a non-negative integer"
+    end
+
+  config :dark_zenith, invitation_expiry_days: invitation_expiry_days
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :dark_zenith, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")

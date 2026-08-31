@@ -40,7 +40,8 @@ config :dark_zenith, Oban,
     {Oban.Plugins.Lifeline, rescue_after: :timer.minutes(30)},
     {Oban.Plugins.Cron,
      crontab: [
-       {"0 * * * *", DarkZenith.Workers.SessionTokenCleanup}
+       {"0 * * * *", DarkZenith.Workers.SessionTokenCleanup},
+       {"0 * * * *", DarkZenith.Workers.InvitationCleanup}
      ]}
   ]
 
