@@ -5,10 +5,11 @@ spec rule, what the code actually does, and why it matters. Work through them wi
 checklist at the end.
 
 **Status: all items resolved** (2026-08-31). Every checklist entry below is fixed in
-code with test coverage; `mix test` reports 879 tests, 0 failures (3 excluded: the
+code with test coverage; `mix test` reports 882 tests, 0 failures (3 excluded: the
 `:rpmsign`-tagged test, which self-enables when `rpmsign` is installed, and the new
 two-test `:fips` profile, which self-enables on a FIPS-mode host). Resolution notes
-for judgment calls are inline in the checklist.
+for judgment calls are inline in the checklist. One additional deviation (K1) was
+found and fixed while resolving the original list.
 
 **Review scope**: all of `DESIGN.md` (1 399 lines) against `lib/`, `config/`,
 `priv/repo/migrations/`, `assets/`, and `test/`.
@@ -55,6 +56,7 @@ one storage-quota accounting hole.
 | I1  | Web UI              | Private-repo GPG key import instructions cannot work                    | Medium   |
 | I2  | Web UI              | No API-key creation prompt / one-time snippet on repository detail      | Low      |
 | J1  | Tests               | No FIPS-mode test profile                                               | Medium   |
+| K1  | User lifecycle      | User deletion left unresolved signing transitions uncanceled            | Medium   |
 
 ---
 
@@ -371,6 +373,29 @@ No `fips` tag, profile, or test exists anywhere in `test/`. The weak-digest vari
 covered (`test/dark_zenith/rpm/parser_test.exs:131-156`, synthesized by mutating the
 bundled fixtures) but only in the normal profile.
 
+## K. Found while resolving this list
+
+### K1 — User deletion left unresolved signing transitions uncanceled
+
+*Spec*: User Lifecycle — "Signing transitions the user owned, their repository
+snapshots, and their items are likewise retained for audit: any transition still
+`preparing`, `activating`, `active`, `finalizing`, or `failed` is marked `canceled`,
+encrypted candidate fields are nulled, and linked reservations are released in the
+deletion transaction … the transition's `user_id` is cleared through
+`ON DELETE SET NULL`."
+
+`Accounts.delete_user_checked/2` cleaned up upload intents and invitations but never
+touched signing transitions: a nonterminal user-wide transition (reachable with zero
+owned repositories — e.g. an `active`/`finalizing` removal, or a `failed` pre-swap
+replacement) survived deletion nonterminal, keeping its encrypted candidate key
+material, and any leftover item-linked reservation was reclaimed only by the FK
+cascade rather than released in-transaction. Fixed:
+`SigningTransitions.cancel_transitions_for_deleted_user!/1` runs in the deletion
+transaction after the target user-row lock (global lock order; phase workers lock
+user → transition the same way), cancelling each unresolved transition via
+`cancel_transition!/1`, which nulls the candidate fields, cancels unfinished items,
+and releases their reservations. Terminal transitions are retained untouched.
+
 ---
 
 ## Checklist
@@ -443,3 +468,7 @@ bundled fixtures) but only in the normal profile.
 ### Tests
 - [x] **J1** Add a FIPS-mode test profile covering weak-digest rejection and crypto-policy-disabled signing algorithms
       (`:fips` tag, self-enabled when `/proc/sys/crypto/fips_enabled` reads `1`)
+
+### Found while resolving this list
+- [x] **K1** Cancel the deleted user's unresolved signing transitions, null their
+      candidate fields, and release linked reservations in the deletion transaction

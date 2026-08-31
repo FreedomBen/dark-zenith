@@ -493,9 +493,11 @@ defmodule DarkZenith.Accounts do
   @doc """
   Deletes a user account (admin-only, never self) under the shared
   admin-invariant lock. Rejected while the target still owns repositories.
-  Records upload staging keys and releases linked reservations before the
-  cascades remove the rows, and deletes pending invitations addressed to
-  the target's email so re-registration cannot re-attach to old invites.
+  Cancels the target's unresolved signing transitions (nulling candidate
+  fields and releasing linked reservations), records upload staging keys
+  and releases linked reservations before the cascades remove the rows,
+  and deletes pending invitations addressed to the target's email so
+  re-registration cannot re-attach to old invites.
   """
   def admin_delete_user(%User{} = actor, target_id) do
     Repo.transact(fn ->
@@ -532,6 +534,16 @@ defmodule DarkZenith.Accounts do
         {:error, :last_admin}
 
       true ->
+        # Global lock order: the target user row precedes its signing
+        # transitions and items.
+        lock_user_row!(target.id)
+
+        # Unresolved signing transitions are canceled with candidate fields
+        # nulled and linked reservations released before the delete nulls
+        # their user_id; the rows are retained for audit (DESIGN.md: User
+        # Lifecycle).
+        DarkZenith.SigningTransitions.cancel_transitions_for_deleted_user!(target.id)
+
         intents =
           Repo.all(
             from i in DarkZenith.Uploads.Intent,

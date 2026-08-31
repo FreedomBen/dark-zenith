@@ -242,6 +242,30 @@ defmodule DarkZenith.SigningTransitions do
   end
 
   @doc """
+  Cancels the user's unresolved signing transitions inside the account
+  deletion transaction (DESIGN.md: User Lifecycle): each preparing,
+  activating, active, finalizing, or failed transition is marked canceled
+  with its encrypted candidate fields nulled, unfinished items are
+  canceled, and linked reservations are released. The rows are retained
+  for audit; `user_id` clears through ON DELETE SET NULL when the user row
+  is removed. Callers hold the user-row lock first (global lock order).
+  """
+  def cancel_transitions_for_deleted_user!(user_id) do
+    transitions =
+      Repo.all(
+        from t in Transition,
+          where:
+            t.user_id == ^user_id and
+              t.status in ["preparing", "activating", "active", "finalizing", "failed"],
+          order_by: [asc: t.id],
+          lock: "FOR UPDATE"
+      )
+
+    Enum.each(transitions, &cancel_transition!/1)
+    :ok
+  end
+
+  @doc """
   Cancels active/failed transitions for a deleted repository, including
   every unfinished item referencing it (its deletion transaction).
   """
