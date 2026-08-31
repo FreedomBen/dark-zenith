@@ -2,7 +2,7 @@
 #
 # Fedora is the base because upload verification requires RPM 6.0+
 # (rpmkeys), and GPG key upload additionally uses rpmsign and gpg.
-FROM fedora:43 AS build
+FROM fedora:44 AS build
 
 RUN dnf install -y elixir erlang git rpm-sign gnupg2 && dnf clean all
 
@@ -20,7 +20,7 @@ COPY assets assets
 COPY lib lib
 RUN mix assets.deploy && mix compile && mix release
 
-FROM fedora:43 AS app
+FROM fedora:44 AS app
 
 # rpm/rpmkeys verify every upload; rpm-sign and gnupg2 back GPG key
 # validation and signing. These tools process attacker-supplied material:
