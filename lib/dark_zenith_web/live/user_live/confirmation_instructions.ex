@@ -7,7 +7,7 @@ defmodule DarkZenithWeb.UserLive.ConfirmationInstructions do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:narrow}>
-      <div>
+      <Layouts.auth_card>
         <div class="text-center">
           <.header>
             No confirmation instructions received?
@@ -33,7 +33,7 @@ defmodule DarkZenithWeb.UserLive.ConfirmationInstructions do
         <p class="text-center mt-4 space-x-2">
           <.link href={~p"/users/log-in"} class="link">Log in</.link>
         </p>
-      </div>
+      </Layouts.auth_card>
     </Layouts.app>
     """
   end

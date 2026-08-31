@@ -76,7 +76,12 @@ defmodule DarkZenithWeb.LiveRateLimitTest do
 
     {:ok, lv, _html} = build_conn() |> log_in_user(user) |> live(~p"/users/settings")
 
+    # Opening the confirmation dialog is not the mutation; the confirming
+    # click resolves to the staged event and is what the bucket governs.
     html = lv |> element("#revoke-clear-metadata") |> render_click()
+    refute html =~ "Too many requests"
+
+    html = lv |> element("#confirm_action") |> render_click()
     assert html =~ "Too many requests"
 
     refute DarkZenith.Repo.get!(DarkZenith.Accounts.User, user.id).gpg_key_transition_id

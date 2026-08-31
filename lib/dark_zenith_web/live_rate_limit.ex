@@ -67,7 +67,7 @@ defmodule DarkZenithWeb.LiveRateLimit do
 
   defp limit_event(event, params, socket) do
     identity = socket.assigns[:__rate_identity__] || {:ip, :unknown_peer}
-    buckets = buckets_for(socket.view, event, params, identity)
+    buckets = buckets_for(socket.view, staged_event(event, socket), params, identity)
 
     {allowed?, governing} = RateLimit.hit(buckets)
 
@@ -89,6 +89,19 @@ defmodule DarkZenithWeb.LiveRateLimit do
        |> put_flash(:error, "Too many requests. Please retry in #{retry_after} seconds.")}
     end
   end
+
+  # The shared confirmation dialog stages a destructive event and replays it
+  # on run_confirm (docs/DESIGN_UI.md — Dialogs); the staged event's
+  # specialized bucket must govern the confirming click too. A halted
+  # confirm leaves the dialog open, so a later retry is re-limited.
+  defp staged_event("run_confirm", socket) do
+    case socket.assigns[:pending_confirm] do
+      %{event: staged} when is_binary(staged) -> staged
+      _ -> "run_confirm"
+    end
+  end
+
+  defp staged_event(event, _socket), do: event
 
   defp buckets_for(view, event, params, identity) do
     case Map.fetch(Map.get(@auth_attempts, view, %{}), event) do

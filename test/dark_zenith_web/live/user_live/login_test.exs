@@ -12,6 +12,11 @@ defmodule DarkZenithWeb.UserLive.LoginTest do
       assert html =~ "Sign up"
       assert html =~ "Forgot your password?"
       assert html =~ "Resend confirmation email"
+
+      # Auth pages are a centered card with the mark above the form
+      # (docs/DESIGN_UI.md — Auth pages).
+      assert html =~ ~r|rounded-box border border-base-content/10[^"]*"[^>]*>\s*<svg|
+      refute html =~ "dz-hero"
     end
 
     test "does not render the Phoenix scaffold navbar", %{conn: conn} do

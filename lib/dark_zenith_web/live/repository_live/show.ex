@@ -9,60 +9,71 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:data}>
       <div class="space-y-8">
-        <div class="flex items-center justify-between">
+        <div class="space-y-2">
+          <Layouts.breadcrumbs segments={[
+            {"Repositories", ~p"/repos"},
+            {@repository.slug, nil}
+          ]} />
           <.header>
             {@repository.name}
             <.badge :if={!@repository.is_public} variant={:private} class="align-middle ml-2" />
             <:subtitle>{@repository.description}</:subtitle>
+            <:actions :if={@manager?}>
+              <div class="flex gap-2">
+                <.link navigate={~p"/repos/#{@repository.slug}/settings"} class="btn btn-ghost">
+                  Settings
+                </.link>
+                <.link navigate={~p"/repos/#{@repository.slug}/upload"} class="btn btn-primary">
+                  Upload RPM
+                </.link>
+              </div>
+            </:actions>
           </.header>
-          <div :if={@manager?} class="flex gap-2">
-            <.link navigate={~p"/repos/#{@repository.slug}/settings"} class="btn btn-ghost">
-              Settings
-            </.link>
-            <.link navigate={~p"/repos/#{@repository.slug}/upload"} class="btn btn-primary">
-              Upload RPM
-            </.link>
-          </div>
         </div>
 
-        <section>
+        <section :if={@repository.is_public}>
           <h2 class="text-lg font-semibold mb-2">Setup instructions</h2>
 
-          <p class="text-sm mb-2">
-            Save this as <code>/etc/yum.repos.d/dark-zenith-{@repository.slug}.repo</code>:
-          </p>
-          <.command_block id="repo-file" command={@repo_file} />
-
-          <div :if={!@repository.is_public} class="text-sm mt-2 space-y-1">
-            <p>
-              Replace <code>&lt;api-key&gt;</code>
-              with one of your API keys carrying <code>repo:read</code>, then restrict the file since it embeds the key:
-            </p>
-            <.command_block
-              id="chmod-repo-file"
-              command={"sudo chmod 600 /etc/yum.repos.d/dark-zenith-#{@repository.slug}.repo"}
-            />
-            <p :if={!@has_suitable_key?} class="alert alert-warning mt-2">
-              You have no active API key with <code>repo:read</code>.
-              <.link navigate={~p"/users/settings"} class="link font-semibold">
-                Create one in account settings
-              </.link>
-              first — the plaintext is shown exactly once at creation.
-            </p>
+          <div role="tablist" class="tabs tabs-border mb-3">
+            <button
+              :for={
+                {tab, label} <- [{"dnf5", "DNF 5"}, {"dnf4", "DNF 4"}, {"repo-file", ".repo file"}]
+              }
+              type="button"
+              role="tab"
+              id={"setup-tab-#{tab}"}
+              class={["tab", @setup_tab == tab && "tab-active"]}
+              aria-selected={to_string(@setup_tab == tab)}
+              phx-click="setup_tab"
+              phx-value-tab={tab}
+            >
+              {label}
+            </button>
           </div>
 
-          <div :if={@repository.is_public} class="mt-4 space-y-2 text-sm">
-            <p>Or add it with one command:</p>
-            <.command_block
-              id="dnf4-addrepo"
-              eyebrow="DNF 4"
-              command={"dnf config-manager --add-repo #{repo_file_url(@base_url, @repository)}"}
-            />
+          <div :if={@setup_tab == "dnf5"} class="space-y-2 text-sm">
+            <p>Add the repository with one command:</p>
             <.command_block
               id="dnf5-addrepo"
               eyebrow="DNF 5"
               command={"dnf5 config-manager addrepo --from-repofile=#{repo_file_url(@base_url, @repository)}"}
             />
+          </div>
+
+          <div :if={@setup_tab == "dnf4"} class="space-y-2 text-sm">
+            <p>Add the repository with one command:</p>
+            <.command_block
+              id="dnf4-addrepo"
+              eyebrow="DNF 4"
+              command={"dnf config-manager --add-repo #{repo_file_url(@base_url, @repository)}"}
+            />
+          </div>
+
+          <div :if={@setup_tab == "repo-file"} class="space-y-2 text-sm">
+            <p>
+              Save this as <code>/etc/yum.repos.d/dark-zenith-{@repository.slug}.repo</code>:
+            </p>
+            <.command_block id="repo-file" command={@repo_file} />
             <details class="mt-2">
               <summary class="cursor-pointer">
                 Authenticated access (recommended for higher rate limits)
@@ -71,15 +82,45 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
             </details>
           </div>
 
-          <div :if={@repository.gpg_key_fingerprint && @repository.is_public} class="mt-4 text-sm">
+          <div :if={@repository.gpg_key_fingerprint} class="mt-4 text-sm">
             <p class="mb-2">Import the repository signing key:</p>
             <.command_block
               id="gpg-import"
               command={"sudo rpmkeys --import #{gpg_key_url(@base_url, @repository)}"}
             />
           </div>
+        </section>
 
-          <div :if={@repository.gpg_key_fingerprint && !@repository.is_public} class="mt-4 text-sm">
+        <section :if={!@repository.is_public}>
+          <h2 class="text-lg font-semibold mb-2">Setup instructions</h2>
+
+          <p class="text-sm mb-2">
+            Save this as <code>/etc/yum.repos.d/dark-zenith-{@repository.slug}.repo</code>:
+          </p>
+          <.command_block id="repo-file" command={@repo_file} />
+
+          <div class="text-sm mt-2 space-y-1">
+            <p>
+              Replace <code>&lt;api-key&gt;</code>
+              with one of your API keys carrying <code>repo:read</code>, then restrict the file since it embeds the key:
+            </p>
+            <.command_block
+              id="chmod-repo-file"
+              command={"sudo chmod 600 /etc/yum.repos.d/dark-zenith-#{@repository.slug}.repo"}
+            />
+            <div :if={!@has_suitable_key?} class="alert alert-warning alert-soft mt-2">
+              <.icon name="hero-exclamation-triangle" class="size-5 shrink-0" />
+              <span>
+                You have no active API key with <code>repo:read</code>.
+                <.link navigate={~p"/users/settings"} class="link font-semibold">
+                  Create one in account settings
+                </.link>
+                first — the plaintext is shown exactly once at creation.
+              </span>
+            </div>
+          </div>
+
+          <div :if={@repository.gpg_key_fingerprint} class="mt-4 text-sm">
             <p class="mb-2">
               Import the repository signing key. The key URL requires credentials,
               so curl prompts for your API key (it never appears in the command
@@ -95,23 +136,15 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
         <section>
           <h2 class="text-lg font-semibold mb-2">Packages</h2>
 
-          <form id="package-search-form" phx-change="search_packages" class="mb-3 flex gap-2">
+          <form id="package-search-form" phx-change="search_packages" class="mb-3">
             <input
               type="text"
               name="q"
               value={@package_q}
               placeholder="Search name or summary"
               phx-debounce="300"
-              class="input input-bordered input-sm grow"
+              class="input input-bordered input-sm w-full sm:w-80"
             />
-            <select name="sort" class="select select-bordered select-sm w-44">
-              <option value="" selected={@package_sort == nil}>Name</option>
-              <option value="version" selected={@package_sort == "version"}>Version (EVR)</option>
-              <option value="arch" selected={@package_sort == "arch"}>Arch</option>
-              <option value="-inserted_at" selected={@package_sort == "-inserted_at"}>
-                Newest
-              </option>
-            </select>
           </form>
 
           <Layouts.empty_state :if={@packages == []}>
@@ -126,39 +159,38 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
             </:action>
           </Layouts.empty_state>
 
-          <div :if={@packages != []} class="overflow-x-auto">
-            <table class="table table-sm">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>EVR</th>
-                  <th>Arch</th>
-                  <th>Summary</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr :for={package <- @packages} id={"package-#{package.id}"}>
-                  <td>
-                    <.link
-                      navigate={~p"/repos/#{@repository.slug}/packages/#{package.name}"}
-                      class="link"
-                    >
-                      {package.name}
-                    </.link>
-                  </td>
-                  <td class="font-mono">
-                    <.link
-                      navigate={~p"/repos/#{@repository.slug}/package-versions/#{package.id}"}
-                      class="link"
-                    >
-                      {DarkZenith.Packages.display_evr(package)}
-                    </.link>
-                  </td>
-                  <td>{package.arch}</td>
-                  <td class="max-w-xs truncate">{package.summary}</td>
-                </tr>
-              </tbody>
-            </table>
+          <div :if={@packages != []}>
+            <.table
+              id="packages"
+              rows={@packages}
+              row_id={&"package-#{&1.id}"}
+              sort={@package_sort}
+              sort_event="sort_packages"
+            >
+              <:col :let={package} label="Name" sort="name" mono>
+                <.link
+                  navigate={~p"/repos/#{@repository.slug}/packages/#{package.name}"}
+                  class="link"
+                >
+                  {package.name}
+                </.link>
+              </:col>
+              <:col :let={package} label="EVR" sort="version" mono>
+                <.link
+                  navigate={~p"/repos/#{@repository.slug}/package-versions/#{package.id}"}
+                  class="link"
+                >
+                  {DarkZenith.Packages.display_evr(package)}
+                </.link>
+              </:col>
+              <:col :let={package} label="Arch" sort="arch" mono>{package.arch}</:col>
+              <:col :let={package} label="Summary">
+                <span class="block max-w-xs truncate">{package.summary}</span>
+              </:col>
+              <:col :let={package} label="Uploaded" sort="inserted_at">
+                {Calendar.strftime(package.inserted_at, "%Y-%m-%d")}
+              </:col>
+            </.table>
 
             <div :if={@package_pages > 1} class="mt-2 flex gap-2 items-center text-sm">
               <button
@@ -206,6 +238,7 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
            RepoFile.render(repository, base_url, credentials: :with_placeholders)
          )
          |> assign(:has_suitable_key?, suitable_key?(repository, user))
+         |> assign(:setup_tab, "dnf5")
          |> assign(:package_q, "")
          |> assign(:package_sort, nil)
          |> load_packages(1)}
@@ -224,17 +257,29 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
   end
 
   @valid_sorts ~w(version -version arch -arch inserted_at -inserted_at name -name)
+  @setup_tabs ~w(dnf5 dnf4 repo-file)
 
   @impl true
-  def handle_event("search_packages", params, socket) do
-    sort = if params["sort"] in @valid_sorts, do: params["sort"], else: nil
+  def handle_event("setup_tab", %{"tab" => tab}, socket) when tab in @setup_tabs do
+    {:noreply, assign(socket, :setup_tab, tab)}
+  end
 
+  def handle_event("search_packages", params, socket) do
     {:noreply,
      socket
      |> assign(:package_q, String.slice(params["q"] || "", 0, 256))
+     |> load_packages(1)}
+  end
+
+  def handle_event("sort_packages", %{"sort" => sort}, socket) when sort in @valid_sorts do
+    {:noreply,
+     socket
      |> assign(:package_sort, sort)
      |> load_packages(1)}
   end
+
+  # Out-of-vocabulary sort values (a crafted event) are ignored.
+  def handle_event("sort_packages", _params, socket), do: {:noreply, socket}
 
   def handle_event("package_page", %{"page" => page}, socket) do
     {:noreply, load_packages(socket, String.to_integer(page))}

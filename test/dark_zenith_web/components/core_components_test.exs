@@ -69,7 +69,9 @@ defmodule DarkZenithWeb.CoreComponentsTest do
         {:failed, "badge-soft badge-error", "failed"},
         {:queued, "badge-soft badge-neutral", "queued"},
         {:sent, "badge-soft badge-success", "sent"},
-        {:suppressed, "badge-soft badge-warning", "suppressed"}
+        {:suppressed, "badge-soft badge-warning", "suppressed"},
+        {:processing, "badge-soft badge-warning", "processing"},
+        {:preview_ready, "badge-soft badge-accent", "preview ready"}
       ]
 
       for {variant, classes, label} <- expectations do
@@ -227,6 +229,49 @@ defmodule DarkZenithWeb.CoreComponentsTest do
       assert html =~ "modal-backdrop"
       assert html =~ ~s(phx-key="escape")
       assert html =~ ~s(phx-window-keydown="cancel")
+    end
+  end
+
+  describe "confirm_modal/1" do
+    test "renders nothing without a pending confirmation" do
+      html = render_component(&CoreComponents.confirm_modal/1, %{pending: nil})
+
+      refute html =~ "modal-open"
+    end
+
+    test "renders the pending consequence with cancel and run actions" do
+      html =
+        render_component(&CoreComponents.confirm_modal/1, %{
+          pending: %{
+            event: "remove_thing",
+            params: %{},
+            title: "Remove thing",
+            message: "It stays removed.",
+            confirm_label: "Remove it"
+          }
+        })
+
+      assert html =~ "modal-open"
+      assert html =~ "Remove thing"
+      assert html =~ "It stays removed."
+      assert html =~ "Remove it"
+      assert html =~ ~s(phx-click="cancel_confirm")
+      assert html =~ ~s(phx-click="run_confirm")
+      assert html =~ "btn-error"
+    end
+  end
+
+  describe "header/1" do
+    test "titles render in the display face at page-title scale" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.header>Repositories</CoreComponents.header>
+        """)
+
+      assert html =~ "font-display"
+      assert html =~ "text-2xl"
     end
   end
 

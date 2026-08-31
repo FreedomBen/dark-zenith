@@ -188,6 +188,28 @@ defmodule DarkZenithWeb.Layouts do
   end
 
   @doc """
+  Renders the auth-page card (docs/DESIGN_UI.md — Page notes): a centered,
+  hairline-bordered card with the mark above the form. Quiet — no star-field.
+
+  ## Examples
+
+      <Layouts.auth_card>
+        <.header>Log in</.header>
+        ...
+      </Layouts.auth_card>
+  """
+  slot :inner_block, required: true
+
+  def auth_card(assigns) do
+    ~H"""
+    <div class="rounded-box border border-base-content/10 bg-base-200 px-6 py-8 sm:px-8">
+      <.zenith_mark class="mx-auto mb-6 size-10" />
+      {render_slot(@inner_block)}
+    </div>
+    """
+  end
+
+  @doc """
   Renders the reticle as a loading spinner (docs/DESIGN_UI.md — Components):
   the ring and ticks rotate while the star stays fixed. `prefers-reduced-motion`
   leaves the mark static; the label always shows.

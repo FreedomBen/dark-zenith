@@ -28,21 +28,31 @@ defmodule DarkZenithWeb.UserLive.SettingsAccountTest do
       assert {:ok, _} = Accounts.fetch_api_key_user(plaintext)
       assert html =~ "ci key"
       assert html =~ "package:upload, repo:read"
+
+      # The one-time secret renders as a copyable command block
+      # (docs/DESIGN_UI.md — Settings pages).
+      assert html =~ ~s(aria-label="Copy to clipboard")
+      assert html =~ "bg-umbra"
     end
 
-    test "revokes a key with the signed-URL warning", %{conn: conn, user: user} do
+    test "revoking a key confirms in a modal with the signed-URL warning", %{
+      conn: conn,
+      user: user
+    } do
       {:ok, {_plaintext, key}} =
         Accounts.create_api_key(user, %{name: "doomed", scopes: ["repo:read"]})
 
       {:ok, lv, html} = live(conn, ~p"/users/settings")
       assert html =~ "doomed"
+      refute html =~ "confirm_modal"
 
-      confirm =
-        lv |> element("#revoke-key-#{key.id}") |> render()
+      # Opening the dialog shows the consequence text and revokes nothing yet.
+      html = lv |> element("#revoke-key-#{key.id}") |> render_click()
+      assert html =~ "confirm_modal"
+      assert html =~ "signed download URL"
+      assert length(Accounts.list_api_keys(user)) == 1
 
-      assert confirm =~ "signed download URL"
-
-      lv |> element("#revoke-key-#{key.id}") |> render_click()
+      lv |> element("#confirm_action") |> render_click()
       assert Accounts.list_api_keys(user) == []
     end
   end
@@ -109,7 +119,9 @@ defmodule DarkZenithWeb.UserLive.SettingsAccountTest do
       assert html =~ pair.fingerprint
       assert html =~ "never"
 
+      # Removal runs through the confirmation modal.
       lv |> element("#remove-gpg-key") |> render_click()
+      lv |> element("#confirm_action") |> render_click()
       assert render(lv) =~ "Upload key pair"
     end
 
@@ -206,6 +218,7 @@ defmodule DarkZenithWeb.UserLive.SettingsGpgTransitionsTest do
     refute html =~ "id=\"remove-gpg-key\""
 
     lv |> element("#revoke-clear-metadata") |> render_click()
+    lv |> element("#confirm_action") |> render_click()
 
     html = render(lv)
     assert html =~ "Metadata signing removal in progress"

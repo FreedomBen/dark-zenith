@@ -30,12 +30,40 @@ import {hooks as colocatedHooks} from "phoenix-colocated/dark_zenith"
 // the intent. RPM bytes never touch Phoenix.
 const DirectUpload = {
   mounted() {
-    const input = this.el.querySelector("input[type=file]")
-    input.addEventListener("change", () => {
-      const file = input.files[0]
+    // The hook lives on a wrapper that stays mounted across phases, so
+    // listeners are delegated: the file input and drop zone only exist in
+    // the idle phase and are re-rendered on reset.
+    const select = file => {
       if (!file) return
       this.file = file
       this.pushEvent("select_file", {name: file.name, size: file.size})
+    }
+    const zone = () => this.el.querySelector("[data-drop-zone]")
+    this.el.addEventListener("change", e => {
+      if (e.target.matches("input[type=file]")) select(e.target.files[0])
+    })
+    // Drag-and-drop onto the zone (docs/DESIGN_UI.md — Upload). The depth
+    // counter keeps the highlight through dragenter/dragleave on children.
+    this.dragDepth = 0
+    this.el.addEventListener("dragenter", e => {
+      const z = zone()
+      if (!z) return
+      e.preventDefault()
+      this.dragDepth++
+      z.classList.add("dz-dragover")
+    })
+    this.el.addEventListener("dragover", e => zone() && e.preventDefault())
+    this.el.addEventListener("dragleave", () => {
+      this.dragDepth = Math.max(this.dragDepth - 1, 0)
+      if (this.dragDepth === 0) zone()?.classList.remove("dz-dragover")
+    })
+    this.el.addEventListener("drop", e => {
+      const z = zone()
+      if (!z) return
+      e.preventDefault()
+      this.dragDepth = 0
+      z.classList.remove("dz-dragover")
+      select(e.dataTransfer.files[0])
     })
     this.handleEvent("start_upload", ({url}) => this.put(url))
   },

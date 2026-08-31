@@ -105,6 +105,23 @@ defmodule DarkZenithWeb.LayoutsTest do
     end
   end
 
+  describe "auth_card/1" do
+    test "renders a hairline card with the mark above the content" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <Layouts.auth_card>the form</Layouts.auth_card>
+        """)
+
+      assert html =~ "rounded-box border border-base-content/10"
+      # The mark precedes the slot content.
+      assert [_, mark_then_content] = Regex.run(~r|(<svg.*the form)|s, html)
+      assert mark_then_content =~ "mx-auto"
+      assert html =~ "the form"
+    end
+  end
+
   describe "reticle_spinner/1" do
     test "rotates the ring and ticks while the star stays fixed, with a status label" do
       html = render_component(&Layouts.reticle_spinner/1, %{})

@@ -7,80 +7,86 @@ defmodule DarkZenithWeb.UserLive.ResetPassword do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:narrow}>
-      <div :if={@completed} class="space-y-6" id="reset-complete">
-        <div class="text-center">
-          <.header>Password reset</.header>
+      <Layouts.auth_card>
+        <div :if={@completed} class="space-y-6" id="reset-complete">
+          <div class="text-center">
+            <.header>Password reset</.header>
+          </div>
+
+          <p class="text-sm">
+            Your password was reset and every web and API session was signed out. API keys
+            deliberately survive password changes — review them below, since keys created
+            during an account compromise stay valid until revoked.
+          </p>
+
+          <div :if={@active_keys == []} class="text-sm text-base-content/60">
+            You have no active API keys.
+          </div>
+
+          <ul :if={@active_keys != []} class="divide-y divide-base-content/10 text-sm">
+            <li :for={key <- @active_keys} class="py-2">
+              <span class="font-semibold">{key.name}</span>
+              <span class="font-mono text-base-content/60 ml-2">{key.key_prefix}…</span>
+              <span class="text-xs text-base-content/60 ml-2">{Enum.join(key.scopes, ", ")}</span>
+            </li>
+          </ul>
+
+          <button
+            :if={@active_keys != []}
+            id="revoke-all-keys"
+            class="btn btn-error w-full"
+            phx-click="request_confirm"
+            phx-value-event="revoke_all_keys"
+          >
+            Revoke all API keys
+          </button>
+
+          <p class="text-center">
+            <.link href={~p"/users/log-in"} class="btn btn-primary w-full">
+              Continue to log in
+            </.link>
+          </p>
         </div>
 
-        <p class="text-sm">
-          Your password was reset and every web and API session was signed out. API keys
-          deliberately survive password changes — review them below, since keys created
-          during an account compromise stay valid until revoked.
-        </p>
+        <div :if={!@completed}>
+          <div class="text-center">
+            <.header>Reset password</.header>
+          </div>
 
-        <div :if={@active_keys == []} class="text-sm text-base-content/60">
-          You have no active API keys.
+          <.form
+            for={@form}
+            id="reset_password_form"
+            phx-submit="reset_password"
+            phx-change="validate"
+          >
+            <.input
+              field={@form[:password]}
+              type="password"
+              label="New password"
+              autocomplete="new-password"
+              spellcheck="false"
+              required
+            />
+            <.input
+              field={@form[:password_confirmation]}
+              type="password"
+              label="Confirm new password"
+              autocomplete="new-password"
+              spellcheck="false"
+              required
+            />
+            <.button phx-disable-with="Resetting..." class="btn btn-primary w-full">
+              Reset password
+            </.button>
+          </.form>
+
+          <p class="text-center mt-4 space-x-2">
+            <.link href={~p"/users/log-in"} class="link">Log in</.link>
+          </p>
         </div>
+      </Layouts.auth_card>
 
-        <ul :if={@active_keys != []} class="divide-y divide-base-300 text-sm">
-          <li :for={key <- @active_keys} class="py-2">
-            <span class="font-semibold">{key.name}</span>
-            <span class="font-mono text-base-content/60 ml-2">{key.key_prefix}…</span>
-            <span class="text-xs text-base-content/60 ml-2">{Enum.join(key.scopes, ", ")}</span>
-          </li>
-        </ul>
-
-        <button
-          :if={@active_keys != []}
-          id="revoke-all-keys"
-          class="btn btn-error w-full"
-          phx-click="revoke_all_keys"
-          data-confirm="Revoke every API key on this account?"
-        >
-          Revoke all API keys
-        </button>
-
-        <p class="text-center">
-          <.link href={~p"/users/log-in"} class="btn btn-primary w-full">Continue to log in</.link>
-        </p>
-      </div>
-
-      <div :if={!@completed}>
-        <div class="text-center">
-          <.header>Reset password</.header>
-        </div>
-
-        <.form
-          for={@form}
-          id="reset_password_form"
-          phx-submit="reset_password"
-          phx-change="validate"
-        >
-          <.input
-            field={@form[:password]}
-            type="password"
-            label="New password"
-            autocomplete="new-password"
-            spellcheck="false"
-            required
-          />
-          <.input
-            field={@form[:password_confirmation]}
-            type="password"
-            label="Confirm new password"
-            autocomplete="new-password"
-            spellcheck="false"
-            required
-          />
-          <.button phx-disable-with="Resetting..." class="btn btn-primary w-full">
-            Reset password
-          </.button>
-        </.form>
-
-        <p class="text-center mt-4 space-x-2">
-          <.link href={~p"/users/log-in"} class="link">Log in</.link>
-        </p>
-      </div>
+      <.confirm_modal pending={@pending_confirm} />
     </Layouts.app>
     """
   end
@@ -99,6 +105,7 @@ defmodule DarkZenithWeb.UserLive.ResetPassword do
      socket
      |> assign(:completed, false)
      |> assign(:active_keys, [])
+     |> assign(:pending_confirm, nil)
      |> assign_form(form_source), temporary_assigns: [form: nil]}
   end
 
@@ -125,6 +132,35 @@ defmodule DarkZenithWeb.UserLive.ResetPassword do
       Accounts.change_user_password(socket.assigns.user, user_params, hash_password: false)
 
     {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
+  end
+
+  # Revoking every key runs only after the shared modal confirms it
+  # (docs/DESIGN_UI.md — Dialogs).
+  def handle_event("request_confirm", %{"event" => "revoke_all_keys"}, socket) do
+    {:noreply,
+     assign(socket, :pending_confirm, %{
+       event: "revoke_all_keys",
+       params: %{},
+       title: "Revoke all API keys",
+       message:
+         "Every API key on this account stops working immediately; signed download " <>
+           "URLs already issued keep working until they expire.",
+       confirm_label: "Revoke all keys"
+     })}
+  end
+
+  def handle_event("cancel_confirm", _params, socket) do
+    {:noreply, assign(socket, :pending_confirm, nil)}
+  end
+
+  def handle_event("run_confirm", _params, socket) do
+    case socket.assigns.pending_confirm do
+      %{event: event, params: params} ->
+        handle_event(event, params, assign(socket, :pending_confirm, nil))
+
+      nil ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("revoke_all_keys", _params, socket) do

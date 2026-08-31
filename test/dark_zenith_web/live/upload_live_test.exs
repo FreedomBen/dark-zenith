@@ -25,6 +25,21 @@ defmodule DarkZenithWeb.UploadLiveTest do
     lv
   end
 
+  test "the idle page offers a drag-and-drop zone with the reticle watermark", ctx do
+    {:ok, _lv, html} =
+      ctx.conn
+      |> log_in_user(ctx.owner)
+      |> live(~p"/repos/#{ctx.repo.slug}/upload")
+
+    # docs/DESIGN_UI.md — Upload: dashed hairline drop zone, reticle
+    # watermark; the hook wrapper stays mounted across phases.
+    assert html =~ "data-drop-zone"
+    assert html =~ "border-dashed"
+    assert html =~ ~r|data-drop-zone.*<svg|s
+    assert html =~ ~s(phx-hook="DirectUpload")
+    assert html =~ ~s(aria-label="Breadcrumb")
+  end
+
   test "drives the full preview-and-confirm flow", ctx do
     lv = mount_upload(ctx.conn, ctx.owner, ctx.repo)
 
@@ -38,10 +53,16 @@ defmodule DarkZenithWeb.UploadLiveTest do
     intent = DarkZenith.Repo.one!(Intent)
     assert intent.mode == "web_preview"
 
+    # The transfer phase shows the reticle spinner, not a bare progress bar.
+    assert render(lv) =~ "animate-reticle-spin"
+
     # The browser reports the accepted version; completion queues processing.
     stub_pipeline(intent, ctx.binary)
     lv |> render_hook("uploaded", %{"version_id" => "4_zstaged"})
-    assert render(lv) =~ "Processing"
+    html = render(lv)
+    assert html =~ "Processing"
+    # Intent states surface as badges (docs/DESIGN_UI.md — Upload).
+    assert html =~ ~r|<span[^>]*badge[^>]*>\s*queued|
 
     # The durable worker runs the preview pass; polling picks it up.
     assert :ok = perform_job(UploadProcessing, %{"intent_id" => intent.id})
@@ -50,6 +71,13 @@ defmodule DarkZenithWeb.UploadLiveTest do
     assert html =~ "Preview"
     assert html =~ "dz-fixture"
     assert html =~ "Confirm upload"
+
+    # preview_ready badge plus a live countdown to the preview deadline.
+    assert html =~ "preview ready"
+    assert html =~ ~r|Preview expires in \d+:\d\d|
+
+    send(lv.pid, :countdown)
+    assert render(lv) =~ ~r|Preview expires in \d+:\d\d|
 
     # Confirmation queues final processing; polling lands on done.
     lv |> element("#confirm-upload") |> render_click()
@@ -60,6 +88,30 @@ defmodule DarkZenithWeb.UploadLiveTest do
     assert html =~ "/repos/#{ctx.repo.slug}/package-versions/#{intent.package_id}"
 
     assert DarkZenith.Repo.get!(Intent, intent.id).status == "succeeded"
+  end
+
+  test "an elapsed preview countdown surfaces the expiry error", ctx do
+    lv = mount_upload(ctx.conn, ctx.owner, ctx.repo)
+
+    lv |> render_hook("select_file", %{"name" => "u.rpm", "size" => byte_size(ctx.binary)})
+    intent = DarkZenith.Repo.one!(Intent)
+    stub_pipeline(intent, ctx.binary)
+    lv |> render_hook("uploaded", %{"version_id" => "4_zstaged"})
+    assert :ok = perform_job(UploadProcessing, %{"intent_id" => intent.id})
+    send(lv.pid, :poll)
+    assert render(lv) =~ "Confirm upload"
+
+    # Push the stored deadline into the past; the next tick reports expiry.
+    import Ecto.Query, only: [from: 2]
+
+    DarkZenith.Repo.update_all(
+      from(i in Intent, where: i.id == ^intent.id),
+      set: [expires_at: DateTime.add(DateTime.utc_now(:second), -1, :second)]
+    )
+
+    send(lv.pid, :poll)
+    send(lv.pid, :countdown)
+    assert render(lv) =~ "The preview expired"
   end
 
   test "cancel from the preview releases the upload", ctx do

@@ -327,7 +327,10 @@ defmodule DarkZenithWeb.CoreComponents do
   end
 
   @doc """
-  Renders a header with title.
+  Renders a page title block (docs/DESIGN_UI.md — Typography): a Spectral
+  title with an optional one-line muted description. Data titles (package
+  names, NEVRA) pass a `font-mono` span in the inner block, which overrides
+  the display face.
   """
   slot :inner_block, required: true
   slot :subtitle
@@ -337,7 +340,7 @@ defmodule DarkZenithWeb.CoreComponents do
     ~H"""
     <header class={[@actions != [] && "flex items-center justify-between gap-6", "pb-4"]}>
       <div>
-        <h1 class="text-lg font-semibold leading-8">
+        <h1 class="font-display text-2xl font-semibold leading-8">
           {render_slot(@inner_block)}
         </h1>
         <p :if={@subtitle != []} class="text-sm text-base-content/70">
@@ -546,7 +549,9 @@ defmodule DarkZenithWeb.CoreComponents do
     failed: {"badge-soft badge-error", "failed", nil},
     queued: {"badge-soft badge-neutral", "queued", nil},
     sent: {"badge-soft badge-success", "sent", nil},
-    suppressed: {"badge-soft badge-warning", "suppressed", nil}
+    suppressed: {"badge-soft badge-warning", "suppressed", nil},
+    processing: {"badge-soft badge-warning", "processing", nil},
+    preview_ready: {"badge-soft badge-accent", "preview ready", nil}
   }
 
   @doc """
@@ -611,6 +616,35 @@ defmodule DarkZenithWeb.CoreComponents do
       </div>
       <div class="modal-backdrop" phx-click={@on_cancel} aria-hidden="true"></div>
     </div>
+    """
+  end
+
+  @doc """
+  Renders the shared confirmation dialog for destructive actions
+  (docs/DESIGN_UI.md — Dialogs). The LiveView assigns a pending map with
+  `:title`, `:message`, and `:confirm_label` to open it, and handles
+  `cancel_confirm` (dismiss) and `run_confirm` (execute); `nil` hides it.
+
+  ## Examples
+
+      <.confirm_modal pending={@pending_confirm} />
+  """
+  attr :pending, :map, default: nil
+
+  def confirm_modal(assigns) do
+    ~H"""
+    <.modal id="confirm_modal" show={@pending != nil} on_cancel="cancel_confirm">
+      <h3 class="text-lg font-semibold">{@pending.title}</h3>
+      <p class="py-3 text-sm">{@pending.message}</p>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" phx-click="cancel_confirm">
+          {gettext("Cancel")}
+        </button>
+        <button type="button" id="confirm_action" class="btn btn-error" phx-click="run_confirm">
+          {@pending.confirm_label}
+        </button>
+      </div>
+    </.modal>
     """
   end
 

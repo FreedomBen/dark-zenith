@@ -22,88 +22,115 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:data}>
       <div class="space-y-8">
-        <.header>
-          Upload RPM
-          <:subtitle>
-            to
-            <.link navigate={~p"/repos/#{@repository.slug}"} class="link">
-              {@repository.name}
-            </.link>
-          </:subtitle>
-        </.header>
-
-        <div :if={@phase == :idle} id="direct-upload" phx-hook="DirectUpload">
-          <label class="block border-2 border-dashed border-base-300 rounded-lg p-10 text-center cursor-pointer">
-            <span class="block text-sm mb-2">
-              Choose an RPM file — it uploads directly to storage.
-            </span>
-            <input type="file" accept=".rpm" class="file-input file-input-bordered" />
-          </label>
+        <div class="space-y-2">
+          <Layouts.breadcrumbs segments={[
+            {"Repositories", ~p"/repos"},
+            {@repository.slug, ~p"/repos/#{@repository.slug}"},
+            {"Upload", nil}
+          ]} />
+          <.header>
+            Upload RPM
+            <:subtitle>
+              to
+              <.link navigate={~p"/repos/#{@repository.slug}"} class="link">
+                {@repository.name}
+              </.link>
+            </:subtitle>
+          </.header>
         </div>
 
-        <div :if={@phase == :uploading} class="space-y-2">
-          <p class="text-sm">
-            Transferring <span class="font-mono">{@filename}</span> directly to storage…
-          </p>
-          <progress class="progress w-full"></progress>
-        </div>
-
-        <div :if={@phase == :processing} class="space-y-2">
-          <p class="text-sm">
-            Processing <span class="font-mono">{@filename}</span>
-            — status: <span class="badge badge-ghost">{@status}</span>
-          </p>
-          <progress class="progress w-full"></progress>
-          <p class="text-xs text-base-content/60">
-            You can leave this page; processing continues in the background.
-          </p>
-        </div>
-
-        <div :if={@phase == :preview and @preview} class="space-y-4">
-          <h2 class="text-lg font-semibold">Preview</h2>
-          <div class="grid grid-cols-2 gap-x-8 gap-y-1 text-sm border border-base-300 rounded-lg p-4">
-            <div><span class="font-semibold">Name:</span> {@preview["name"]}</div>
-            <div>
-              <span class="font-semibold">Version:</span>
-              {@preview["epoch"]}:{@preview["version"]}-{@preview["release"]}
-            </div>
-            <div><span class="font-semibold">Arch:</span> {@preview["arch"]}</div>
-            <div><span class="font-semibold">License:</span> {@preview["license"]}</div>
-            <div class="col-span-2">
-              <span class="font-semibold">Summary:</span> {@preview["summary"]}
-            </div>
-            <div>
-              <span class="font-semibold">Files:</span> {length(@preview["files"] || [])}
-            </div>
-            <div>
-              <span class="font-semibold">Dependencies:</span>
-              {length(@preview["requires"] || [])}
-            </div>
-          </div>
-          <p class="text-xs text-base-content/60">
-            The preview expires after 15 minutes; nothing is published until you confirm.
-          </p>
-          <div class="flex gap-2">
-            <button id="confirm-upload" class="btn btn-primary" phx-click="confirm">
-              Confirm upload
-            </button>
-            <button id="cancel-upload" class="btn btn-ghost" phx-click="cancel">Cancel</button>
-          </div>
-        </div>
-
-        <div :if={@phase == :done} class="space-y-4">
-          <p class="text-success font-semibold">Package uploaded.</p>
-          <.link
-            navigate={~p"/repos/#{@repository.slug}/package-versions/#{@intent_package_id}"}
-            class="btn btn-primary"
+        <div id="direct-upload" phx-hook="DirectUpload" class="space-y-8">
+          <label
+            :if={@phase == :idle}
+            data-drop-zone
+            class={[
+              "relative flex cursor-pointer flex-col items-center gap-3 overflow-hidden",
+              "rounded-box border border-dashed border-base-content/20 px-6 py-14 text-center",
+              "dz-dragover:border-primary dz-dragover:bg-base-200"
+            ]}
           >
-            View package
-          </.link>
-        </div>
+            <Layouts.zenith_mark class="pointer-events-none absolute top-1/2 left-1/2 size-40 -translate-x-1/2 -translate-y-1/2 opacity-[0.06]" />
+            <span class="relative text-sm">
+              Drag an RPM here, or choose a file — it uploads directly to storage.
+            </span>
+            <input type="file" accept=".rpm" class="file-input file-input-bordered relative" />
+          </label>
 
-        <div :if={@error} class="alert alert-error text-sm" id="upload-error">
-          <span>{@error}</span>
-          <button class="btn btn-sm" phx-click="reset">Start over</button>
+          <div :if={@phase == :uploading} class="py-8">
+            <Layouts.reticle_spinner label={"Transferring #{@filename} directly to storage…"} />
+          </div>
+
+          <div :if={@phase == :processing} class="space-y-3 py-8">
+            <Layouts.reticle_spinner label={"Processing #{@filename}…"} />
+            <div class="flex justify-center">
+              <.badge variant={status_badge(@status)} />
+            </div>
+            <p class="text-center text-xs text-base-content/60">
+              You can leave this page; processing continues in the background.
+            </p>
+          </div>
+
+          <div :if={@phase == :preview and @preview} class="space-y-4">
+            <h2 class="flex items-center gap-3 text-lg font-semibold">
+              Preview <.badge variant={:preview_ready} class="badge-sm" />
+            </h2>
+            <div class="grid grid-cols-2 gap-x-8 gap-y-1 rounded-box border border-base-content/10 p-4 text-sm">
+              <div>
+                <span class="font-semibold">Name:</span>
+                <span class="font-mono">{@preview["name"]}</span>
+              </div>
+              <div>
+                <span class="font-semibold">Version:</span>
+                <span class="font-mono">
+                  {@preview["epoch"]}:{@preview["version"]}-{@preview["release"]}
+                </span>
+              </div>
+              <div>
+                <span class="font-semibold">Arch:</span>
+                <span class="font-mono">{@preview["arch"]}</span>
+              </div>
+              <div><span class="font-semibold">License:</span> {@preview["license"]}</div>
+              <div class="col-span-2">
+                <span class="font-semibold">Summary:</span> {@preview["summary"]}
+              </div>
+              <div>
+                <span class="font-semibold">Files:</span> {length(@preview["files"] || [])}
+              </div>
+              <div>
+                <span class="font-semibold">Dependencies:</span>
+                {length(@preview["requires"] || [])}
+              </div>
+            </div>
+            <p class="text-xs text-base-content/60">
+              <span :if={@preview_remaining}>
+                Preview expires in {format_remaining(@preview_remaining)};
+              </span>
+              <span :if={!@preview_remaining}>The preview expires after 15 minutes;</span>
+              nothing is published until you confirm.
+            </p>
+            <div class="flex gap-2">
+              <button id="confirm-upload" class="btn btn-primary" phx-click="confirm">
+                Confirm upload
+              </button>
+              <button id="cancel-upload" class="btn btn-ghost" phx-click="cancel">Cancel</button>
+            </div>
+          </div>
+
+          <div :if={@phase == :done} class="space-y-4">
+            <p class="text-success font-semibold">Package uploaded.</p>
+            <.link
+              navigate={~p"/repos/#{@repository.slug}/package-versions/#{@intent_package_id}"}
+              class="btn btn-primary"
+            >
+              View package
+            </.link>
+          </div>
+
+          <div :if={@error} class="alert alert-error alert-soft text-sm" id="upload-error">
+            <.icon name="hero-exclamation-circle" class="size-5 shrink-0" />
+            <span>{@error}</span>
+            <button class="btn btn-sm" phx-click="reset">Start over</button>
+          </div>
         </div>
       </div>
     </Layouts.app>
@@ -230,8 +257,18 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
             {:noreply, schedule_poll(socket)}
 
           "preview_ready" ->
-            {:noreply,
-             socket |> assign(:phase, :preview) |> assign(:preview, intent.preview_metadata)}
+            entering? = socket.assigns.phase != :preview
+
+            socket =
+              socket
+              |> assign(:phase, :preview)
+              |> assign(:preview, intent.preview_metadata)
+              |> assign(:preview_expires_at, intent.expires_at)
+              |> assign(:preview_remaining, remaining_seconds(intent.expires_at))
+
+            # Start one countdown chain when the preview first appears.
+            if entering?, do: schedule_countdown(socket)
+            {:noreply, socket}
 
           "succeeded" ->
             {:noreply, assign(socket, :phase, :done)}
@@ -249,6 +286,24 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
     end
   end
 
+  def handle_info(:countdown, socket) do
+    if socket.assigns.phase == :preview and socket.assigns.preview_expires_at do
+      case remaining_seconds(socket.assigns.preview_expires_at) do
+        remaining when remaining > 0 ->
+          schedule_countdown(socket)
+          {:noreply, assign(socket, :preview_remaining, remaining)}
+
+        _elapsed ->
+          {:noreply,
+           socket
+           |> assign(:preview_remaining, 0)
+           |> assign(:error, "The preview expired. Start a new upload.")}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
   defp fetch_intent(socket) do
     case socket.assigns.intent_id &&
            Uploads.get_intent(socket.assigns.repository, socket.assigns.intent_id) do
@@ -262,6 +317,25 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
     socket
   end
 
+  defp schedule_countdown(socket) do
+    if connected?(socket), do: Process.send_after(self(), :countdown, 1000)
+    socket
+  end
+
+  defp remaining_seconds(nil), do: nil
+
+  defp remaining_seconds(expires_at) do
+    max(DateTime.diff(expires_at, DateTime.utc_now(), :second), 0)
+  end
+
+  defp format_remaining(seconds) do
+    minutes = div(seconds, 60)
+    "#{minutes}:#{seconds |> rem(60) |> Integer.to_string() |> String.pad_leading(2, "0")}"
+  end
+
+  defp status_badge("processing"), do: :processing
+  defp status_badge(_queued), do: :queued
+
   defp reset_state(socket) do
     socket
     |> assign(:phase, :idle)
@@ -271,6 +345,8 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
     |> assign(:filename, nil)
     |> assign(:status, nil)
     |> assign(:preview, nil)
+    |> assign(:preview_expires_at, nil)
+    |> assign(:preview_remaining, nil)
     |> assign(:error, nil)
   end
 end

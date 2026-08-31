@@ -14,14 +14,22 @@ defmodule DarkZenithWeb.PackageLive.Show do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:data}>
       <div class="space-y-8">
-        <.header>
-          {@name}
-          <:subtitle>
-            <.link navigate={~p"/repos/#{@repository.slug}"} class="link">
-              {@repository.name}
-            </.link>
-          </:subtitle>
-        </.header>
+        <div class="space-y-2">
+          <Layouts.breadcrumbs segments={[
+            {"Repositories", ~p"/repos"},
+            {@repository.slug, ~p"/repos/#{@repository.slug}"},
+            {@name, nil}
+          ]} />
+          <.header>
+            <span class="font-mono">{@name}</span>
+            <:subtitle>
+              All builds in
+              <.link navigate={~p"/repos/#{@repository.slug}"} class="link">
+                {@repository.name}
+              </.link>
+            </:subtitle>
+          </.header>
+        </div>
 
         <section :if={@install_command || @source_command}>
           <h2 class="text-lg font-semibold mb-2">Install</h2>
@@ -39,35 +47,26 @@ defmodule DarkZenithWeb.PackageLive.Show do
 
         <section>
           <h2 class="text-lg font-semibold mb-2">Builds</h2>
-          <div class="overflow-x-auto">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>EVR</th>
-                  <th>Arch</th>
-                  <th>Summary</th>
-                  <th>Size</th>
-                  <th>Uploaded</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr :for={package <- @packages} id={"build-#{package.id}"}>
-                  <td>
-                    <.link
-                      navigate={~p"/repos/#{@repository.slug}/package-versions/#{package.id}"}
-                      class="link font-mono"
-                    >
-                      {Packages.display_evr(package)}
-                    </.link>
-                  </td>
-                  <td>{package.arch}</td>
-                  <td class="max-w-xs truncate">{package.summary}</td>
-                  <td>{format_bytes(package.size_package)}</td>
-                  <td>{Calendar.strftime(package.inserted_at, "%Y-%m-%d")}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <.table id="builds" rows={@packages} row_id={&"build-#{&1.id}"}>
+            <:col :let={package} label="EVR" mono>
+              <.link
+                navigate={~p"/repos/#{@repository.slug}/package-versions/#{package.id}"}
+                class="link"
+              >
+                {Packages.display_evr(package)}
+              </.link>
+            </:col>
+            <:col :let={package} label="Arch" mono>{package.arch}</:col>
+            <:col :let={package} label="Summary">
+              <span class="block max-w-xs truncate">{package.summary}</span>
+            </:col>
+            <:col :let={package} label="Size" align={:right}>
+              {format_bytes(package.size_package)}
+            </:col>
+            <:col :let={package} label="Uploaded">
+              {Calendar.strftime(package.inserted_at, "%Y-%m-%d")}
+            </:col>
+          </.table>
         </section>
       </div>
     </Layouts.app>

@@ -76,7 +76,12 @@ defmodule DarkZenithWeb.UserLive.ResetPasswordTest do
       assert {:ok, _} = Accounts.authenticate_user(user.email, "new valid password")
       assert {:ok, _} = Accounts.fetch_api_key_user(key_plaintext)
 
-      lv |> element("#revoke-all-keys") |> render_click()
+      # Revoking every key runs through the confirmation modal.
+      html = lv |> element("#revoke-all-keys") |> render_click()
+      assert html =~ "confirm_modal"
+      assert {:ok, _} = Accounts.fetch_api_key_user(key_plaintext)
+
+      lv |> element("#confirm_action") |> render_click()
       assert {:error, :invalid} = Accounts.fetch_api_key_user(key_plaintext)
       assert render(lv) =~ "no active API keys"
 

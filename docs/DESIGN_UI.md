@@ -332,7 +332,7 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
       width system, breadcrumbs component
 - [x] U4 — Components: command block with copy, table conventions, badges, empty states,
       reticle spinner, confirmation dialogs (type-to-confirm repo delete)
-- [ ] U5 — Pages: landing hero + star-field, repo list, repo detail setup-instructions
+- [x] U5 — Pages: landing hero + star-field, repo list, repo detail setup-instructions
       tabs, package pages, upload states, settings, auth
 - [ ] U6 — Admin: sub-nav tabs, dense table pass across the five admin views
 - [ ] U7 — Global search (blocked on `DESIGN.md` spec): nav field + results page

@@ -8,42 +8,51 @@ defmodule DarkZenithWeb.RepositoryLive.Index do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:data}>
       <div>
-        <div class="flex items-center justify-between mb-6">
-          <.header>
-            Repositories
-            <:subtitle>Public repositories, plus private ones you can access</:subtitle>
-          </.header>
-          <.link
-            :if={@current_scope && @current_scope.user}
-            navigate={~p"/repos/new"}
-            class="btn btn-primary"
-          >
-            Create New Repo
-          </.link>
-        </div>
+        <.header>
+          Repositories
+          <:subtitle>Public repositories, plus private ones you can access</:subtitle>
+          <:actions>
+            <.link
+              :if={@current_scope && @current_scope.user}
+              navigate={~p"/repos/new"}
+              class="btn btn-primary"
+            >
+              Create New Repo
+            </.link>
+          </:actions>
+        </.header>
 
         <Layouts.empty_state :if={@repositories == []}>
           No repositories yet.
         </Layouts.empty_state>
 
-        <ul class="space-y-3">
-          <li :for={repository <- @repositories} class="card bg-base-200">
-            <div class="card-body py-4 flex-row items-center justify-between">
-              <div>
-                <.link navigate={~p"/repos/#{repository.slug}"} class="font-semibold link">
-                  {repository.name}
-                </.link>
-                <.badge :if={!repository.is_public} variant={:private} class="badge-sm ml-2" />
-                <p :if={repository.description} class="text-sm text-base-content/70 mt-1">
-                  {repository.description}
-                </p>
-              </div>
-              <div class="text-sm text-base-content/60">
-                {repository.package_count} packages
-              </div>
-            </div>
-          </li>
-        </ul>
+        <.table
+          :if={@repositories != []}
+          id="repositories"
+          rows={@repositories}
+          row_id={&"repo-#{&1.id}"}
+        >
+          <:col :let={repository} label="Name">
+            <.link navigate={~p"/repos/#{repository.slug}"} class="link font-medium">
+              {repository.name}
+            </.link>
+            <span class="ml-2 font-mono text-xs text-base-content/60">{repository.slug}</span>
+          </:col>
+          <:col :let={repository} label="Description">
+            <span class="block max-w-md truncate text-base-content/70">
+              {repository.description}
+            </span>
+          </:col>
+          <:col :let={repository} label="Packages" align={:right}>
+            {repository.package_count}
+          </:col>
+          <:col :let={repository} label="Visibility">
+            <.badge
+              variant={if repository.is_public, do: :public, else: :private}
+              class="badge-sm"
+            />
+          </:col>
+        </.table>
       </div>
     </Layouts.app>
     """

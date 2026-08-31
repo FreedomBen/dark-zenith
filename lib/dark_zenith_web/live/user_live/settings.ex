@@ -7,95 +7,100 @@ defmodule DarkZenithWeb.UserLive.Settings do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:prose}>
-      <div class="text-center">
-        <.header>
-          Account Settings
-          <:subtitle>Manage your account email address and password settings</:subtitle>
-        </.header>
-      </div>
+      <.header>
+        Account Settings
+        <:subtitle>Manage your account email address and password settings</:subtitle>
+      </.header>
 
-      <.form for={@email_form} id="email_form" phx-submit="update_email" phx-change="validate_email">
-        <.input
-          field={@email_form[:email]}
-          type="email"
-          label="Email"
-          autocomplete="username"
-          spellcheck="false"
-          required
-        />
-        <.input
-          field={@email_form[:current_password]}
-          name="current_password"
-          id="current_password_for_email"
-          type="password"
-          label="Current password"
-          autocomplete="current-password"
-          spellcheck="false"
-          value={@email_form_current_password}
-          required
-        />
-        <.button variant="primary" phx-disable-with="Changing...">Change Email</.button>
-      </.form>
+      <section class="rounded-box border border-base-content/10 p-6">
+        <h2 class="text-lg font-semibold mb-4">Email</h2>
+        <.form
+          for={@email_form}
+          id="email_form"
+          phx-submit="update_email"
+          phx-change="validate_email"
+        >
+          <.input
+            field={@email_form[:email]}
+            type="email"
+            label="Email"
+            autocomplete="username"
+            spellcheck="false"
+            required
+          />
+          <.input
+            field={@email_form[:current_password]}
+            name="current_password"
+            id="current_password_for_email"
+            type="password"
+            label="Current password"
+            autocomplete="current-password"
+            spellcheck="false"
+            value={@email_form_current_password}
+            required
+          />
+          <.button variant="primary" phx-disable-with="Changing...">Change Email</.button>
+        </.form>
+      </section>
 
-      <div class="divider" />
+      <section class="rounded-box border border-base-content/10 p-6">
+        <h2 class="text-lg font-semibold mb-4">Password</h2>
+        <.form
+          for={@password_form}
+          id="password_form"
+          action={~p"/users/update-password"}
+          method="post"
+          phx-change="validate_password"
+          phx-submit="update_password"
+          phx-trigger-action={@trigger_submit}
+        >
+          <input
+            name={@password_form[:email].name}
+            type="hidden"
+            id="hidden_user_email"
+            spellcheck="false"
+            value={@current_email}
+          />
+          <.input
+            field={@password_form[:password]}
+            type="password"
+            label="New password"
+            autocomplete="new-password"
+            spellcheck="false"
+            required
+          />
+          <.input
+            field={@password_form[:password_confirmation]}
+            type="password"
+            label="Confirm new password"
+            autocomplete="new-password"
+            spellcheck="false"
+          />
+          <.input
+            field={@password_form[:current_password]}
+            name="user[current_password]"
+            type="password"
+            label="Current password"
+            id="current_password_for_password"
+            autocomplete="current-password"
+            spellcheck="false"
+            value={@current_password}
+            required
+          />
+          <.button variant="primary" phx-disable-with="Saving...">
+            Save Password
+          </.button>
+        </.form>
+      </section>
 
-      <.form
-        for={@password_form}
-        id="password_form"
-        action={~p"/users/update-password"}
-        method="post"
-        phx-change="validate_password"
-        phx-submit="update_password"
-        phx-trigger-action={@trigger_submit}
-      >
-        <input
-          name={@password_form[:email].name}
-          type="hidden"
-          id="hidden_user_email"
-          spellcheck="false"
-          value={@current_email}
-        />
-        <.input
-          field={@password_form[:password]}
-          type="password"
-          label="New password"
-          autocomplete="new-password"
-          spellcheck="false"
-          required
-        />
-        <.input
-          field={@password_form[:password_confirmation]}
-          type="password"
-          label="Confirm new password"
-          autocomplete="new-password"
-          spellcheck="false"
-        />
-        <.input
-          field={@password_form[:current_password]}
-          name="user[current_password]"
-          type="password"
-          label="Current password"
-          id="current_password_for_password"
-          autocomplete="current-password"
-          spellcheck="false"
-          value={@current_password}
-          required
-        />
-        <.button variant="primary" phx-disable-with="Saving...">
-          Save Password
-        </.button>
-      </.form>
-
-      <div class="divider" />
-
-      <section class="space-y-4">
+      <section class="space-y-4 rounded-box border border-base-content/10 p-6">
         <h2 class="text-lg font-semibold">API keys</h2>
 
-        <div :if={@created_key} class="alert alert-success text-sm" id="created-key">
-          <div>
-            <p class="font-semibold">Copy your new API key now — it is shown only once:</p>
-            <pre class="mt-1 font-mono break-all select-all">{@created_key}</pre>
-          </div>
+        <div :if={@created_key} class="space-y-2" id="created-key">
+          <p class="text-sm font-semibold text-success">
+            Copy your new API key now — it is shown only once:
+          </p>
+          <.command_block id="created-key-block" eyebrow="API key" command={@created_key} />
         </div>
 
         <ul :if={@api_keys != []} class="divide-y divide-base-300 text-sm">
@@ -119,9 +124,9 @@ defmodule DarkZenithWeb.UserLive.Settings do
             <button
               id={"revoke-key-#{key.id}"}
               class="btn btn-ghost btn-sm text-error"
-              phx-click="delete_api_key"
+              phx-click="request_confirm"
+              phx-value-event="delete_api_key"
               phx-value-id={key.id}
-              data-confirm="Revoke this API key? New requests stop immediately, but a signed download URL it already obtained keeps working until that URL expires."
             >
               Revoke
             </button>
@@ -153,26 +158,28 @@ defmodule DarkZenithWeb.UserLive.Settings do
         </.form>
       </section>
 
-      <div class="divider" />
-
-      <section class="space-y-4">
+      <section class="space-y-4 rounded-box border border-base-content/10 p-6">
         <h2 class="text-lg font-semibold">GPG signing key</h2>
 
         <div
           :if={@generated_gpg_private_key}
-          class="alert alert-warning block space-y-2"
+          class="space-y-2 rounded-box border border-warning/60 p-4"
           id="generated-gpg-private-key"
         >
-          <p class="font-semibold">
+          <p class="text-sm font-semibold text-warning">
             Your generated private key — copy or download it now.
           </p>
           <p class="text-xs">
             Dark Zenith keeps an encrypted copy for signing, but the key will
             never be shown again. Store this backup somewhere safe.
           </p>
-          <pre class="bg-base-200 rounded-lg p-3 text-xs overflow-x-auto select-all">{@generated_gpg_private_key}</pre>
+          <.command_block
+            id="generated-gpg-private-key-block"
+            eyebrow="Private key — shown once"
+            command={@generated_gpg_private_key}
+          />
           <a
-            class="btn btn-sm"
+            class="btn btn-outline btn-sm"
             href={"data:application/pgp-keys;base64," <> Base.encode64(@generated_gpg_private_key)}
             download="dark-zenith-signing-key.asc"
           >
@@ -206,7 +213,7 @@ defmodule DarkZenithWeb.UserLive.Settings do
           </p>
           <details>
             <summary class="cursor-pointer">Public key</summary>
-            <pre class="bg-base-200 rounded-lg p-3 text-xs overflow-x-auto">{@gpg.public_key}</pre>
+            <.command_block id="gpg-public-key" class="mt-2" command={@gpg.public_key} />
           </details>
 
           <div :if={@gpg.transition} class="alert alert-info block space-y-1" id="gpg-transition">
@@ -244,16 +251,16 @@ defmodule DarkZenithWeb.UserLive.Settings do
               :if={@gpg_usage.rpm_signed == 0}
               id="revoke-clear-metadata"
               class="btn btn-warning btn-sm"
-              phx-click="revoke_clear_metadata"
-              data-confirm="Clear metadata signing on all your repositories and remove the key?"
+              phx-click="request_confirm"
+              phx-value-event="revoke_clear_metadata"
             >
               Clear metadata signing everywhere
             </button>
             <button
               id="revoke-delete-packages"
               class="btn btn-error btn-sm"
-              phx-click="revoke_delete_packages"
-              data-confirm="Delete every package in your RPM-signed repositories, disable signing, and remove the key? This cannot be undone."
+              phx-click="request_confirm"
+              phx-value-event="revoke_delete_packages"
             >
               Delete signed packages and remove the key
             </button>
@@ -263,8 +270,8 @@ defmodule DarkZenithWeb.UserLive.Settings do
             :if={@gpg.transition == nil and not gpg_in_use?(@gpg_usage)}
             id="remove-gpg-key"
             class="btn btn-error btn-sm"
-            phx-click="remove_gpg_key"
-            data-confirm="Remove your GPG signing key?"
+            phx-click="request_confirm"
+            phx-value-event="remove_gpg_key"
           >
             Remove key
           </button>
@@ -330,6 +337,8 @@ defmodule DarkZenithWeb.UserLive.Settings do
           </.button>
         </.form>
       </section>
+
+      <.confirm_modal pending={@pending_confirm} />
     </Layouts.app>
     """
   end
@@ -377,6 +386,7 @@ defmodule DarkZenithWeb.UserLive.Settings do
       |> assign(:trigger_submit, false)
       |> assign(:created_key, nil)
       |> assign(:generated_gpg_private_key, nil)
+      |> assign(:pending_confirm, nil)
       |> reload_account_sections()
 
     {:ok, socket}
@@ -459,6 +469,30 @@ defmodule DarkZenithWeb.UserLive.Settings do
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :key_form, to_form(changeset, as: "api_key"))}
+    end
+  end
+
+  # The destructive key actions run only after the shared modal confirms
+  # them (docs/DESIGN_UI.md — Dialogs); the whitelist keeps a crafted
+  # request_confirm from staging arbitrary events.
+  @confirmable_events ~w(delete_api_key remove_gpg_key revoke_clear_metadata revoke_delete_packages)
+
+  def handle_event("request_confirm", %{"event" => event} = params, socket)
+      when event in @confirmable_events do
+    {:noreply, assign(socket, :pending_confirm, confirm_prompt(event, params))}
+  end
+
+  def handle_event("cancel_confirm", _params, socket) do
+    {:noreply, assign(socket, :pending_confirm, nil)}
+  end
+
+  def handle_event("run_confirm", _params, socket) do
+    case socket.assigns.pending_confirm do
+      %{event: event, params: params} ->
+        handle_event(event, params, assign(socket, :pending_confirm, nil))
+
+      nil ->
+        {:noreply, socket}
     end
   end
 
@@ -607,6 +641,53 @@ defmodule DarkZenithWeb.UserLive.Settings do
       changeset ->
         {:noreply, assign(socket, password_form: to_form(changeset, action: :insert))}
     end
+  end
+
+  # The consequence texts DESIGN.md requires for each destructive action.
+  defp confirm_prompt("delete_api_key", %{"id" => id}) do
+    %{
+      event: "delete_api_key",
+      params: %{"id" => id},
+      title: "Revoke API key",
+      message:
+        "New requests stop immediately, but a signed download URL it already " <>
+          "obtained keeps working until that URL expires.",
+      confirm_label: "Revoke key"
+    }
+  end
+
+  defp confirm_prompt("remove_gpg_key", _params) do
+    %{
+      event: "remove_gpg_key",
+      params: %{},
+      title: "Remove GPG signing key",
+      message: "Your GPG signing key is removed; no repository currently uses it.",
+      confirm_label: "Remove key"
+    }
+  end
+
+  defp confirm_prompt("revoke_clear_metadata", _params) do
+    %{
+      event: "revoke_clear_metadata",
+      params: %{},
+      title: "Clear metadata signing everywhere",
+      message:
+        "Metadata signing is disabled on all your repositories, their metadata is " <>
+          "regenerated unsigned, and the key is removed.",
+      confirm_label: "Clear signing and remove key"
+    }
+  end
+
+  defp confirm_prompt("revoke_delete_packages", _params) do
+    %{
+      event: "revoke_delete_packages",
+      params: %{},
+      title: "Delete signed packages and remove the key",
+      message:
+        "Every package in your RPM-signed repositories is deleted, signing is " <>
+          "disabled everywhere, and the key is removed. This cannot be undone.",
+      confirm_label: "Delete packages and remove key"
+    }
   end
 
   defp start_removal(socket, strategy) do

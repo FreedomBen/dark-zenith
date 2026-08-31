@@ -1,13 +1,75 @@
 defmodule DarkZenithWeb.PageControllerTest do
   use DarkZenithWeb.ConnCase, async: true
 
-  test "GET / renders the landing page with a repositories link", %{conn: conn} do
+  test "GET / renders the hero with headline, sample command, and actions", %{conn: conn} do
     conn = get(conn, ~p"/")
     html = html_response(conn, 200)
 
     assert html =~ "Dark Zenith"
-    assert html =~ "RPM package repository"
+    assert html =~ "RPM repository"
     assert html =~ ~p"/repos"
+
+    # Star-field backdrop (night) / gradient (day) hangs off the dz-hero hook,
+    # and the headline is display-face at hero scale (docs/DESIGN_UI.md).
+    assert html =~ "dz-hero"
+    assert [h1] = Regex.run(~r|<h1[^>]*>|, html)
+    assert h1 =~ "font-display"
+    assert h1 =~ "text-5xl"
+
+    # The sample dnf command renders as a command block with a copy button.
+    assert html =~ "dnf5 config-manager addrepo"
+    assert html =~ ~s(aria-label="Copy to clipboard")
+    assert html =~ "bg-umbra"
+
+    # Signed-out visitors see both hero actions.
+    assert html =~ "Browse repositories"
+    assert html =~ "Log in"
+  end
+
+  test "GET / links the available repositories (DESIGN.md: Landing Page)", %{conn: conn} do
+    import DarkZenith.AccountsFixtures
+    import DarkZenith.RepositoriesFixtures
+
+    owner = user_fixture()
+    public = repository_fixture(owner, %{name: "Landing Public", is_public: true})
+    _private = repository_fixture(owner, %{name: "Landing Private", is_public: false})
+
+    html = conn |> get(~p"/") |> html_response(200)
+
+    # Anonymous visitors see links to public repositories only.
+    assert html =~ "Landing Public"
+    assert html =~ ~p"/repos/#{public.slug}"
+    refute html =~ "Landing Private"
+
+    # Signed-in users also see their private repositories.
+    html =
+      build_conn()
+      |> log_in_user(owner)
+      |> get(~p"/")
+      |> html_response(200)
+
+    assert html =~ "Landing Private"
+  end
+
+  test "GET / with no repositories renders the reticle empty state", %{conn: conn} do
+    html = conn |> get(~p"/") |> html_response(200)
+
+    assert html =~ "No repositories yet."
+    assert html =~ "opacity-30"
+  end
+
+  test "the star-field asset is checked in and static", %{conn: conn} do
+    svg = File.read!(Path.expand("../../../priv/static/images/starfield.svg", __DIR__))
+
+    # Deterministic, no animation (docs/DESIGN_UI.md — Page notes).
+    refute svg =~ "<animate"
+    refute svg =~ "<script"
+    assert svg =~ "<circle"
+
+    # Served same-origin so the CSP's img-src 'self' admits it.
+    conn = get(conn, "/images/starfield.svg")
+    assert response(conn, 200)
+    assert response_content_type(conn, :svg) =~ "image/svg"
   end
 
   test "GET / renders the theme toggle in the top menu", %{conn: conn} do

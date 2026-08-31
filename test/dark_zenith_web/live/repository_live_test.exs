@@ -40,6 +40,27 @@ defmodule DarkZenithWeb.RepositoryLiveTest do
       assert html =~ "Private"
     end
 
+    test "the index is a dense catalog table with slug and visibility columns", %{conn: conn} do
+      owner = user_fixture()
+      repo = repository_fixture(owner, %{name: "Tabled", is_public: true, description: "About"})
+
+      {:ok, _lv, html} = live(conn, ~p"/repos")
+
+      # docs/DESIGN_UI.md — Repository list: name (mono slug + display name),
+      # description, package count, visibility badge.
+      assert html =~ ~r|<th[^>]*>\s*<span>Name</span>|
+      assert html =~ "Description"
+      assert html =~ "Packages"
+      assert html =~ "Visibility"
+      assert html =~ ~s(id="repo-#{repo.id}")
+      assert html =~ ~r|font-mono[^"]*"[^>]*>#{repo.slug}|
+      assert html =~ "About"
+
+      # Public repositories carry the Public badge in the table.
+      assert html =~ "Public"
+      assert html =~ "badge-outline badge-secondary"
+    end
+
     test "an empty index renders the reticle empty state", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/repos")
 
@@ -85,27 +106,42 @@ defmodule DarkZenithWeb.RepositoryLiveTest do
   end
 
   describe "repository detail" do
-    test "renders a public repository with setup instructions", %{conn: conn} do
+    test "renders a public repository with tabbed setup instructions", %{conn: conn} do
       owner = user_fixture()
       repo = repository_fixture(owner, %{name: "Shown", is_public: true})
 
-      {:ok, _lv, html} = live(conn, ~p"/repos/#{repo.slug}")
+      {:ok, lv, html} = live(conn, ~p"/repos/#{repo.slug}")
 
       assert html =~ "Shown"
-      assert html =~ "[dark-zenith-#{repo.slug}]"
-      assert html =~ "dnf config-manager --add-repo"
-      assert html =~ "dnf5 config-manager addrepo"
       assert html =~ "No packages yet"
       refute html =~ "Settings"
 
-      # setup snippets are command blocks with copy buttons (docs/DESIGN_UI.md)
+      # A breadcrumb line precedes the title (docs/DESIGN_UI.md — Breadcrumbs).
+      assert html =~ ~s(aria-label="Breadcrumb")
+      assert html =~ ~s(aria-current="page")
+
+      # Setup methods are tabs: DNF 5 (default), DNF 4, .repo file
+      # (docs/DESIGN_UI.md — Repository detail).
+      assert html =~ ~s(role="tablist")
+      assert html =~ "DNF 5"
+      assert html =~ "DNF 4"
+      assert html =~ ".repo file"
+
+      # The default tab shows the DNF 5 one-liner as a copyable command block;
+      # commands render flush inside <pre><code> (no template indentation).
+      assert html =~ "<code>dnf5 config-manager addrepo"
       assert html =~ ~s(aria-label="Copy to clipboard")
       assert html =~ "bg-umbra"
+      refute html =~ "<code>dnf config-manager --add-repo"
 
-      # commands render flush inside <pre><code>: no template indentation to
-      # display or copy
+      html = lv |> element("#setup-tab-dnf4") |> render_click()
       assert html =~ "<code>dnf config-manager --add-repo"
-      assert html =~ "<code>dnf5 config-manager addrepo"
+      refute html =~ "<code>dnf5 config-manager addrepo"
+
+      html = lv |> element("#setup-tab-repo-file") |> render_click()
+      assert html =~ "[dark-zenith-#{repo.slug}]"
+      assert html =~ "/etc/yum.repos.d/dark-zenith-#{repo.slug}.repo"
+      assert html =~ "Authenticated access"
     end
 
     test "owners see management actions", %{conn: conn} do
@@ -136,6 +172,10 @@ defmodule DarkZenithWeb.RepositoryLiveTest do
       assert html =~ "password=&lt;api-key&gt;"
       assert html =~ "chmod 600"
       refute html =~ "config-manager --add-repo"
+
+      # The one-command methods don't apply to private repositories, so there
+      # is no method tab row — only the credentialed .repo file flow.
+      refute html =~ ~s(role="tablist")
     end
 
     test "private repositories prompt for API-key creation only without a suitable key", %{
@@ -448,10 +488,11 @@ defmodule DarkZenithWeb.RepositoryLiveTest do
       refute has_element?(lv, "#add_collaborator_form")
 
       lv |> element("#remove-collaborator-#{collaborator.id}") |> render_click()
+      lv |> element("#confirm_action") |> render_click()
       assert Collaborators.list_rows(repo) == []
     end
 
-    test "removal warns about outstanding signed URLs and cancellation works", %{conn: conn} do
+    test "removal confirms in a modal with the signed-URL consequence text", %{conn: conn} do
       owner = user_fixture()
       repo = repository_fixture(owner, %{is_public: false})
       user = user_fixture()
@@ -465,13 +506,41 @@ defmodule DarkZenithWeb.RepositoryLiveTest do
         )
 
       {lv, html} = settings_lv(conn, owner, repo)
+      refute html =~ "confirm_modal"
 
+      # Opening the dialog states the DESIGN.md consequence text and removes
+      # nothing until confirmed (docs/DESIGN_UI.md — Dialogs).
+      html = lv |> element("#remove-collaborator-#{collaborator.id}") |> render_click()
+      assert html =~ "confirm_modal"
       assert html =~ "signed lifetime"
+      assert length(Collaborators.list_rows(repo)) == 2
 
+      # Cancel closes without acting.
+      html = lv |> element("#confirm_modal .btn-ghost", "Cancel") |> render_click()
+      refute html =~ "confirm_modal"
+      assert length(Collaborators.list_rows(repo)) == 2
+
+      # Confirming executes the removal.
       lv |> element("#remove-collaborator-#{collaborator.id}") |> render_click()
-      lv |> element("#cancel-invitation-#{invitation.id}") |> render_click()
+      lv |> element("#confirm_action") |> render_click()
+      assert length(Collaborators.list_rows(repo)) == 1
 
+      # Invitation cancellation flows through the same dialog.
+      lv |> element("#cancel-invitation-#{invitation.id}") |> render_click()
+      lv |> element("#confirm_action") |> render_click()
       assert Collaborators.list_rows(repo) == []
+    end
+
+    test "a bare run_confirm event without a pending action is a no-op", %{conn: conn} do
+      owner = user_fixture()
+      repo = repository_fixture(owner, %{is_public: false})
+      user = user_fixture()
+      {:ok, :created, _} = Collaborators.add_collaborator(owner, repo, user.email)
+
+      {lv, _html} = settings_lv(conn, owner, repo)
+
+      render_click(lv, "run_confirm", %{})
+      assert length(Collaborators.list_rows(repo)) == 1
     end
   end
 end

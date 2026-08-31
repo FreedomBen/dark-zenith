@@ -10,69 +10,79 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:prose}>
-      <div class="space-y-10">
-        <.header>
-          Repository Settings
-          <:subtitle>{@repository.slug} — the slug is immutable</:subtitle>
-        </.header>
+      <div class="space-y-8">
+        <div class="space-y-2">
+          <Layouts.breadcrumbs segments={[
+            {"Repositories", ~p"/repos"},
+            {@repository.slug, ~p"/repos/#{@repository.slug}"},
+            {"Settings", nil}
+          ]} />
+          <.header>
+            Repository Settings
+            <:subtitle>{@repository.slug} — the slug is immutable</:subtitle>
+          </.header>
+        </div>
 
-        <.form
-          for={@form}
-          id="repository_settings_form"
-          phx-submit="save"
-          phx-change="validate"
-        >
-          <.input field={@form[:name]} type="text" label="Name" required />
-          <.input field={@form[:description]} type="textarea" label="Description" />
-          <.input field={@form[:is_public]} type="checkbox" label="Public repository" />
+        <section class="rounded-box border border-base-content/10 p-6">
+          <h2 class="text-lg font-semibold mb-4">General</h2>
+          <.form
+            for={@form}
+            id="repository_settings_form"
+            phx-submit="save"
+            phx-change="validate"
+          >
+            <.input field={@form[:name]} type="text" label="Name" required />
+            <.input field={@form[:description]} type="textarea" label="Description" />
+            <.input field={@form[:is_public]} type="checkbox" label="Public repository" />
 
-          <div :if={@owner_fingerprint} class="mt-4 space-y-2 border-t border-base-300 pt-4">
-            <label class="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                name="repository[metadata_signing]"
-                value="true"
-                checked={@repository.gpg_key_fingerprint != nil}
-                class="checkbox checkbox-sm"
-              /> Sign repository metadata (repomd.xml.asc) with your GPG key
-            </label>
+            <div :if={@owner_fingerprint} class="mt-4 space-y-2 border-t border-base-content/10 pt-4">
+              <label class="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="repository[metadata_signing]"
+                  value="true"
+                  checked={@repository.gpg_key_fingerprint != nil}
+                  class="checkbox checkbox-sm"
+                /> Sign repository metadata (repomd.xml.asc) with your GPG key
+              </label>
 
-            <label class="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                name="repository[sign_rpms]"
-                value="true"
-                checked={@repository.sign_rpms}
-                class="checkbox checkbox-sm"
-              /> Automatically sign uploaded RPMs
-            </label>
+              <label class="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="repository[sign_rpms]"
+                  value="true"
+                  checked={@repository.sign_rpms}
+                  class="checkbox checkbox-sm"
+                /> Automatically sign uploaded RPMs
+              </label>
 
-            <label
-              :if={!@repository.sign_rpms and @repository.package_count > 0}
-              class="flex items-center gap-2 text-sm pl-6 text-base-content/80"
-            >
-              <input
-                type="checkbox"
-                name="repository[existing_package_strategy]"
-                value="resign"
-                class="checkbox checkbox-sm"
-              /> Re-sign all {@repository.package_count} existing packages (required to enable
-              RPM signing on a non-empty repository)
-            </label>
-          </div>
+              <label
+                :if={!@repository.sign_rpms and @repository.package_count > 0}
+                class="flex items-center gap-2 text-sm pl-6 text-base-content/80"
+              >
+                <input
+                  type="checkbox"
+                  name="repository[existing_package_strategy]"
+                  value="resign"
+                  class="checkbox checkbox-sm"
+                /> Re-sign all {@repository.package_count} existing packages (required to enable
+                RPM signing on a non-empty repository)
+              </label>
+            </div>
 
-          <p :if={!@owner_fingerprint} class="mt-4 text-sm text-base-content/60">
-            Upload a GPG key in your account settings to enable signing.
-          </p>
+            <p :if={!@owner_fingerprint} class="mt-4 text-sm text-base-content/60">
+              Upload a GPG key in your account settings to enable signing.
+            </p>
 
-          <.button phx-disable-with="Saving..." class="btn btn-primary w-full mt-4">
-            Save settings
-          </.button>
-        </.form>
+            <.button phx-disable-with="Saving..." class="btn btn-primary w-full mt-4">
+              Save settings
+            </.button>
+          </.form>
+        </section>
 
         <section
           :if={@repository.rpm_signing_state == "signing" and @signing_progress}
-          class="border border-warning/40 rounded-lg p-4 text-sm space-y-2"
+          class="border border-warning/40 rounded-box p-6 text-sm space-y-2"
           id="signing-progress"
         >
           <h2 class="font-semibold">Re-signing in progress</h2>
@@ -92,7 +102,7 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
           </div>
         </section>
 
-        <section>
+        <section class="rounded-box border border-base-content/10 p-6">
           <h2 class="text-lg font-semibold mb-2">Manage Collaborators</h2>
           <p class="text-sm text-base-content/70 mb-4">
             Collaborators get read access to this repository while it is private. Removing a
@@ -145,9 +155,9 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
                 :if={match?(%Collaborator{}, row)}
                 id={"remove-collaborator-#{row.id}"}
                 class="btn btn-ghost btn-sm text-error"
-                phx-click="remove_collaborator"
+                phx-click="request_confirm"
+                phx-value-event="remove_collaborator"
                 phx-value-id={row.id}
-                data-confirm="Remove this collaborator? New private downloads stop immediately, but any download URL already issued to them keeps working for its remaining signed lifetime."
               >
                 Remove
               </button>
@@ -155,9 +165,9 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
                 :if={match?(%Invitation{}, row)}
                 id={"cancel-invitation-#{row.id}"}
                 class="btn btn-ghost btn-sm text-error"
-                phx-click="cancel_invitation"
+                phx-click="request_confirm"
+                phx-value-event="cancel_invitation"
                 phx-value-id={row.id}
-                data-confirm="Cancel this pending invitation?"
               >
                 Cancel
               </button>
@@ -169,8 +179,8 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
           </p>
         </section>
 
-        <section class="border border-error/40 rounded-lg p-4">
-          <h2 class="font-semibold text-error mb-2">Danger zone</h2>
+        <section class="mt-4 border border-error/40 rounded-box p-6">
+          <h2 class="text-lg font-semibold text-error mb-2">Danger zone</h2>
           <p class="text-sm mb-4">
             Deleting a repository permanently removes its packages and metadata. Its slug is
             retired and cannot be reused by other users.
@@ -179,6 +189,8 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
             Delete repository
           </button>
         </section>
+
+        <.confirm_modal pending={@pending_confirm} />
 
         <.modal id="delete_repository_modal" show={@show_delete_modal} on_cancel="cancel_delete">
           <h3 class="text-lg font-semibold">Delete repository</h3>
@@ -244,6 +256,7 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
        |> assign(:owner_fingerprint, owner.gpg_key_fingerprint)
        |> assign(:show_delete_modal, false)
        |> assign(:delete_confirmation, "")
+       |> assign(:pending_confirm, nil)
        |> assign_signing_progress(repository)
        |> assign_form(changeset)
        |> assign(:collaborator_rows, Collaborators.list_rows(repository))
@@ -320,6 +333,30 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
     end
   end
 
+  # The destructive collaborator actions run only after the shared modal
+  # confirms them (docs/DESIGN_UI.md — Dialogs); the whitelist keeps a
+  # crafted request_confirm from staging arbitrary events.
+  @confirmable_events ~w(remove_collaborator cancel_invitation)
+
+  def handle_event("request_confirm", %{"event" => event} = params, socket)
+      when event in @confirmable_events do
+    {:noreply, assign(socket, :pending_confirm, confirm_prompt(event, params))}
+  end
+
+  def handle_event("cancel_confirm", _params, socket) do
+    {:noreply, assign(socket, :pending_confirm, nil)}
+  end
+
+  def handle_event("run_confirm", _params, socket) do
+    case socket.assigns.pending_confirm do
+      %{event: event, params: params} ->
+        handle_event(event, params, assign(socket, :pending_confirm, nil))
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_event("remove_collaborator", %{"id" => id}, socket) do
     user = socket.assigns.current_scope.user
 
@@ -378,6 +415,29 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
     else
       {:noreply, socket}
     end
+  end
+
+  # The consequence texts DESIGN.md requires for each destructive action.
+  defp confirm_prompt("remove_collaborator", %{"id" => id}) do
+    %{
+      event: "remove_collaborator",
+      params: %{"id" => id},
+      title: "Remove collaborator",
+      message:
+        "New private downloads stop immediately, but any download URL already " <>
+          "issued to them keeps working for its remaining signed lifetime.",
+      confirm_label: "Remove collaborator"
+    }
+  end
+
+  defp confirm_prompt("cancel_invitation", %{"id" => id}) do
+    %{
+      event: "cancel_invitation",
+      params: %{"id" => id},
+      title: "Cancel invitation",
+      message: "The pending invitation is withdrawn; its email can be invited again later.",
+      confirm_label: "Cancel invitation"
+    }
   end
 
   # Checkbox semantics: an unchecked signing box is absent from the params.

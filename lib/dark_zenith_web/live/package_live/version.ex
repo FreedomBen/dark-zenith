@@ -21,17 +21,31 @@ defmodule DarkZenithWeb.PackageLive.Version do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:data}>
       <div class="space-y-8">
-        <.header>
-          {@package.name} {Packages.display_evr(@package)}
-          <:subtitle>
-            <.link navigate={~p"/repos/#{@repository.slug}/packages/#{@package.name}"} class="link">
-              all {@package.name} builds
-            </.link>
-          </:subtitle>
-        </.header>
+        <div class="space-y-2">
+          <Layouts.breadcrumbs segments={[
+            {"Repositories", ~p"/repos"},
+            {@repository.slug, ~p"/repos/#{@repository.slug}"},
+            {@package.name, ~p"/repos/#{@repository.slug}/packages/#{@package.name}"},
+            {"#{Packages.display_evr(@package)}.#{@package.arch}", nil}
+          ]} />
+          <.header>
+            <span class="font-mono">{@package.name} {Packages.display_evr(@package)}</span>
+            <:subtitle>
+              <.link
+                navigate={~p"/repos/#{@repository.slug}/packages/#{@package.name}"}
+                class="link"
+              >
+                all {@package.name} builds
+              </.link>
+            </:subtitle>
+          </.header>
+        </div>
 
         <section class="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
-          <div><span class="font-semibold">Arch:</span> {@package.arch}</div>
+          <div>
+            <span class="font-semibold">Arch:</span>
+            <span class="font-mono">{@package.arch}</span>
+          </div>
           <div><span class="font-semibold">License:</span> {@package.license}</div>
           <div><span class="font-semibold">Size:</span> {@package.size_package} bytes</div>
           <div>
@@ -67,11 +81,13 @@ defmodule DarkZenithWeb.PackageLive.Version do
           <div role="tablist" class="tabs tabs-border">
             <button
               :for={{collection, count} <- @counts}
+              type="button"
               role="tab"
               class={["tab", @tab == collection && "tab-active"]}
               phx-click="tab"
               phx-value-collection={collection}
               id={"tab-#{collection}"}
+              aria-selected={to_string(@tab == collection)}
             >
               {collection} ({count})
             </button>

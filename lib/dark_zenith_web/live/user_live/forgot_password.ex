@@ -7,7 +7,7 @@ defmodule DarkZenithWeb.UserLive.ForgotPassword do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:narrow}>
-      <div>
+      <Layouts.auth_card>
         <div class="text-center">
           <.header>
             Forgot your password?
@@ -33,7 +33,7 @@ defmodule DarkZenithWeb.UserLive.ForgotPassword do
         <p class="text-center mt-4">
           <.link href={~p"/users/log-in"} class="link">Log in</.link>
         </p>
-      </div>
+      </Layouts.auth_card>
     </Layouts.app>
     """
   end

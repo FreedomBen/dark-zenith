@@ -8,13 +8,13 @@ defmodule DarkZenithWeb.UserLive.Registration do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:narrow}>
-      <div>
+      <Layouts.auth_card>
         <div class="text-center">
           <.header>
             Register for an account
             <:subtitle>
               Already registered?
-              <.link navigate={~p"/users/log-in"} class="font-semibold text-brand hover:underline">
+              <.link navigate={~p"/users/log-in"} class="link font-semibold">
                 Log in
               </.link>
               to your account now.
@@ -45,7 +45,7 @@ defmodule DarkZenithWeb.UserLive.Registration do
             Create an account
           </.button>
         </.form>
-      </div>
+      </Layouts.auth_card>
     </Layouts.app>
     """
   end

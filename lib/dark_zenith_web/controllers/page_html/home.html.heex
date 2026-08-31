@@ -1,21 +1,59 @@
 <Layouts.flash_group flash={@flash} />
 
-<div class="mx-auto max-w-2xl px-4 py-20 text-center space-y-6">
-  <h1 class="text-4xl font-bold">Dark Zenith</h1>
-  <p class="text-lg text-base-content/70">
-    A self-hosted RPM package repository. Create repositories, upload packages, and point
-    <code>dnf</code>
-    at them — metadata is generated for you and packages are served from
-    object storage via signed URLs.
-  </p>
-  <div class="flex justify-center gap-4">
-    <.link navigate={~p"/repos"} class="btn btn-primary">Browse repositories</.link>
-    <.link
-      :if={!(@conn.assigns[:current_scope] && @conn.assigns.current_scope.user)}
-      navigate={~p"/users/log-in"}
-      class="btn btn-ghost"
-    >
-      Log in
-    </.link>
+<div class="dz-hero border-b border-base-content/10">
+  <div class="mx-auto max-w-3xl space-y-6 px-4 py-20 text-center sm:py-24">
+    <h1 class="font-display text-5xl font-semibold">Dark Zenith</h1>
+    <p class="text-lg text-base-content/70">
+      A self-hosted RPM repository server — create repositories, upload packages,
+      and point <span class="font-mono">dnf</span> at ready-to-serve, signed metadata.
+    </p>
+    <.command_block
+      id="sample-addrepo"
+      eyebrow="DNF 5"
+      class="mx-auto max-w-2xl text-left"
+      command={"dnf5 config-manager addrepo --from-repofile=#{@base_url}/repos/<repo>/dark-zenith.repo"}
+    />
+    <div class="flex justify-center gap-4">
+      <.link navigate={~p"/repos"} class="btn btn-primary">Browse repositories</.link>
+      <.link
+        :if={!(@conn.assigns[:current_scope] && @conn.assigns.current_scope.user)}
+        navigate={~p"/users/log-in"}
+        class="btn btn-ghost"
+      >
+        Log in
+      </.link>
+    </div>
   </div>
 </div>
+
+<section class="mx-auto max-w-3xl px-4 py-12">
+  <h2 class="mb-4 text-lg font-semibold">Repositories</h2>
+
+  <Layouts.empty_state :if={@repositories == []}>
+    No repositories yet.
+  </Layouts.empty_state>
+
+  <ul
+    :if={@repositories != []}
+    class="divide-y divide-base-content/10 overflow-hidden rounded-box border border-base-content/10"
+  >
+    <li :for={repository <- @repositories}>
+      <.link
+        navigate={~p"/repos/#{repository.slug}"}
+        class="flex items-center justify-between gap-4 px-4 py-3 hover:bg-base-200"
+      >
+        <span class="min-w-0">
+          <span class="font-medium">{repository.name}</span>
+          <span class="ml-2 font-mono text-xs text-base-content/60">{repository.slug}</span>
+        </span>
+        <span class="shrink-0 text-sm text-base-content/60">
+          {repository.package_count} packages
+        </span>
+      </.link>
+    </li>
+  </ul>
+
+  <p :if={@more_repositories?} class="mt-3 text-sm">
+    <.link navigate={~p"/repos"} class="link">All repositories →</.link>
+  </p>
+</section>
