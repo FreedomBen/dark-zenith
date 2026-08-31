@@ -166,8 +166,9 @@ wins. Checklist items reference spec sections rather than restating their rules.
 - [ ] Signing transitions + items + repository snapshots: enable_rpm_signing,
       replace_gpg_key, clear_metadata_signing, delete_signed_packages (Signing Transitions)
 - [ ] Lease/fencing worker runtime shared with uploads; sweeps; admin reset/cancel flows
-- [ ] `PREVIOUS_SECRET_KEY_BASE` re-encryption scan/jobs (GPG private key encryption)
-- [ ] Expiry reminders (30/7/1 days) + expired-key fail-closed behavior
+- [x] `PREVIOUS_SECRET_KEY_BASE` re-encryption scan/jobs (GPG private key encryption;
+      transition prepared-candidate rows join with the transition machinery)
+- [x] Expiry reminders (30/7/1 days) + expired-key fail-closed behavior
 
 ## Phase 12 — Email delivery (M2)
 

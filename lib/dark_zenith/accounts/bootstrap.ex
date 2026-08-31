@@ -115,10 +115,18 @@ defmodule DarkZenith.Accounts.Bootstrap do
   directly).
   """
   def child_spec(_opts) do
-    Task.child_spec(fn ->
-      if Application.get_env(:dark_zenith, :bootstrap_admin_on_boot, true) do
-        maybe_bootstrap_admin()
-      end
-    end)
+    %{
+      id: __MODULE__,
+      restart: :temporary,
+      start:
+        {Task, :start_link,
+         [
+           fn ->
+             if Application.get_env(:dark_zenith, :bootstrap_admin_on_boot, true) do
+               maybe_bootstrap_admin()
+             end
+           end
+         ]}
+    }
   end
 end
