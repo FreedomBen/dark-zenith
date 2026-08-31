@@ -21,7 +21,9 @@ defmodule DarkZenith.MixProject do
   def application do
     [
       mod: {DarkZenith.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      # :xmerl is called directly (B2 ListObjectVersions parsing) and must be
+      # declared so mix release bundles it.
+      extra_applications: [:logger, :runtime_tools, :xmerl]
     ]
   end
 

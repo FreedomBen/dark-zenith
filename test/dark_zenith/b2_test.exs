@@ -20,6 +20,12 @@ defmodule DarkZenith.B2Test do
     )
   end
 
+  test "the application declares :xmerl so releases bundle it" do
+    # ListObjectVersions parsing calls :xmerl_scan/:xmerl_xpath directly; a
+    # mix release only ships OTP applications the app spec depends on.
+    assert :xmerl in Application.spec(:dark_zenith, :applications)
+  end
+
   describe "presigned URLs" do
     test "staging upload URLs sign the method, key, content type, and length" do
       url =
