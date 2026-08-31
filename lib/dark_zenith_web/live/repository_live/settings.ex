@@ -26,10 +26,75 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
           <.input field={@form[:description]} type="textarea" label="Description" />
           <.input field={@form[:is_public]} type="checkbox" label="Public repository" />
 
+          <div :if={@owner_fingerprint} class="mt-4 space-y-2 border-t border-base-300 pt-4">
+            <label class="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="repository[metadata_signing]"
+                value="true"
+                checked={@repository.gpg_key_fingerprint != nil}
+                class="checkbox checkbox-sm"
+              />
+              Sign repository metadata (repomd.xml.asc) with your GPG key
+            </label>
+
+            <label class="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="repository[sign_rpms]"
+                value="true"
+                checked={@repository.sign_rpms}
+                class="checkbox checkbox-sm"
+              />
+              Automatically sign uploaded RPMs
+            </label>
+
+            <label
+              :if={!@repository.sign_rpms and @repository.package_count > 0}
+              class="flex items-center gap-2 text-sm pl-6 text-base-content/80"
+            >
+              <input
+                type="checkbox"
+                name="repository[existing_package_strategy]"
+                value="resign"
+                class="checkbox checkbox-sm"
+              />
+              Re-sign all {@repository.package_count} existing packages (required to enable
+              RPM signing on a non-empty repository)
+            </label>
+          </div>
+
+          <p :if={!@owner_fingerprint} class="mt-4 text-sm text-base-content/60">
+            Upload a GPG key in your account settings to enable signing.
+          </p>
+
           <.button phx-disable-with="Saving..." class="btn btn-primary w-full mt-4">
             Save settings
           </.button>
         </.form>
+
+        <section
+          :if={@repository.rpm_signing_state == "signing" and @signing_progress}
+          class="border border-warning/40 rounded-lg p-4 text-sm space-y-2"
+          id="signing-progress"
+        >
+          <h2 class="font-semibold">Re-signing in progress</h2>
+          <p>
+            {@signing_progress.counts["succeeded"]} signed ·
+            {@signing_progress.counts["pending"] + @signing_progress.counts["executing"]} pending ·
+            {@signing_progress.counts["failed"]} failed
+          </p>
+          <p class="text-base-content/70">
+            RPM signature verification stays off (gpgcheck=0) until every package is signed.
+          </p>
+          <div :if={@signing_progress.failed?} class="alert alert-error">
+            <span>
+              The transition failed ({@signing_progress.error_code}). An admin can reset the
+              failed items from the background-jobs view, or delete the affected packages to
+              cancel their items.
+            </span>
+          </div>
+        </section>
 
         <section>
           <h2 class="text-lg font-semibold mb-2">Manage Collaborators</h2>
@@ -136,9 +201,16 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
     if repository && DarkZenith.Authorization.can_manage?(user, repository) do
       changeset = settings_changeset(repository, %{}, socket)
 
+      owner =
+        if user.id == repository.user_id,
+          do: user,
+          else: DarkZenith.Accounts.get_user!(repository.user_id)
+
       {:ok,
        socket
        |> assign(:repository, repository)
+       |> assign(:owner_fingerprint, owner.gpg_key_fingerprint)
+       |> assign_signing_progress(repository)
        |> assign_form(changeset)
        |> assign(:collaborator_rows, Collaborators.list_rows(repository))
        |> assign_collaborator_form()}
@@ -155,17 +227,22 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
 
   def handle_event("save", %{"repository" => params}, socket) do
     user = socket.assigns.current_scope.user
+    params = translate_signing_params(params, socket)
 
     case Repositories.update_repository(user, socket.assigns.repository, params) do
       {:ok, repository} ->
         {:noreply,
          socket
          |> assign(:repository, repository)
+         |> assign_signing_progress(repository)
          |> assign_form(settings_changeset(repository, %{}, socket))
          |> put_flash(:info, "Settings saved.")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
+
+      {:error, :conflict_gpg_key_transition_in_progress} ->
+        {:noreply, put_flash(socket, :error, "A signing transition is already running.")}
 
       {:error, _other} ->
         {:noreply, put_flash(socket, :error, "The settings could not be saved.")}
@@ -249,6 +326,40 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "The repository could not be deleted.")}
     end
+  end
+
+  # Checkbox semantics: an unchecked signing box is absent from the params.
+  # metadata_signing maps to the owner's fingerprint or nil; sign_rpms
+  # defaults to false when unchecked and only a checked resign box carries
+  # the strategy.
+  defp translate_signing_params(params, socket) do
+    if socket.assigns.owner_fingerprint do
+      metadata? = Map.get(params, "metadata_signing") == "true"
+      sign_rpms? = Map.get(params, "sign_rpms") == "true"
+
+      params
+      |> Map.delete("metadata_signing")
+      |> Map.put("gpg_key_fingerprint", if(metadata?, do: socket.assigns.owner_fingerprint))
+      |> Map.put("sign_rpms", sign_rpms?)
+    else
+      params
+    end
+  end
+
+  defp assign_signing_progress(socket, repository) do
+    progress =
+      if repository.rpm_signing_state == "signing" and repository.signing_transition_id do
+        transition = DarkZenith.SigningTransitions.get_transition(repository.signing_transition_id)
+
+        transition &&
+          %{
+            counts: DarkZenith.SigningTransitions.item_counts(transition.id),
+            failed?: transition.status == "failed",
+            error_code: transition.last_error_code
+          }
+      end
+
+    assign(socket, :signing_progress, progress)
   end
 
   defp settings_changeset(repository, params, socket) do

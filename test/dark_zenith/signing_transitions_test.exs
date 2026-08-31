@@ -244,3 +244,86 @@ defmodule DarkZenith.SigningTransitionsTest do
     assert Repo.get!(Item, item.id).status == "canceled"
   end
 end
+
+defmodule DarkZenithWeb.SigningSettingsLiveTest do
+  # Not async: overrides the signing implementation.
+  use DarkZenithWeb.ConnCase, async: false
+
+  import Phoenix.LiveViewTest
+  import DarkZenith.AccountsFixtures
+  import DarkZenith.GpgFixtures
+  import DarkZenith.PackagesFixtures
+  import DarkZenith.RpmFixtures
+
+  alias DarkZenith.Accounts
+  alias DarkZenith.Repositories
+  alias DarkZenith.Repositories.Repository
+
+  setup %{conn: conn} do
+    Application.put_env(:dark_zenith, :signing_impl, DarkZenith.SigningStub)
+    on_exit(fn -> Application.delete_env(:dark_zenith, :signing_impl) end)
+
+    pair = generate_key_pair()
+    owner = user_fixture()
+    {:ok, owner} = Accounts.upsert_gpg_key(owner, pair.public, pair.private)
+
+    {:ok, repo} =
+      Repositories.create_repository(owner, %{
+        slug: "web-sign-#{System.unique_integer([:positive])}",
+        name: "Web signing"
+      })
+
+    %{conn: log_in_user(conn, owner), owner: owner, repo: repo, pair: pair}
+  end
+
+  test "enabling RPM signing from settings requires the resign confirmation", ctx do
+    insert_package_from_rpm!(ctx.repo, minimal_binary())
+    sync_repository_metadata_state!(ctx.repo)
+
+    {:ok, lv, html} = live(ctx.conn, ~p"/repos/#{ctx.repo.slug}/settings")
+    assert html =~ "Re-sign all 1 existing packages"
+
+    # Without the confirmation the enable is rejected by the matrix.
+    lv
+    |> form("#repository_settings_form",
+      repository: %{
+        "name" => ctx.repo.name,
+        "metadata_signing" => "true",
+        "sign_rpms" => "true"
+      }
+    )
+    |> render_submit()
+
+    refute DarkZenith.Repo.get!(Repository, ctx.repo.id).sign_rpms
+
+    # With the confirmation the signing transition starts.
+    lv
+    |> form("#repository_settings_form",
+      repository: %{
+        "name" => ctx.repo.name,
+        "metadata_signing" => "true",
+        "sign_rpms" => "true",
+        "existing_package_strategy" => "resign"
+      }
+    )
+    |> render_submit()
+
+    updated = DarkZenith.Repo.get!(Repository, ctx.repo.id)
+    assert updated.sign_rpms
+    assert updated.rpm_signing_state == "signing"
+    assert render(lv) =~ "Re-signing in progress"
+  end
+
+  test "metadata signing toggles the fingerprint on an empty repository", ctx do
+    {:ok, lv, _html} = live(ctx.conn, ~p"/repos/#{ctx.repo.slug}/settings")
+
+    lv
+    |> form("#repository_settings_form",
+      repository: %{"name" => ctx.repo.name, "metadata_signing" => "true"}
+    )
+    |> render_submit()
+
+    assert DarkZenith.Repo.get!(Repository, ctx.repo.id).gpg_key_fingerprint ==
+             ctx.pair.fingerprint
+  end
+end
