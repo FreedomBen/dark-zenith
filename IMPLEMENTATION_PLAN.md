@@ -180,10 +180,10 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 13 — Rate limiting (M4)
 
-- [ ] ETS fixed-window counters, UTC-aligned, atomic increments, 60 s sweep (Rate Limiting)
-- [ ] Bucket classes: general auth/unauth, auth attempts, downloads, specialized per-user hourly
-- [ ] Client IP resolution with `TRUSTED_PROXIES` / CF-Connecting-IP / XFF walk; IPv6 /64
-- [ ] Response headers, 429 bodies per surface, LiveView event limiting
+- [x] ETS fixed-window counters, UTC-aligned, atomic increments, 60 s sweep (Rate Limiting)
+- [x] Bucket classes: general auth/unauth, auth attempts, downloads, specialized per-user hourly
+- [x] Client IP resolution with `TRUSTED_PROXIES` / CF-Connecting-IP / XFF walk; IPv6 /64
+- [x] Response headers, 429 bodies per surface, LiveView event limiting
 
 ## Phase 14 — Web UI (M1 partial, M2/M3 complete)
 

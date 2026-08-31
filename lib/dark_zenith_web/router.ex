@@ -11,6 +11,7 @@ defmodule DarkZenithWeb.Router do
     plug :protect_from_forgery
     plug :put_secure_browser_headers
     plug :fetch_current_scope_for_user
+    plug DarkZenithWeb.Plugs.RateLimiter, surface: :browser
   end
 
   pipeline :api do
@@ -18,6 +19,7 @@ defmodule DarkZenithWeb.Router do
     plug :fetch_session
     plug :protect_cookie_authenticated_requests
     plug DarkZenithWeb.Api.AuthPlug
+    plug DarkZenithWeb.Plugs.RateLimiter, surface: :api
   end
 
   # CSRF protection applies to cookie-authenticated mutating API requests.
@@ -42,6 +44,7 @@ defmodule DarkZenithWeb.Router do
   pipeline :repo_serving do
     plug :fetch_session
     plug DarkZenithWeb.Plugs.RepoServingAuth
+    plug DarkZenithWeb.Plugs.RateLimiter, surface: :repo_serving
   end
 
   scope "/", DarkZenithWeb do
@@ -50,7 +53,10 @@ defmodule DarkZenithWeb.Router do
     get "/", PageController, :home
 
     live_session :repositories_authenticated,
-      on_mount: [{DarkZenithWeb.UserAuth, :require_authenticated}] do
+      on_mount: [
+        {DarkZenithWeb.UserAuth, :require_authenticated},
+        {DarkZenithWeb.LiveRateLimit, :default}
+      ] do
       # /repos/new precedes /repos/:slug; the slug "new" is reserved.
       live "/repos/new", RepositoryLive.New, :new
       live "/repos/:slug/settings", RepositoryLive.Settings, :edit
@@ -58,7 +64,10 @@ defmodule DarkZenithWeb.Router do
     end
 
     live_session :repositories_public,
-      on_mount: [{DarkZenithWeb.UserAuth, :mount_current_scope}] do
+      on_mount: [
+        {DarkZenithWeb.UserAuth, :mount_current_scope},
+        {DarkZenithWeb.LiveRateLimit, :default}
+      ] do
       live "/repos", RepositoryLive.Index, :index
       live "/repos/:slug", RepositoryLive.Show, :show
       live "/repos/:slug/packages/:name", PackageLive.Show, :show
@@ -145,7 +154,10 @@ defmodule DarkZenithWeb.Router do
     pipe_through [:browser, :require_authenticated_user]
 
     live_session :require_authenticated_user,
-      on_mount: [{DarkZenithWeb.UserAuth, :require_authenticated}] do
+      on_mount: [
+        {DarkZenithWeb.UserAuth, :require_authenticated},
+        {DarkZenithWeb.LiveRateLimit, :default}
+      ] do
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
     end
@@ -157,7 +169,10 @@ defmodule DarkZenithWeb.Router do
     pipe_through [:browser]
 
     live_session :current_user,
-      on_mount: [{DarkZenithWeb.UserAuth, :mount_current_scope}] do
+      on_mount: [
+        {DarkZenithWeb.UserAuth, :mount_current_scope},
+        {DarkZenithWeb.LiveRateLimit, :default}
+      ] do
       live "/users/register", UserLive.Registration, :new
       live "/users/log-in", UserLive.Login, :new
       live "/users/confirm", UserLive.ConfirmationInstructions, :new

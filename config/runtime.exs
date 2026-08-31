@@ -247,6 +247,10 @@ if config_env() == :prod do
 
   config :dark_zenith, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
+  config :dark_zenith,
+         :trusted_proxies,
+         DarkZenith.ClientIp.parse_trusted_proxies(System.get_env("TRUSTED_PROXIES") || "")
+
   config :dark_zenith, DarkZenithWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [

@@ -12,6 +12,7 @@ defmodule DarkZenith.Application do
       DarkZenith.Repo,
       DarkZenith.Accounts.Bootstrap,
       DarkZenith.TempSpace,
+      DarkZenith.RateLimit,
       {Oban, Application.fetch_env!(:dark_zenith, Oban)},
       DarkZenith.Jobs.GpgKeyReencryption,
       {DNSCluster, query: Application.get_env(:dark_zenith, :dns_cluster_query) || :ignore},

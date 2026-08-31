@@ -78,3 +78,15 @@ config :dark_zenith, :b2,
 # fixture-compatibility check is stubbed and exercised for real only where
 # rpm-sign exists (tagged :rpmsign integration test).
 config :dark_zenith, gpg_rpm_compat_impl: DarkZenith.GpgRpmCompatStub
+
+# Rate limiting is exercised by dedicated tests with tightened overrides;
+# the defaults here are effectively unlimited so the wider suite (which
+# shares one loopback IP) never trips a window.
+config :dark_zenith,
+       :rate_limit_overrides,
+       Map.new(
+         ~w(general_auth general_unauth auth_attempt_ip auth_attempt_email download_unauth
+            download_auth upload_intent repo_create api_key_create gpg_key_mutation
+            collaborator_add email_change)a,
+         fn kind -> {kind, {1_000_000, 60}} end
+       )
