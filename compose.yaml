@@ -1,0 +1,99 @@
+# Local development stack (`podman compose up -d --build`): the released app
+# plus PostgreSQL and MinIO, with MinIO standing in for Backblaze B2 so
+# everything works offline. All values below are development-only; nothing
+# here is a secret. Everything is published on 127.0.0.1 only.
+#
+# The app shares MinIO's network namespace so that presigned object URLs
+# (http://localhost:9000/...) reach MinIO identically from inside the app,
+# from a browser, and from dnf on the host — SigV4 signs the URL host, so
+# every consumer must use the same one. The pair is published on the ports
+# declared under `minio`; the app itself is http://localhost:4200.
+name: dark-zenith
+
+services:
+  db:
+    image: docker.io/library/postgres:18
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: dark_zenith
+    # 55433 host-side so the standalone dark-zenith-pg dev/test container
+    # (README) can keep 55432; the app connects internally via db:5432.
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "dark_zenith"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    image: docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_REGION: us-east-1
+    ports:
+      - "127.0.0.1:9000:9000" # S3 API (B2_ENDPOINT)
+      - "127.0.0.1:9001:9001" # MinIO web console
+      - "127.0.0.1:4200:4200" # the app (shares this network namespace)
+    volumes:
+      - minio-data:/data
+
+  # One-shot bucket setup. Versioning is required: the app treats a
+  # PutObject response without x-amz-version-id as a storage failure.
+  minio-init:
+    image: docker.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      - minio
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 1; done
+        mc mb --ignore-existing local/dark-zenith
+        mc version enable local/dark-zenith
+
+  app:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: localhost/dark-zenith:dev
+    network_mode: "service:minio"
+    depends_on:
+      db:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    command:
+      - /bin/sh
+      - -c
+      - bin/dark_zenith eval "DarkZenith.Release.migrate()" && exec bin/dark_zenith start
+    # Uploads, signing working copies, and temporary RPM keyrings stay off
+    # persistent storage (Containerfile note).
+    tmpfs:
+      - /tmp/dark-zenith
+    environment:
+      PHX_SERVER: "true"
+      PHX_HOST: localhost
+      PHX_SCHEME: http
+      PHX_URL_PORT: "4200"
+      PORT: "4200"
+      SECRET_KEY_BASE: dev-only-secret-key-base-for-the-local-compose-stack-0123456789abcdef0123456789abcdef
+      DATABASE_URL: ecto://postgres:postgres@db:5432/dark_zenith
+      B2_KEY_ID: minioadmin
+      B2_APPLICATION_KEY: minioadmin
+      B2_BUCKET: dark-zenith
+      B2_ENDPOINT: http://localhost:9000
+      B2_REGION: us-east-1
+      MAIL_ADAPTER: local
+      MAIL_FROM_ADDRESS: dark-zenith@localhost
+      REGISTRATION_ENABLED: "true"
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: darkzenith-admin-dev
+
+volumes:
+  db-data:
+  minio-data:

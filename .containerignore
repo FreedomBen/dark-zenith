@@ -1,0 +1,14 @@
+# Keep the image build context to what the Containerfile COPYs.
+# Mirrored in .dockerignore for docker-compose-provider builds.
+.git
+.claude
+.elixir_ls
+_build
+deps
+doc
+cover
+tmp
+test
+node_modules
+priv/static/assets
+commit.lock

@@ -33,6 +33,26 @@ mix test         # ExUnit suite
 mix precommit    # warnings-as-errors compile, unused-deps check, format, test
 ```
 
+## Full offline stack (podman compose)
+
+`compose.yaml` runs the released app (built from `Containerfile`) together with
+PostgreSQL and MinIO, with MinIO standing in for Backblaze B2 — no network or
+cloud credentials needed:
+
+```sh
+podman compose up -d --build
+```
+
+| Service    | Where                                                            |
+| ---------- | ---------------------------------------------------------------- |
+| App        | http://localhost:4200 (`admin@example.com` / `darkzenith-admin-dev`) |
+| MinIO S3   | http://localhost:9000 (`minioadmin` / `minioadmin`; console on 9001) |
+| PostgreSQL | 127.0.0.1:55433                                                  |
+
+This stack is independent of the `dark-zenith-pg` container above (its own
+database on 55433, its own volumes) so it can run alongside `mix phx.server`.
+`podman compose down` stops it; add `-v` to also discard its data.
+
 ## License
 
 AGPL-3.0-or-later — see `LICENSE`.

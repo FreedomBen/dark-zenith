@@ -216,7 +216,8 @@ wins. Checklist items reference spec sections rather than restating their rules.
       (built up phase by phase; RPM tool paths/timeouts read from app env with defaults)
 - [x] Boot probes: rpmkeys/rpmsign/gpg version + fixture verification, mail adapter check
       (Deployment)
-- [x] `/health` endpoints; release packaging, Dockerfile, systemd unit with confinement
+- [x] `/health` endpoints; release packaging, Containerfile, systemd unit with confinement
+- [x] `compose.yaml` offline local stack (app + PostgreSQL + MinIO under podman compose)
 - [x] `force_ssl`/proxy trust, CSP with `connect-src` B2 origin, filter_parameters, secure cookies
 - [x] dnf 4/5 end-to-end release-gate tests (public + private, signed + unsigned) —
       deploy/release_gate.sh runs boot checks plus dnf5/dnf makecache/repoquery for the
