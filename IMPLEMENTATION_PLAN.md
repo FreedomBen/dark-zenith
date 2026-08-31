@@ -72,9 +72,10 @@ wins. Checklist items reference spec sections rather than restating their rules.
 
 ## Phase 4 — EVR ordering in PostgreSQL (M1)
 
-- [ ] Migration owning `dark_zenith_rpmvercmp`, `dark_zenith_evr_cmp`, composite type +
+- [x] Migration owning `dark_zenith_rpmvercmp`, `dark_zenith_evr_cmp`, composite type +
       operator class (API Contract Details)
-- [ ] ExUnit conformance fixtures for the upstream librpm comparison corpus
+- [x] ExUnit conformance fixtures for the upstream librpm comparison corpus
+      (corpus + 400 random pairs differentially validated against rpm 6.0.1 on 2026-08-30)
 - [ ] Release-time differential check against RPM 6 tooling (wire into Phase 16 boot/release tests)
 
 ## Phase 5 — RPM parser, pure Elixir (M2)
