@@ -6,7 +6,8 @@ package repositories. Phoenix renders all web pages (LiveView) and repository me
 clients via time-limited signed URLs, so the app server never streams RPM bytes.
 
 The product and architecture contract is `docs/DESIGN.md`. Implementation progress is
-tracked in `docs/IMPLEMENTATION_PLAN.md`.
+tracked in `docs/IMPLEMENTATION_PLAN.md`. The web UI's visual design (identity, theming,
+layout, components) is specified in `docs/DESIGN_UI.md`.
 
 ## Development setup
 

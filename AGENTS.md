@@ -10,7 +10,9 @@
 The project contract lives in `docs/DESIGN.md`; keep it aligned with any implementation
 decisions. `docs/IMPLEMENTATION_PLAN.md` sequenced the initial build and every item is now
 checked off — treat it as the record of what exists and keep checking off (or adding)
-items if scope grows. `LICENSE` declares AGPL-3.0-or-later.
+items if scope grows. `docs/DESIGN_UI.md` specifies the web UI's visual design (identity,
+theming, layout, components); behavior stays in `docs/DESIGN.md`, which wins on conflict.
+`LICENSE` declares AGPL-3.0-or-later.
 
 The application is an Elixir/Phoenix (1.8, LiveView) RPM repository service using the
 conventional Phoenix layout: `lib/dark_zenith/` for domain code, `lib/dark_zenith_web/`

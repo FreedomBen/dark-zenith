@@ -18,6 +18,7 @@ when behavior is being (re)defined.
 Key files:
 
 - `docs/DESIGN.md` — the product/architecture spec; the source of truth for everything below
+- `docs/DESIGN_UI.md` — the web UI's visual design spec (identity, theming, layout, components); behavior stays in `docs/DESIGN.md`, which wins on conflict
 - `docs/IMPLEMENTATION_PLAN.md` — phased checklist tracking implementation progress; check items off as they complete
 - `AGENTS.md` — conventions for coding agents plus generated Phoenix 1.8 guidance; keep it consistent with this file when conventions change
 - `README.md` — dev setup (podman database container on port 55432) and common commands
