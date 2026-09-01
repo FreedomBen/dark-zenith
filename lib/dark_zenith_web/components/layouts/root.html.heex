@@ -31,6 +31,14 @@
     </script>
   </head>
   <body class="flex min-h-svh flex-col">
+    <%!-- Skip link precedes the nav (docs/DESIGN_UI.md — Accessibility):
+          visually hidden until focused. --%>
+    <a
+      href="#main-content"
+      class="btn btn-primary btn-sm sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-50"
+    >
+      Skip to content
+    </a>
     <header class="relative flex h-14 items-center justify-between gap-4 border-b border-base-content/10 px-4 sm:px-6 lg:px-8">
       <div class="flex items-center gap-6 self-stretch">
         <a href={~p"/"} class="flex items-center gap-2.5">
@@ -52,9 +60,11 @@
 
       <div class="flex items-center gap-2">
         <%!-- Global package search (docs/DESIGN_UI.md — App shell): compact
-              input on md+, a disclosure icon expanding to a full-width row
-              below md. Plain GET form — submits are full page loads. --%>
-        <details class="md:hidden">
+              input on lg+, a disclosure icon expanding to a full-width row
+              below lg (the signed-in bar cannot also fit the input at md;
+              U8 responsive sweep). Plain GET form — submits are full page
+              loads. --%>
+        <details class="lg:hidden">
           <summary
             class="btn btn-ghost btn-square btn-sm list-none [&::-webkit-details-marker]:hidden"
             aria-label="Search packages"
@@ -79,7 +89,7 @@
         </details>
 
         <div class="hidden items-center gap-3 sm:flex">
-          <form action={~p"/search"} method="get" class="hidden md:block">
+          <form action={~p"/search"} method="get" class="hidden lg:block">
             <label class="sr-only" for="global-search">Search packages</label>
             <input
               type="search"
@@ -154,7 +164,10 @@
         </details>
       </div>
     </header>
-    <div class="flex-1">
+    <%!-- The skip-link target lives here, on the wrapper every page shares,
+          so controller pages without Layouts.app (landing, errors) are
+          covered too. --%>
+    <div id="main-content" class="flex-1">
       {@inner_content}
     </div>
     <.app_footer />

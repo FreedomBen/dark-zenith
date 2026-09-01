@@ -107,8 +107,8 @@ defmodule DarkZenithWeb.UserLive.Settings do
           <li :for={key <- @api_keys} class="py-2 flex items-center justify-between gap-4">
             <div class="min-w-0">
               <span class="font-semibold">{key.name}</span>
-              <span class="font-mono text-base-content/60 ml-2">{key.key_prefix}…</span>
-              <div class="text-xs text-base-content/60">
+              <span class="font-mono text-base-content/70 ml-2">{key.key_prefix}…</span>
+              <div class="text-xs text-base-content/70">
                 {Enum.join(key.scopes, ", ")}
                 <span :if={key.expires_at}>
                   · expires {Calendar.strftime(key.expires_at, "%Y-%m-%d")}

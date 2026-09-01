@@ -104,7 +104,7 @@ text/UI); verify at implementation time.
 | `neutral-content`  | `#D8E0EE`              | `#F2F5FA`              |
 | `info`             | `#7AB8E6`              | `#2F6FA8`              |
 | `success`          | `#58B77E`              | `#2E7D54`              |
-| `warning`          | `#E08A3C`              | `#A85E14`              |
+| `warning`          | `#E08A3C`              | `#9C5711`              |
 | `error`            | `#E4707B`              | `#B03A48`              |
 
 Semantic `*-content` values follow the same pattern: dark content on the light-ish dark
@@ -191,7 +191,8 @@ Left → right:
 2. **Nav links**: `Repositories` (→ `/repos`). Active link carries a 2 px Zenith Gold
    bottom rule; inactive links are `base-content` at 70%, full on hover.
 3. **Global package search**: a compact input (`w-64`, collapses to a search icon button
-   below `md` that expands into a full-width row). Placeholder "Search packages…". Focus
+   below `lg` that expands into a full-width row — at `md` the signed-in bar cannot also
+   fit the input; found in the U8 responsive sweep). Placeholder "Search packages…". Focus
    shortcuts: `/` and `Ctrl`/`Cmd`+`K` (ignored while typing in another field). Submits to
    the search results page (scope note below).
 4. **Theme toggle**: the existing system/light/dark control, restyled to match.
@@ -208,7 +209,8 @@ the current right-aligned utility list is replaced entirely.
 
 ### Footer
 
-Hairline top border, single quiet row, `base-content` at 60%:
+Hairline top border, single quiet row, `base-content` at 70% (60% fails AA on
+Day; see Accessibility):
 
 - Left: reticle glyph + "Dark Zenith" + app version (from `Application.spec/2`).
 - Right: `Source` link and "AGPL-3.0-or-later". The Source link satisfies AGPL §13's
@@ -303,7 +305,14 @@ muted, current segment unlinked.
 ## Accessibility & motion
 
 - WCAG AA minimum: 4.5:1 body text, 3:1 large text and UI components, in both themes.
-- Visible focus: 2 px Zenith Gold outline with offset on every interactive element.
+  Verified programmatically (`test/dark_zenith_web/theme_contrast_test.exs`) against the
+  theme tokens; the AA-derived usage floors: muted text is `base-content` at 70% minimum
+  (60% composites to ≈4.4:1 on Day; decorative `aria-hidden` glyphs may go lower),
+  placeholders at 65%, resting form-control borders at `base-content` 40% night / 50%
+  day (daisyUI's stock 20% is ≈1.8:1), and the landing hero subhead at 80% (it sits on
+  the deeper day-gradient top rather than `base-100`).
+- Visible focus: 2 px Zenith Gold outline with offset on every interactive element
+  (the `primary` token, so Brass by day).
 - Full keyboard support; a skip-to-content link precedes the nav; search shortcuts never
   trap focus; sort headers and copy buttons are real buttons.
 - `prefers-reduced-motion` disables the spinner rotation and any transition longer than
@@ -337,7 +346,7 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
       tabs, package pages, upload states, settings, auth
 - [x] U6 — Admin: sub-nav tabs, dense table pass across the five admin views
 - [x] U7 — Global search (per the `DESIGN.md` Search spec): nav field + results page
-- [ ] U8 — QA pass: AA contrast verification in both themes, keyboard walkthrough,
+- [x] U8 — QA pass: AA contrast verification in both themes, keyboard walkthrough,
       reduced-motion check, responsive sweep, existing LiveView tests updated alongside
 
 Each phase lands with its tests updated (selectors/copy assertions in the existing

@@ -243,7 +243,7 @@ defmodule DarkZenithWeb.CoreComponents do
           />{@label}
         </span>
       </label>
-      <p :if={@help} class="mt-1 text-xs text-base-content/60">{@help}</p>
+      <p :if={@help} class="mt-1 text-xs text-base-content/70">{@help}</p>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
@@ -265,7 +265,7 @@ defmodule DarkZenithWeb.CoreComponents do
           {Phoenix.HTML.Form.options_for_select(@options, @value)}
         </select>
       </label>
-      <p :if={@help} class="mt-1 text-xs text-base-content/60">{@help}</p>
+      <p :if={@help} class="mt-1 text-xs text-base-content/70">{@help}</p>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
@@ -286,7 +286,7 @@ defmodule DarkZenithWeb.CoreComponents do
           {@rest}
         >{Phoenix.HTML.Form.normalize_value("textarea", @value)}</textarea>
       </label>
-      <p :if={@help} class="mt-1 text-xs text-base-content/60">{@help}</p>
+      <p :if={@help} class="mt-1 text-xs text-base-content/70">{@help}</p>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
@@ -310,7 +310,7 @@ defmodule DarkZenithWeb.CoreComponents do
           {@rest}
         />
       </label>
-      <p :if={@help} class="mt-1 text-xs text-base-content/60">{@help}</p>
+      <p :if={@help} class="mt-1 text-xs text-base-content/70">{@help}</p>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
@@ -408,7 +408,7 @@ defmodule DarkZenithWeb.CoreComponents do
             <th
               :for={col <- @col}
               class={[
-                "text-xs font-medium uppercase tracking-wider text-base-content/60",
+                "text-xs font-medium uppercase tracking-wider text-base-content/70",
                 col[:align] == :right && "text-right"
               ]}
               aria-sort={@sort_event && col[:sort] && aria_sort(@sort, col[:sort])}

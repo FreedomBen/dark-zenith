@@ -103,7 +103,7 @@ defmodule DarkZenithWeb.PackageLive.Version do
                 {render_entry(@tab, entry)}
               </li>
             </ul>
-            <p :if={@tab_entries == []} class="text-sm text-base-content/60">No entries.</p>
+            <p :if={@tab_entries == []} class="text-sm text-base-content/70">No entries.</p>
 
             <div :if={@tab_pages > 1} class="mt-2 flex gap-2">
               <button

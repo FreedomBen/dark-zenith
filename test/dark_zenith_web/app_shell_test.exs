@@ -70,6 +70,15 @@ defmodule DarkZenithWeb.AppShellTest do
       assert menu =~ "data-phx-theme"
     end
 
+    test "a skip-to-content link precedes the nav and its target exists", %{conn: conn} do
+      html = conn |> get(~p"/") |> html_response(200)
+
+      [before_header] = Regex.run(~r|<body.*?<header|s, html)
+      assert before_header =~ ~s(href="#main-content")
+      assert before_header =~ "Skip to content"
+      assert html =~ ~s(id="main-content")
+    end
+
     test "renders the global package search field submitting to /search", %{conn: conn} do
       header = header(conn, ~p"/")
 

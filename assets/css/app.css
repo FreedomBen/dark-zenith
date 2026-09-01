@@ -79,7 +79,7 @@
   --color-info-content: #f2f5fa;
   --color-success: #2e7d54;
   --color-success-content: #f2f5fa;
-  --color-warning: #a85e14;
+  --color-warning: #9c5711;
   --color-warning-content: #f2f5fa;
   --color-error: #b03a48;
   --color-error-content: #f2f5fa;
@@ -154,4 +154,53 @@
 
 [data-theme="light"] .dz-hero {
   background-image: linear-gradient(to top, var(--color-base-100), #cddef2);
+}
+
+/* --- Accessibility invariants (docs/DESIGN_UI.md — Accessibility & motion,
+   verified by test/dark_zenith_web/theme_contrast_test.exs). These rules are
+   deliberately unlayered so they win over the layered Tailwind/daisyUI
+   defaults. --- */
+
+/* Visible focus: a 2px primary outline with offset on every interactive
+   element — Zenith Gold at night, Brass by day; both hold ≥ 3:1 against
+   every ground. Replaces daisyUI's currentColor outlines. */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Form-control boundaries identify otherwise base-100 fields, so they need
+   ≥ 3:1 against the page ground (WCAG 1.4.11). daisyUI's resting border is
+   base-content at 20% (≈1.8:1); the pale day ground needs more ink than
+   night. Error variants and the focused state keep their own stronger
+   colors. */
+.input:not(.input-error, :focus, :focus-within),
+.select:not(.select-error, :focus, :focus-within),
+.textarea:not(.textarea-error, :focus, :focus-within) {
+  border-color: color-mix(in oklab, var(--color-base-content) 40%, #0000);
+}
+
+[data-theme="light"] .input:not(.input-error, :focus, :focus-within),
+[data-theme="light"] .select:not(.select-error, :focus, :focus-within),
+[data-theme="light"] .textarea:not(.textarea-error, :focus, :focus-within) {
+  border-color: color-mix(in oklab, var(--color-base-content) 50%, #0000);
+}
+
+/* Placeholders are text: base-content at 65% clears 4.5:1 in both themes
+   while staying visibly lighter than a typed value. */
+::placeholder {
+  color: color-mix(in oklab, var(--color-base-content) 65%, #0000);
+}
+
+/* prefers-reduced-motion stops the reticle spinner and clamps every
+   animation and transition (stricter than the spec's 150 ms floor). The
+   star field is a static SVG; no motion here is load-bearing. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

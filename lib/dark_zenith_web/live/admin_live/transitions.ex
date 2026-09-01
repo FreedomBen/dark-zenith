@@ -33,7 +33,7 @@ defmodule DarkZenithWeb.AdminLive.Transitions do
             <span class={["badge badge-soft badge-sm", status_badge(transition.status)]}>
               {transition.status}
             </span>
-            <span :if={transition.resume_status} class="whitespace-nowrap text-base-content/60">
+            <span :if={transition.resume_status} class="whitespace-nowrap text-base-content/70">
               → {transition.resume_status}
             </span>
           </:col>

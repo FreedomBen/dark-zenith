@@ -70,7 +70,7 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
               </label>
             </div>
 
-            <p :if={!@owner_fingerprint} class="mt-4 text-sm text-base-content/60">
+            <p :if={!@owner_fingerprint} class="mt-4 text-sm text-base-content/70">
               Upload a GPG key in your account settings to enable signing.
             </p>
 
@@ -141,7 +141,7 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
             >
               <div class="min-w-0">
                 <span class="font-mono text-sm break-all">{row_email(row)}</span>
-                <div class="text-xs text-base-content/60 space-x-2">
+                <div class="text-xs text-base-content/70 space-x-2">
                   <span class="badge badge-ghost badge-sm">{row_type(row)}</span>
                   <span title={notification_hint(row)}>
                     notification: {row.notification_status}
@@ -174,7 +174,7 @@ defmodule DarkZenithWeb.RepositoryLive.Settings do
             </li>
           </ul>
 
-          <p :if={@collaborator_rows == []} class="mt-4 text-sm text-base-content/60">
+          <p :if={@collaborator_rows == []} class="mt-4 text-sm text-base-content/70">
             No collaborators or pending invitations.
           </p>
         </section>

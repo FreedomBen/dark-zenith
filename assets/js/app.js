@@ -134,10 +134,12 @@ window.addEventListener("keydown", e => {
   const t = e.target
   if (t instanceof HTMLElement &&
       (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return
+  // A closed <details> hides its content without display:none in Chrome, so
+  // offsetParent alone cannot tell the collapsed field from the visible one.
   const inputs = [...document.querySelectorAll("[data-global-search]")]
-  let input = inputs.find(el => el.offsetParent !== null)
+  let input = inputs.find(el => el.offsetParent !== null && !el.closest("details:not([open])"))
   if (!input) {
-    const collapsed = inputs.find(el => el.closest("details"))
+    const collapsed = inputs.find(el => el.closest("details:not([open])"))
     if (!collapsed) return
     collapsed.closest("details").open = true
     input = collapsed

@@ -3,7 +3,9 @@
 <div class="dz-hero border-b border-base-content/10">
   <div class="mx-auto max-w-3xl space-y-6 px-4 py-20 text-center sm:py-24">
     <h1 class="font-display text-5xl font-semibold">Dark Zenith</h1>
-    <p class="text-lg text-base-content/70">
+    <%!-- /80, not the usual /70: the subhead sits on the hero gradient,
+          whose day-theme top (#cddef2) is deeper than base-100. --%>
+    <p class="text-lg text-base-content/80">
       A self-hosted RPM repository server — create repositories, upload packages,
       and point <span class="font-mono">dnf</span> at ready-to-serve, signed metadata.
     </p>
@@ -44,9 +46,9 @@
       >
         <span class="min-w-0">
           <span class="font-medium">{repository.name}</span>
-          <span class="ml-2 font-mono text-xs text-base-content/60">{repository.slug}</span>
+          <span class="ml-2 font-mono text-xs text-base-content/70">{repository.slug}</span>
         </span>
-        <span class="shrink-0 text-sm text-base-content/60">
+        <span class="shrink-0 text-sm text-base-content/70">
           {repository.package_count} packages
         </span>
       </.link>

@@ -65,7 +65,7 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
             <div class="flex justify-center">
               <.badge variant={status_badge(@status)} />
             </div>
-            <p class="text-center text-xs text-base-content/60">
+            <p class="text-center text-xs text-base-content/70">
               You can leave this page; processing continues in the background.
             </p>
           </div>
@@ -101,7 +101,7 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
                 {length(@preview["requires"] || [])}
               </div>
             </div>
-            <p class="text-xs text-base-content/60">
+            <p class="text-xs text-base-content/70">
               <span :if={@preview_remaining}>
                 Preview expires in {format_remaining(@preview_remaining)};
               </span>

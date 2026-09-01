@@ -19,15 +19,15 @@ defmodule DarkZenithWeb.UserLive.ResetPassword do
             during an account compromise stay valid until revoked.
           </p>
 
-          <div :if={@active_keys == []} class="text-sm text-base-content/60">
+          <div :if={@active_keys == []} class="text-sm text-base-content/70">
             You have no active API keys.
           </div>
 
           <ul :if={@active_keys != []} class="divide-y divide-base-content/10 text-sm">
             <li :for={key <- @active_keys} class="py-2">
               <span class="font-semibold">{key.name}</span>
-              <span class="font-mono text-base-content/60 ml-2">{key.key_prefix}…</span>
-              <span class="text-xs text-base-content/60 ml-2">{Enum.join(key.scopes, ", ")}</span>
+              <span class="font-mono text-base-content/70 ml-2">{key.key_prefix}…</span>
+              <span class="text-xs text-base-content/70 ml-2">{Enum.join(key.scopes, ", ")}</span>
             </li>
           </ul>
 

@@ -36,7 +36,7 @@ defmodule DarkZenithWeb.RepositoryLive.Index do
             <.link navigate={~p"/repos/#{repository.slug}"} class="link font-medium">
               {repository.name}
             </.link>
-            <span class="ml-2 font-mono text-xs text-base-content/60">{repository.slug}</span>
+            <span class="ml-2 font-mono text-xs text-base-content/70">{repository.slug}</span>
           </:col>
           <:col :let={repository} label="Description">
             <span class="block max-w-md truncate text-base-content/70">

@@ -84,7 +84,7 @@ defmodule DarkZenithWeb.SearchLive.Index do
               </:col>
             </.table>
 
-            <p :if={@repo_total > @repo_group_limit} class="mt-2 text-sm text-base-content/60">
+            <p :if={@repo_total > @repo_group_limit} class="mt-2 text-sm text-base-content/70">
               Showing the first {@repo_group_limit} of {@repo_total} matching repositories —
               refine the query to narrow them.
             </p>

@@ -318,7 +318,7 @@ defmodule DarkZenithWeb.CoreComponentsTest do
 
       assert html =~ "Immutable after creation."
       assert html =~ "text-xs"
-      assert html =~ "text-base-content/60"
+      assert html =~ "text-base-content/70"
     end
   end
 

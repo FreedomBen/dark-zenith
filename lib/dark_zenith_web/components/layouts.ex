@@ -253,7 +253,7 @@ defmodule DarkZenithWeb.Layouts do
     assigns = assign(assigns, version: version(), source_url: DarkZenith.source_url())
 
     ~H"""
-    <footer class="mt-auto flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-base-content/10 px-4 py-4 text-sm text-base-content/60 sm:px-6 lg:px-8">
+    <footer class="mt-auto flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-base-content/10 px-4 py-4 text-sm text-base-content/70 sm:px-6 lg:px-8">
       <span class="flex items-center gap-2">
         <.zenith_mark class="size-4" /> Dark Zenith v{@version}
       </span>
