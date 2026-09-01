@@ -7,6 +7,7 @@ defmodule DarkZenithWeb.Api.V1.UploadIntentJSON do
   """
 
   alias DarkZenith.Packages
+  alias DarkZenith.Uploads.FailureReason
   alias DarkZenithWeb.Api.Errors
   alias DarkZenithWeb.Api.V1.PackageJSON
 
@@ -40,11 +41,23 @@ defmodule DarkZenithWeb.Api.V1.UploadIntentJSON do
     }
   end
 
-  defp error(%{status: "failed", last_error_code: code}) when is_binary(code) do
+  defp error(%{status: "failed", last_error_code: code} = intent) when is_binary(code) do
     %{"code" => code, "message" => Errors.message(code)}
+    |> maybe_put_details(intent.last_error_detail)
   end
 
   defp error(_intent), do: nil
+
+  # A sanitized reason refines the coarse code (DESIGN.md: Upload Failure
+  # Reasons). An unrecognized stored value is dropped rather than echoed.
+  defp maybe_put_details(error, detail) when is_binary(detail) do
+    case FailureReason.message(detail) do
+      nil -> error
+      message -> Map.put(error, "details", %{"reason" => detail, "message" => message})
+    end
+  end
+
+  defp maybe_put_details(error, _detail), do: error
 
   defp package(%{status: "succeeded"} = intent, repository) do
     case Packages.get_package(repository, intent.package_id) do

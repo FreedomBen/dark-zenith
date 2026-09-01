@@ -13,6 +13,7 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
 
   alias DarkZenith.Repositories
   alias DarkZenith.Uploads
+  alias DarkZenith.Uploads.FailureReason
   alias DarkZenith.Uploads.Intent
 
   @poll_interval 1500
@@ -274,7 +275,7 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
             {:noreply, assign(socket, :phase, :done)}
 
           "failed" ->
-            {:noreply, assign(socket, :error, "Processing failed: #{intent.last_error_code}.")}
+            {:noreply, assign(socket, :error, failure_message(intent))}
 
           _other ->
             {:noreply,
@@ -315,6 +316,15 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
   defp schedule_poll(socket) do
     if connected?(socket), do: Process.send_after(self(), :poll, @poll_interval)
     socket
+  end
+
+  # The sanitized reason explains which rejection produced the coarse code
+  # (DESIGN.md: Upload Failure Reasons); an unrecognized value is dropped.
+  defp failure_message(intent) do
+    case FailureReason.message(intent.last_error_detail) do
+      nil -> "Processing failed: #{intent.last_error_code}."
+      message -> "Processing failed: #{message} (#{intent.last_error_detail})"
+    end
   end
 
   defp schedule_countdown(socket) do

@@ -129,6 +129,56 @@ defmodule DarkZenithWeb.UploadLiveTest do
     assert DarkZenith.Repo.get!(Intent, intent.id).status == "canceled"
   end
 
+  test "a processing failure explains the sanitized reason", ctx do
+    lv = mount_upload(ctx.conn, ctx.owner, ctx.repo)
+
+    lv |> render_hook("select_file", %{"name" => "u.rpm", "size" => byte_size(ctx.binary)})
+    intent = DarkZenith.Repo.one!(Intent)
+    stub_pipeline(intent, ctx.binary)
+    lv |> render_hook("uploaded", %{"version_id" => "4_zstaged"})
+
+    fail_intent!(intent.id, "validation_failed", "malformed_header_value")
+    send(lv.pid, :poll)
+
+    html = render(lv)
+    assert html =~ "A header tag has an unexpected physical type."
+    assert html =~ "malformed_header_value"
+  end
+
+  test "a processing failure with no reason falls back to the bare code", ctx do
+    lv = mount_upload(ctx.conn, ctx.owner, ctx.repo)
+
+    lv |> render_hook("select_file", %{"name" => "u.rpm", "size" => byte_size(ctx.binary)})
+    intent = DarkZenith.Repo.one!(Intent)
+    stub_pipeline(intent, ctx.binary)
+    lv |> render_hook("uploaded", %{"version_id" => "4_zstaged"})
+
+    fail_intent!(intent.id, "storage_unavailable", nil)
+    send(lv.pid, :poll)
+
+    assert render(lv) =~ "Processing failed: storage_unavailable."
+  end
+
+  defp fail_intent!(intent_id, code, detail) do
+    import Ecto.Query, only: [from: 2]
+
+    DarkZenith.Repo.update_all(
+      from(i in Intent, where: i.id == ^intent_id),
+      set: [
+        status: "failed",
+        reservation_id: nil,
+        completed_at: DateTime.utc_now(:second),
+        next_attempt_at: nil,
+        lease_token: nil,
+        lease_expires_at: nil,
+        expires_at: nil,
+        upload_url_expires_at: nil,
+        last_error_code: code,
+        last_error_detail: detail
+      ]
+    )
+  end
+
   test "a failed transfer surfaces an error after refresh is refused", ctx do
     lv = mount_upload(ctx.conn, ctx.owner, ctx.repo)
     lv |> render_hook("select_file", %{"name" => "u.rpm", "size" => 100})

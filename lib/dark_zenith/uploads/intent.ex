@@ -25,6 +25,7 @@ defmodule DarkZenith.Uploads.Intent do
     field :lease_token, :binary_id
     field :lease_expires_at, :utc_datetime
     field :last_error_code, :string
+    field :last_error_detail, :string
     field :expires_at, :utc_datetime
     field :completed_at, :utc_datetime
 

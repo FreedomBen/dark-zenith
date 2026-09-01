@@ -38,6 +38,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
   alias DarkZenith.Storage.Reservation
   alias DarkZenith.TempSpace
   alias DarkZenith.Uploads
+  alias DarkZenith.Uploads.FailureReason
   alias DarkZenith.Uploads.Intent
   alias DarkZenith.Workers.RetryPolicy
 
@@ -160,7 +161,10 @@ defmodule DarkZenith.Workers.UploadProcessing do
         :ok
 
       {:error, {:deterministic, code}} ->
-        deterministic_failure(intent, token, code)
+        deterministic_failure(intent, token, code, nil)
+
+      {:error, {:deterministic, code, detail}} ->
+        deterministic_failure(intent, token, code, detail)
 
       {:error, {:infra, code}} ->
         infra_failure(intent, token, code)
@@ -186,7 +190,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
 
       intent.mode == "web_preview" and
           intent.preview_metadata != Uploads.preview_metadata(staged.metadata) ->
-        {:error, {:deterministic, "validation_failed"}}
+        {:error, {:deterministic, "validation_failed", "preview_metadata_mismatch"}}
 
       true ->
         with {:ok, final} <-
@@ -295,7 +299,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
     any_bad? = Enum.any?(results, fn {_name, status} -> status == "BAD" end)
 
     if any_bad? or not digest_ok? do
-      {:error, {:deterministic, "validation_failed"}}
+      {:error, {:deterministic, "validation_failed", "integrity_check_failed"}}
     else
       :ok
     end
@@ -303,8 +307,11 @@ defmodule DarkZenith.Workers.UploadProcessing do
 
   defp parse_metadata(source_path) do
     case DarkZenith.Rpm.parse(File.read!(source_path)) do
-      {:ok, metadata} -> {:ok, metadata}
-      {:error, _reason} -> {:error, {:deterministic, "validation_failed"}}
+      {:ok, metadata} ->
+        {:ok, metadata}
+
+      {:error, reason} ->
+        {:error, {:deterministic, "validation_failed", FailureReason.sanitize(reason)}}
     end
   end
 
@@ -337,7 +344,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
     cond do
       is_nil(snapshot.owner_signing_fingerprint) ->
         # sign_rpms enabled with no configured key rejects the upload.
-        {:error, {:deterministic, "validation_failed"}}
+        {:error, {:deterministic, "validation_failed", "signing_key_not_configured"}}
 
       true ->
         case DarkZenith.Signing.sign_rpm(owner, source_path, dir, metadata) do
@@ -390,7 +397,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
              }}
 
           {:error, _reason} ->
-            {:error, {:deterministic, "validation_failed"}}
+            {:error, {:deterministic, "validation_failed", "signed_output_verification_failed"}}
         end
     end
   end
@@ -484,7 +491,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
         "#{metadata.arch}.rpm"
 
     if byte_size(key) > @max_final_key_bytes do
-      {:error, {:deterministic, "validation_failed"}}
+      {:error, {:deterministic, "validation_failed", "storage_key_too_long"}}
     else
       {:ok, key}
     end
@@ -598,7 +605,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
 
       {:fail, code, _current} ->
         _ = B2.delete_version(config, candidate.storage_path, candidate.storage_version_id)
-        deterministic_failure(intent, token, code)
+        deterministic_failure(intent, token, code, nil)
     end
   end
 
@@ -679,6 +686,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
           lease_expires_at: nil,
           next_attempt_at: nil,
           last_error_code: nil,
+          last_error_detail: nil,
           updated_at: now
         ]
       )
@@ -723,6 +731,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
                 lease_token: nil,
                 lease_expires_at: nil,
                 last_error_code: nil,
+                last_error_detail: nil,
                 updated_at: now
               ]
             )
@@ -744,18 +753,23 @@ defmodule DarkZenith.Workers.UploadProcessing do
 
   ## Failure paths
 
-  defp deterministic_failure(intent, token, code) do
+  # The audit row carries the sanitized reason when there is one, so an
+  # operator sees the same classification the uploader does.
+  defp audit_result(code, nil), do: %{"result" => code}
+  defp audit_result(code, detail), do: %{"result" => code, "reason" => detail}
+
+  defp deterministic_failure(intent, token, code, detail) do
     {:ok, _} =
       Repo.transact(fn ->
         current = Uploads.lock_intent!(intent.id)
 
         if current && current.status == "processing" && current.lease_token == token do
-          Uploads.terminalize!(current, "failed", code)
+          Uploads.terminalize!(current, "failed", code, detail)
 
           Audit.record!("package.upload",
             actor: Repo.get(User, intent.user_id),
             target: {:upload_intent, intent.id},
-            metadata: %{"result" => code}
+            metadata: audit_result(code, detail)
           )
         end
 
@@ -799,6 +813,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
                   lease_expires_at: nil,
                   next_attempt_at: next_at,
                   last_error_code: code,
+                  last_error_detail: nil,
                   updated_at: now
                 ]
               )

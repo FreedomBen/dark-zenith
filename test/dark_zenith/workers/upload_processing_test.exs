@@ -161,6 +161,7 @@ defmodule DarkZenith.Workers.UploadProcessingTest do
     failed = reload(intent)
     assert failed.status == "failed"
     assert failed.last_error_code == "validation_failed"
+    assert failed.last_error_detail == "integrity_check_failed"
     assert failed.reservation_id == nil
     refute Repo.get(Package, intent.package_id)
     assert_enqueued(worker: StagingCleanup, args: %{staging_path: intent.staging_path})
@@ -171,7 +172,10 @@ defmodule DarkZenith.Workers.UploadProcessingTest do
     intent = queued_intent!(ctx, junk)
 
     assert :ok = perform_job(UploadProcessing, %{"intent_id" => intent.id})
-    assert reload(intent).last_error_code == "validation_failed"
+
+    failed = reload(intent)
+    assert failed.last_error_code == "validation_failed"
+    assert failed.last_error_detail == "integrity_check_failed"
   end
 
   test "a duplicate NEVRA fails as conflict_duplicate_package", ctx do
@@ -293,6 +297,7 @@ defmodule DarkZenith.Workers.UploadProcessingTest do
     failed = reload(intent)
     assert failed.status == "failed"
     assert failed.last_error_code == "validation_failed"
+    assert failed.last_error_detail == "signing_key_not_configured"
   end
 
   test "an undecryptable owner key requeues as signing_unavailable", ctx do

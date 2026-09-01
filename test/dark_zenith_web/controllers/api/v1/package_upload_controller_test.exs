@@ -162,6 +162,63 @@ defmodule DarkZenithWeb.Api.V1.PackageUploadControllerTest do
       assert get_resp_header(conn, "retry-after") == []
     end
 
+    test "a failed intent's error carries the sanitized reason", ctx do
+      force_terminal!(ctx.intent.id, "failed",
+        last_error_code: "validation_failed",
+        last_error_detail: "malformed_header_value"
+      )
+
+      conn =
+        ctx.conn
+        |> bearer(ctx.token)
+        |> get(~p"/api/v1/repos/#{ctx.repo.slug}/package-uploads/#{ctx.intent.id}")
+
+      assert %{
+               "data" => %{
+                 "status" => "failed",
+                 "error" => %{
+                   "code" => "validation_failed",
+                   "message" => "Validation failed",
+                   "details" => %{
+                     "reason" => "malformed_header_value",
+                     "message" => message
+                   }
+                 }
+               }
+             } = json_response(conn, 200)
+
+      assert message =~ "physical type"
+    end
+
+    test "a failed intent without a reason omits details", ctx do
+      force_terminal!(ctx.intent.id, "failed", last_error_code: "storage_unavailable")
+
+      conn =
+        ctx.conn
+        |> bearer(ctx.token)
+        |> get(~p"/api/v1/repos/#{ctx.repo.slug}/package-uploads/#{ctx.intent.id}")
+
+      assert %{"data" => %{"error" => error}} = json_response(conn, 200)
+      assert error["code"] == "storage_unavailable"
+      refute Map.has_key?(error, "details")
+    end
+
+    test "a stored reason outside the vocabulary is never echoed", ctx do
+      force_terminal!(ctx.intent.id, "failed",
+        last_error_code: "validation_failed",
+        last_error_detail: "rpmkeys: /tmp/staging/x.rpm: BAD"
+      )
+
+      conn =
+        ctx.conn
+        |> bearer(ctx.token)
+        |> get(~p"/api/v1/repos/#{ctx.repo.slug}/package-uploads/#{ctx.intent.id}")
+
+      assert %{"data" => %{"error" => error}} = json_response(conn, 200)
+      refute Map.has_key?(error, "details")
+      refute json_response(conn, 200) |> Jason.encode!() =~ "rpmkeys"
+    end
+
     test "completion returns 202 with Retry-After 2", ctx do
       path = "/dz-bucket/" <> ctx.intent.staging_path
 

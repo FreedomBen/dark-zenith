@@ -332,6 +332,7 @@ defmodule DarkZenith.Uploads do
                   next_attempt_at: now,
                   expires_at: nil,
                   last_error_code: nil,
+                  last_error_detail: nil,
                   updated_at: now
                 ]
               )
@@ -502,7 +503,7 @@ defmodule DarkZenith.Uploads do
 
   @doc false
   # Terminal transition inside a transaction holding the intent lock.
-  def terminalize!(%Intent{} = intent, status, error_code \\ nil) do
+  def terminalize!(%Intent{} = intent, status, error_code \\ nil, error_detail \\ nil) do
     now = DateTime.utc_now(:second)
 
     fields = [
@@ -518,6 +519,9 @@ defmodule DarkZenith.Uploads do
     ]
 
     fields = if error_code, do: Keyword.put(fields, :last_error_code, error_code), else: fields
+
+    fields =
+      if error_detail, do: Keyword.put(fields, :last_error_detail, error_detail), else: fields
 
     {1, _} = Repo.update_all(from(i in Intent, where: i.id == ^intent.id), set: fields)
 
