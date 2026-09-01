@@ -8,6 +8,7 @@ defmodule DarkZenithWeb.UploadLiveTest do
   import DarkZenith.RepositoriesFixtures
   import DarkZenith.RpmFixtures
 
+  alias DarkZenith.Uploads
   alias DarkZenith.Uploads.Intent
   alias DarkZenith.Workers.UploadProcessing
 
@@ -204,6 +205,146 @@ defmodule DarkZenithWeb.UploadLiveTest do
       ctx.conn
       |> log_in_user(stranger)
       |> get(~p"/repos/#{ctx.repo.slug}/upload")
+    end
+  end
+
+  describe "reattaching through ?intent=" do
+    defp web_intent!(ctx) do
+      {:ok, intent, _} =
+        Uploads.create_intent(ctx.owner, ctx.repo, %{
+          filename: "again.rpm",
+          size: byte_size(ctx.binary),
+          mode: "web_preview"
+        })
+
+      intent
+    end
+
+    defp queued!(ctx) do
+      intent = web_intent!(ctx)
+      stub_pipeline(intent, ctx.binary)
+      {:ok, queued} = Uploads.complete_intent(ctx.owner, intent, 1, "4_zstaged")
+      queued
+    end
+
+    test "creating an intent patches its id into the URL", ctx do
+      lv = mount_upload(ctx.conn, ctx.owner, ctx.repo)
+      lv |> render_hook("select_file", %{"name" => "u.rpm", "size" => byte_size(ctx.binary)})
+
+      intent = DarkZenith.Repo.one!(Intent)
+      assert_patch(lv, ~p"/repos/#{ctx.repo.slug}/upload?intent=#{intent.id}")
+      assert render(lv) =~ "Transferring"
+
+      # Starting over returns to the bare URL and the drop zone.
+      render_click(lv, "reset", %{})
+      assert_patch(lv, ~p"/repos/#{ctx.repo.slug}/upload")
+      assert render(lv) =~ "data-drop-zone"
+    end
+
+    test "a queued intent resumes showing progress and polls to its preview", ctx do
+      queued = queued!(ctx)
+
+      {:ok, lv, html} =
+        ctx.conn
+        |> log_in_user(ctx.owner)
+        |> live(~p"/repos/#{ctx.repo.slug}/upload?intent=#{queued.id}")
+
+      assert html =~ "Processing"
+      assert html =~ ~r|<span[^>]*badge[^>]*>\s*queued|
+      assert html =~ "again.rpm"
+
+      assert :ok = perform_job(UploadProcessing, %{"intent_id" => queued.id})
+      send(lv.pid, :poll)
+      assert render(lv) =~ "Confirm upload"
+    end
+
+    test "a preview_ready intent opens directly on its preview", ctx do
+      queued = queued!(ctx)
+      assert :ok = perform_job(UploadProcessing, %{"intent_id" => queued.id})
+
+      {:ok, lv, html} =
+        ctx.conn
+        |> log_in_user(ctx.owner)
+        |> live(~p"/repos/#{ctx.repo.slug}/upload?intent=#{queued.id}")
+
+      assert html =~ "Confirm upload"
+      assert html =~ "dz-fixture"
+      assert html =~ ~r|Preview expires in \d+:\d\d|
+
+      lv |> element("#confirm-upload") |> render_click()
+      assert DarkZenith.Repo.get!(Intent, queued.id).status == "queued"
+    end
+
+    test "an awaiting_upload intent shows as an unfinished transfer", ctx do
+      intent = web_intent!(ctx)
+
+      {:ok, lv, html} =
+        ctx.conn
+        |> log_in_user(ctx.owner)
+        |> live(~p"/repos/#{ctx.repo.slug}/upload?intent=#{intent.id}")
+
+      assert html =~ ~s(id="unfinished-transfer")
+      assert html =~ "did not finish"
+      assert html =~ "again.rpm"
+      assert html =~ "data-drop-zone"
+      refute html =~ "Confirm upload"
+
+      lv |> element("#cancel-unfinished") |> render_click()
+      assert_patch(lv, ~p"/repos/#{ctx.repo.slug}/upload")
+      assert DarkZenith.Repo.get!(Intent, intent.id).status == "canceled"
+      refute render(lv) =~ "unfinished-transfer"
+      assert render(lv) =~ "data-drop-zone"
+    end
+
+    test "a fresh upload can start beside an unfinished one", ctx do
+      unfinished = web_intent!(ctx)
+
+      {:ok, lv, _html} =
+        ctx.conn
+        |> log_in_user(ctx.owner)
+        |> live(~p"/repos/#{ctx.repo.slug}/upload?intent=#{unfinished.id}")
+
+      lv |> render_hook("select_file", %{"name" => "fresh.rpm", "size" => 100})
+      assert_push_event(lv, "start_upload", %{url: _})
+
+      fresh = Intent |> DarkZenith.Repo.all() |> Enum.find(&(&1.id != unfinished.id))
+      assert_patch(lv, ~p"/repos/#{ctx.repo.slug}/upload?intent=#{fresh.id}")
+      assert DarkZenith.Repo.get!(Intent, unfinished.id).status == "awaiting_upload"
+    end
+
+    test "any other value renders the standard 404", ctx do
+      admin = admin_fixture()
+
+      {:ok, admins_intent, _} =
+        Uploads.create_intent(admin, ctx.repo, %{filename: "a.rpm", size: 10, mode: "web_preview"})
+
+      other_repo = repository_fixture(ctx.owner)
+
+      {:ok, elsewhere, _} =
+        Uploads.create_intent(ctx.owner, other_repo, %{
+          filename: "b.rpm",
+          size: 10,
+          mode: "web_preview"
+        })
+
+      terminal = web_intent!(ctx)
+      {:ok, _} = Uploads.cancel_intent(ctx.owner, terminal)
+
+      for id <- [admins_intent.id, elsewhere.id, terminal.id, Ecto.UUID.generate(), "not-a-uuid"] do
+        assert_error_sent 404, fn ->
+          ctx.conn
+          |> log_in_user(ctx.owner)
+          |> get(~p"/repos/#{ctx.repo.slug}/upload?intent=#{id}")
+        end
+      end
+
+      # The admin's own intent, from the admin's session, still reattaches.
+      {:ok, _lv, html} =
+        ctx.conn
+        |> log_in_user(admin)
+        |> live(~p"/repos/#{ctx.repo.slug}/upload?intent=#{admins_intent.id}")
+
+      assert html =~ "unfinished-transfer"
     end
   end
 end

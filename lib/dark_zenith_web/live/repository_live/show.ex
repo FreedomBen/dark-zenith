@@ -1,8 +1,22 @@
 defmodule DarkZenithWeb.RepositoryLive.Show do
+  @moduledoc """
+  Repository detail (`GET /repos/:slug`; DESIGN.md: Repository Detail):
+  setup instructions, the package table, and — for the owner or an admin —
+  the Upload History section over Package Upload Records, with the
+  `outcome` filter and page held in the URL and a five-second refresh
+  timer driven by the repository-wide in-flight count.
+  """
+
   use DarkZenithWeb, :live_view
 
   alias DarkZenith.Repositories
   alias DarkZenith.Repositories.RepoFile
+  alias DarkZenith.Uploads
+  alias DarkZenith.Uploads.{Intent, Records}
+  alias DarkZenithWeb.UploadHistoryComponents
+
+  @upload_per_page 25
+  @upload_refresh_interval 5_000
 
   @impl true
   def render(assigns) do
@@ -213,6 +227,49 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
             </div>
           </div>
         </section>
+
+        <%!-- Owner/admin only, and only once the repository has a record;
+        below the package table so it never competes with setup. --%>
+        <section :if={@manager? && @upload_history?} id="upload-history" class="space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="flex items-center gap-3 text-lg font-semibold">
+              Upload History
+              <.link
+                id="in-flight-count"
+                patch={history_path(@repository, outcome: "in_flight")}
+                class={[
+                  "badge badge-sm",
+                  (@in_flight_count > 0 && "badge-soft badge-warning") || "badge-ghost"
+                ]}
+              >
+                {@in_flight_count} in flight
+              </.link>
+            </h2>
+            <UploadHistoryComponents.outcome_filter
+              selected={@upload_filter_selected}
+              path={&history_path(@repository, outcome: &1)}
+            />
+          </div>
+
+          <Layouts.empty_state :if={@upload_records == []}>
+            No uploads match this filter.
+          </Layouts.empty_state>
+
+          <UploadHistoryComponents.upload_table
+            :if={@upload_records != []}
+            id="upload-records"
+            records={@upload_records}
+            current_user={@current_scope.user}
+            live_repositories={%{@repository.id => @repository.slug}}
+            actions
+          />
+
+          <UploadHistoryComponents.pagination
+            page={@upload_page}
+            pages={@upload_pages}
+            path={&history_path(@repository, outcome: @upload_outcome_param, page: &1)}
+          />
+        </section>
       </div>
     </Layouts.app>
     """
@@ -241,6 +298,15 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
          |> assign(:setup_tab, "dnf5")
          |> assign(:package_q, "")
          |> assign(:package_sort, nil)
+         |> assign(:upload_history?, false)
+         |> assign(:upload_records, [])
+         |> assign(:upload_page, 1)
+         |> assign(:upload_pages, 0)
+         |> assign(:upload_outcomes, nil)
+         |> assign(:upload_outcome_param, nil)
+         |> assign(:upload_filter_selected, nil)
+         |> assign(:in_flight_count, 0)
+         |> assign(:upload_refresh_ref, nil)
          |> load_packages(1)}
 
       is_nil(user) ->
@@ -256,12 +322,43 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
     end
   end
 
+  # The Upload History filter and page live in the URL under the REST
+  # listing's own parameter names, so a filtered view is reloadable.
+  @impl true
+  def handle_params(params, _uri, socket) do
+    if socket.assigns.manager? do
+      {:noreply, load_upload_history(socket, params)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   @valid_sorts ~w(version -version arch -arch inserted_at -inserted_at name -name)
   @setup_tabs ~w(dnf5 dnf4 repo-file)
 
   @impl true
   def handle_event("setup_tab", %{"tab" => tab}, socket) when tab in @setup_tabs do
     {:noreply, assign(socket, :setup_tab, tab)}
+  end
+
+  # The same initiator-only cancellation as the upload page: another
+  # user's intent is nonexistent to this viewer.
+  def handle_event("cancel_upload", %{"id" => id}, socket) do
+    if socket.assigns.manager? do
+      user = socket.assigns.current_scope.user
+
+      socket =
+        with %Intent{} = intent <- Uploads.get_intent_for(user, socket.assigns.repository, id),
+             {:ok, _} <- Uploads.cancel_intent(user, intent) do
+          put_flash(socket, :info, "Upload canceled.")
+        else
+          _ -> put_flash(socket, :error, "The upload could not be canceled.")
+        end
+
+      {:noreply, socket |> reload_upload_history() |> schedule_upload_refresh()}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_event("search_packages", params, socket) do
@@ -284,6 +381,94 @@ defmodule DarkZenithWeb.RepositoryLive.Show do
   def handle_event("package_page", %{"page" => page}, socket) do
     {:noreply, load_packages(socket, String.to_integer(page))}
   end
+
+  # The refresh tick is an internal message, so it consumes no rate-limit
+  # bucket; it re-arms itself only while the in-flight count is nonzero.
+  @impl true
+  def handle_info(:refresh_upload_history, socket) do
+    socket = assign(socket, :upload_refresh_ref, nil)
+
+    if socket.assigns.manager? do
+      {:noreply, socket |> reload_upload_history() |> schedule_upload_refresh()}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  ## Upload History
+
+  defp load_upload_history(socket, params) do
+    # An unparseable filter falls back to the unfiltered list.
+    {outcomes, outcome_param} =
+      case Records.parse_outcome_filter(params["outcome"]) do
+        {:ok, outcomes} -> {outcomes, params["outcome"]}
+        {:error, _message} -> {nil, nil}
+      end
+
+    socket
+    |> assign(:upload_outcomes, outcomes)
+    |> assign(:upload_outcome_param, outcome_param)
+    |> assign(:upload_filter_selected, UploadHistoryComponents.selected_segment(outcomes))
+    |> assign(:upload_page, parse_page(params["page"]))
+    |> reload_upload_history()
+    |> schedule_upload_refresh()
+  end
+
+  defp reload_upload_history(socket) do
+    repository = socket.assigns.repository
+
+    {records, total} =
+      Uploads.list_repository_records(repository,
+        outcomes: socket.assigns.upload_outcomes,
+        page: socket.assigns.upload_page,
+        per_page: @upload_per_page
+      )
+
+    socket
+    |> assign(:upload_records, records)
+    |> assign(:upload_pages, div(total + @upload_per_page - 1, @upload_per_page))
+    |> assign(:in_flight_count, Records.in_flight_count(repository.id))
+    |> assign(:upload_history?, total > 0 or Records.any_for_repository?(repository.id))
+  end
+
+  # The refresh condition is the repository-wide in-flight count, not the
+  # visible page: a stuck upload is by definition an old one.
+  defp schedule_upload_refresh(socket) do
+    cond do
+      not connected?(socket) ->
+        socket
+
+      socket.assigns.in_flight_count == 0 ->
+        socket
+
+      socket.assigns.upload_refresh_ref ->
+        socket
+
+      true ->
+        ref = Process.send_after(self(), :refresh_upload_history, @upload_refresh_interval)
+        assign(socket, :upload_refresh_ref, ref)
+    end
+  end
+
+  defp history_path(repository, overrides) do
+    query =
+      overrides
+      |> Enum.reject(fn {_key, value} -> value in [nil, "", 1] end)
+      |> Map.new(fn {key, value} -> {Atom.to_string(key), value} end)
+
+    if query == %{},
+      do: ~p"/repos/#{repository.slug}",
+      else: ~p"/repos/#{repository.slug}?#{query}"
+  end
+
+  defp parse_page(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {page, ""} when page >= 1 -> page
+      _ -> 1
+    end
+  end
+
+  defp parse_page(_value), do: 1
 
   @per_page 50
 

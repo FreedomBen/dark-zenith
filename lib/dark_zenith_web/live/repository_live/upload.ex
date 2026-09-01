@@ -7,6 +7,13 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
   `DirectUpload` JS hook; RPM bytes never traverse Phoenix. The LiveView
   drives the intent lifecycle and polls durable status, so a disconnect
   never cancels the job.
+
+  The page is addressed with an optional `?intent=<id>` — its only
+  documented query parameter — patched into the URL when an intent is
+  created, so a reload, a remount after an app restart, or a link from
+  Upload History reattaches to the viewer's own non-terminal intent
+  instead of starting over (DESIGN.md: Upload RPM — Reattaching). Any
+  other value renders the standard 404.
   """
 
   use DarkZenithWeb, :live_view
@@ -41,8 +48,22 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
         </div>
 
         <div id="direct-upload" phx-hook="DirectUpload" class="space-y-8">
+          <%!-- A reattached awaiting_upload intent: the browser no longer
+          holds its file, so it offers only cancellation and a fresh upload. --%>
+          <div :if={@phase == :unfinished} id="unfinished-transfer" class="alert alert-soft text-sm">
+            <.icon name="hero-exclamation-triangle" class="size-5 shrink-0" />
+            <span class="text-base-content/70">
+              The transfer of <span class="font-mono">{@filename}</span>
+              did not finish, and this browser no longer holds the file.
+              Cancel it, or start a fresh upload below.
+            </span>
+            <button id="cancel-unfinished" class="btn btn-sm btn-error" phx-click="cancel">
+              Cancel
+            </button>
+          </div>
+
           <label
-            :if={@phase == :idle}
+            :if={@phase in [:idle, :unfinished]}
             data-drop-zone
             class={[
               "relative flex cursor-pointer flex-col items-center gap-3 overflow-hidden",
@@ -150,6 +171,26 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
     end
   end
 
+  # `intent` is the route's only documented query parameter. The page's
+  # own patch after creating an intent arrives here too and is a no-op;
+  # a bare URL after an intent was attached (history navigation) starts
+  # fresh; anything else reattaches or 404s.
+  @impl true
+  def handle_params(params, _uri, socket) do
+    case params["intent"] do
+      nil ->
+        if socket.assigns.intent_id,
+          do: {:noreply, reset_state(socket)},
+          else: {:noreply, socket}
+
+      id when id == socket.assigns.intent_id ->
+        {:noreply, socket}
+
+      id ->
+        {:noreply, reattach(socket, id)}
+    end
+  end
+
   @impl true
   def handle_event("select_file", %{"name" => name, "size" => size}, socket)
       when is_integer(size) do
@@ -169,7 +210,8 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
          |> assign(:filename, intent.original_filename)
          |> assign(:phase, :uploading)
          |> assign(:error, nil)
-         |> push_event("start_upload", %{url: upload.url})}
+         |> push_event("start_upload", %{url: upload.url})
+         |> push_patch(to: intent_path(socket, intent.id))}
 
       {:error, :payload_too_large} ->
         {:noreply, assign(socket, :error, "That file exceeds the maximum upload size.")}
@@ -240,11 +282,11 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
       Uploads.cancel_intent(socket.assigns.current_scope.user, intent)
     end
 
-    {:noreply, reset_state(socket)}
+    {:noreply, socket |> reset_state() |> push_patch(to: intent_path(socket, nil))}
   end
 
   def handle_event("reset", _params, socket) do
-    {:noreply, reset_state(socket)}
+    {:noreply, socket |> reset_state() |> push_patch(to: intent_path(socket, nil))}
   end
 
   @impl true
@@ -306,12 +348,58 @@ defmodule DarkZenithWeb.RepositoryLive.Upload do
   end
 
   defp fetch_intent(socket) do
+    user = socket.assigns.current_scope.user
+
     case socket.assigns.intent_id &&
-           Uploads.get_intent(socket.assigns.repository, socket.assigns.intent_id) do
+           Uploads.get_intent_for(user, socket.assigns.repository, socket.assigns.intent_id) do
       %Intent{} = intent -> {:ok, intent}
       _ -> {:error, :not_found}
     end
   end
+
+  # Reattaching requires a non-terminal intent the current user initiated
+  # in this repository; anything else is the masked 404.
+  defp reattach(socket, id) do
+    user = socket.assigns.current_scope.user
+
+    case Uploads.get_intent_for(user, socket.assigns.repository, id) do
+      %Intent{status: status} = intent
+      when status in ["awaiting_upload", "queued", "processing", "preview_ready"] ->
+        socket
+        |> reset_state()
+        |> assign(:intent_id, intent.id)
+        |> assign(:intent_package_id, intent.package_id)
+        |> assign(:generation, intent.upload_generation)
+        |> assign(:filename, intent.original_filename)
+        |> assign(:status, status)
+        |> enter_phase(intent)
+
+      _ ->
+        raise DarkZenithWeb.NotFoundError
+    end
+  end
+
+  defp enter_phase(socket, %Intent{status: "awaiting_upload"}) do
+    assign(socket, :phase, :unfinished)
+  end
+
+  defp enter_phase(socket, %Intent{status: "preview_ready"} = intent) do
+    socket
+    |> assign(:phase, :preview)
+    |> assign(:preview, intent.preview_metadata)
+    |> assign(:preview_expires_at, intent.expires_at)
+    |> assign(:preview_remaining, remaining_seconds(intent.expires_at))
+    |> schedule_countdown()
+  end
+
+  defp enter_phase(socket, %Intent{}) do
+    socket |> assign(:phase, :processing) |> schedule_poll()
+  end
+
+  defp intent_path(socket, nil), do: ~p"/repos/#{socket.assigns.repository.slug}/upload"
+
+  defp intent_path(socket, intent_id),
+    do: ~p"/repos/#{socket.assigns.repository.slug}/upload?intent=#{intent_id}"
 
   defp schedule_poll(socket) do
     if connected?(socket), do: Process.send_after(self(), :poll, @poll_interval)

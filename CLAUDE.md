@@ -9,12 +9,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository status: initial implementation complete
 
-Phases 1-17 of `docs/IMPLEMENTATION_PLAN.md` are checked off: that `docs/DESIGN.md` feature
-set is implemented and covered by the test suite (dnf5-validated metadata, uploads, signing
-including user-wide key transitions, rate limiting, admin surface, deployment artifacts).
-Phase 18 (durable upload history) is specified in `docs/DESIGN.md` but not yet
-implemented. Other remaining work is maintenance, review findings, and running
-`deploy/release_gate.sh` against a staging deployment before a release. Spec changes still precede code changes
+Every phase of `docs/IMPLEMENTATION_PLAN.md` is checked off, including Phase 18 (durable
+upload history): the `docs/DESIGN.md` feature set is implemented and covered by the test
+suite (dnf5-validated metadata, uploads and their durable upload records, signing including
+user-wide key transitions, rate limiting, admin surface, deployment artifacts).
+Remaining work is maintenance, review findings, and running `deploy/release_gate.sh`
+against a staging deployment before a release. Spec changes still precede code changes
 when behavior is being (re)defined.
 Key files:
 

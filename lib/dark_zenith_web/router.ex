@@ -238,6 +238,7 @@ defmodule DarkZenithWeb.Router do
       live "/admin/slugs", AdminLive.Slugs, :index
       live "/admin/jobs", AdminLive.Jobs, :index
       live "/admin/transitions", AdminLive.Transitions, :index
+      live "/admin/uploads", AdminLive.Uploads, :index
     end
   end
 

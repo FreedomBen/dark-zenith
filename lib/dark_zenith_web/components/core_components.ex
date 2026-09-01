@@ -551,7 +551,14 @@ defmodule DarkZenithWeb.CoreComponents do
     sent: {"badge-soft badge-success", "sent", nil},
     suppressed: {"badge-soft badge-warning", "suppressed", nil},
     processing: {"badge-soft badge-warning", "processing", nil},
-    preview_ready: {"badge-soft badge-accent", "preview ready", nil}
+    preview_ready: {"badge-soft badge-accent", "preview ready", nil},
+    # Upload History (docs/DESIGN_UI.md — Badges): live status, recorded
+    # outcome, and the awaiting-reconciliation row, which is not progress.
+    awaiting_upload: {"badge-soft badge-neutral", "awaiting upload", nil},
+    succeeded: {"badge-soft badge-success", "succeeded", nil},
+    expired: {"badge-ghost text-base-content/70", "expired", nil},
+    canceled: {"badge-ghost text-base-content/70", "canceled", nil},
+    unknown: {"badge-ghost text-base-content/70", "Unknown", nil}
   }
 
   @doc """

@@ -29,14 +29,15 @@ defmodule DarkZenithWeb.AdminLiveTest do
             {~p"/admin/jobs", "Jobs"},
             {~p"/admin/transitions", "Transitions"},
             {~p"/admin/audit", "Audit"},
-            {~p"/admin/slugs", "Slugs"}
+            {~p"/admin/slugs", "Slugs"},
+            {~p"/admin/uploads", "Uploads"}
           ] do
         {:ok, lv, _html} = live(conn, path)
 
         assert lv |> element("h1") |> render() =~ "Admin"
 
         nav = lv |> element(~s{nav[aria-label="Admin sections"]}) |> render()
-        assert nav =~ ~r/Users.*Jobs.*Transitions.*Audit.*Slugs/s
+        assert nav =~ ~r/Users.*Jobs.*Transitions.*Audit.*Slugs.*Uploads/s
 
         active_tab = lv |> element(~s{nav a[aria-current="page"]}) |> render()
         assert active_tab =~ active
@@ -70,6 +71,9 @@ defmodule DarkZenithWeb.AdminLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/admin/transitions")
       assert html =~ "No signing transitions yet."
+
+      {:ok, _lv, html} = live(conn, ~p"/admin/uploads")
+      assert html =~ "No upload records yet."
 
       {:ok, lv, _html} = live(conn, ~p"/admin/audit")
       html = render_change(lv, "filter", %{"action" => "no.such.prefix", "actor_email" => ""})

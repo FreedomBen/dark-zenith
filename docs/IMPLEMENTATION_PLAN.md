@@ -258,64 +258,64 @@ listing exception in the REST API preamble, the `GET /api/v1/repos/:slug/package
 bullet and upload record row shape under API Contract Details, and the Audit Events,
 Rate Limiting, repository-deletion, and user-deletion additions.
 
-- [ ] `package_upload_records` migration: UUID snapshot `repository_id` (no FK),
+- [x] `package_upload_records` migration: UUID snapshot `repository_id` (no FK),
       `user_id` nilify-on-delete with `user_email` snapshot, unique `(intent_id)`,
       index on `(repository_id, started_at DESC, id)`, `(user_id)`, `(package_id)`,
       partial index on `(repository_id)` where `outcome = 'in_flight'` for the
       in-flight count, `(started_at DESC, id)`, `(repository_slug, started_at DESC, id)`,
       and `(user_email, started_at DESC, id)` for the admin view, outcome check
       constraint
-- [ ] Backfill in that migration: one record per existing intent row per the DESIGN.md
+- [x] Backfill in that migration: one record per existing intent row per the DESIGN.md
       backfill rule (`outcome` from status, `started_at` from `inserted_at`,
       `finished_at` from `completed_at`, error code/detail for `failed`, `nevra` and
       `final_size` from a surviving package row); a zero-row finalization CAS is a no-op
-- [ ] Record created in the intent-creation transaction as `in_flight`; finalized by a
+- [x] Record created in the intent-creation transaction as `in_flight`; finalized by a
       compare-and-swap on `outcome = 'in_flight'` inside `Uploads.terminalize!/4` and
       inside the success path's final package transaction (`final_size`, `nevra`)
-- [ ] Repository deletion and user deletion finalize `in_flight` records as `canceled`
+- [x] Repository deletion and user deletion finalize `in_flight` records as `canceled`
       in their existing transactions and retain the record rows; hourly terminal-intent
       cleanup runs a second anti-join query finalizing any `in_flight` record whose
       intent row is gone, writing the sweep timestamp to `finished_at`, as the safety net
-- [ ] `Uploads.list_repository_records/2`: repository-scoped, `started_at` descending
+- [x] `Uploads.list_repository_records/2`: repository-scoped, `started_at` descending
       then `id` ascending, optional outcome-subset filter, left join to the live intent
       for `live_status`, initiator email from the record snapshot. `live_status` is
       non-null only for an `in_flight` record with a surviving intent, so a terminal
       record reads `null` even inside its intent's 24-hour retention window
-- [ ] `GET /api/v1/repos/:slug/package-uploads`: owner/admin repository-scoped read,
+- [x] `GET /api/v1/repos/:slug/package-uploads`: owner/admin repository-scoped read,
       `repo:read` for API keys (the id-addressed endpoints keep `package:upload`),
       standard paginated envelope, `outcome` filter validation, decimal-string
       `declared_size`/`final_size`, `user_email` serialized but never `user_id`,
       `intent_id` always the stored snapshot (never nulled after intent cleanup),
       404 masking on an inaccessible repository
-- [ ] Repository detail LiveView: Upload History section for managers only, 25 per page
+- [x] Repository detail LiveView: Upload History section for managers only, 25 per page
       with the page and the `outcome` filter in the URL, header in-flight count pill
       linking to the `in_flight` filter, status badges, succeeded NEVRA and package
       link, sanitized failure code and reason, initiator-only cancel action, upload-page
       link (`?intent=`) only on the viewer's own in-flight rows, section omitted when
       the repository has no records
-- [ ] Upload page `?intent=<id>` reattach: patched into the URL on intent creation;
+- [x] Upload page `?intent=<id>` reattach: patched into the URL on intent creation;
       resumes `queued`/`processing`/`preview_ready` for the initiator, shows
       `awaiting_upload` as an unfinished transfer with cancel only, and renders the
       standard 404 for any other id (other user, other repository, terminal, cleaned
       up, malformed); `intent` is the route's only documented query parameter
-- [ ] Admin Uploads view (web-only): instance-wide read-only listing with `repository`,
+- [x] Admin Uploads view (web-only): instance-wide read-only listing with `repository`,
       `initiator`, and `outcome` filters and the page in the URL, 25 per page, live
       status via the same left join, no auto-refresh, Upload History link only on a
       live `repository_id` match, admin-only like the other admin views
-- [ ] Five-second refresh timer driven by the repository-wide in-flight count, not the
+- [x] Five-second refresh timer driven by the repository-wide in-flight count, not the
       current page's rows, so a stuck upload past page one keeps refreshing; internal
       message consumes no rate-limit bucket
-- [ ] Audit: add `repository_id`, `repository_slug`, `intent_id`, `upload_record_id`,
+- [x] Audit: add `repository_id`, `repository_slug`, `intent_id`, `upload_record_id`,
       and `original_filename` to every `package.upload*` event so terminal events are
       self-sufficient; add the currently missing expiry event — `package.upload` with
       `result: "expired"` targeting the intent — from both expiry paths (overdue
       completion, and the 15-minute waiting-state sweep with null actor fields)
-- [ ] Authorization tests across anonymous, unrelated user, collaborator, non-initiating
+- [x] Authorization tests across anonymous, unrelated user, collaborator, non-initiating
       owner, non-initiating admin, and initiating user on all three surfaces, plus the
       scope split: a `repo:read`-only key lists records, a `package:upload`-only key
       does not but still reads its own intent by id; the upload page 404s a
       `?intent=` of another user, another repository, or a terminal intent
-- [ ] Durability tests: record survives intent cleanup, package deletion, repository
+- [x] Durability tests: record survives intent cleanup, package deletion, repository
       deletion, and initiator account deletion; never left `in_flight` after its intent
       is gone; exactly one terminal write under a replayed or racing worker; a terminal
       record reports `live_status` null while its intent is still retained; an
@@ -323,7 +323,7 @@ Rate Limiting, repository-deletion, and user-deletion additions.
       reconciles to `canceled` on the next sweep; a record deleted with its repository
       remains listed in the admin view with no repository link; backfilled records
       carry the migration time in `inserted_at` and the intent time in `started_at`
-- [ ] Tests asserting no `upload`, `staging_path`, `staging_version_id`, `lease_token`,
+- [x] Tests asserting no `upload`, `staging_path`, `staging_version_id`, `lease_token`,
       or `preview_metadata` field appears in any listing row, and that refresh/complete/
       cancel remain initiator-only 404-masked
 

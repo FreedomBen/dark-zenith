@@ -369,12 +369,12 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
 - [x] U7 — Global search (per the `DESIGN.md` Search spec): nav field + results page
 - [x] U8 — QA pass: AA contrast verification in both themes, keyboard walkthrough,
       reduced-motion check, responsive sweep, existing LiveView tests updated alongside
-- [ ] U9 — Upload History section on repo detail (per the `DESIGN.md` Upload History
+- [x] U9 — Upload History section on repo detail (per the `DESIGN.md` Upload History
       spec): badge states for live status, recorded outcome, and the
       awaiting-reconciliation `Unknown` row, dense paginated row layout, in-flight
       count pill and outcome filter in the header, failure code/reason treatment,
       initiator-only cancel action, the upload page's `?intent=` reattached states
-- [ ] U10 — Admin Uploads tab (per the `DESIGN.md` Admin upload-record view): sixth
+- [x] U10 — Admin Uploads tab (per the `DESIGN.md` Admin upload-record view): sixth
       sub-nav tab, dense instance-wide table reusing the U9 row layout and badges,
       `repository` / `initiator` / outcome filter bar held in the URL, slug link only
       for a live repository UUID, no auto-refresh

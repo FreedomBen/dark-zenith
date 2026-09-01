@@ -148,6 +148,15 @@ defmodule DarkZenith.Uploads.Records do
     |> paginate(opts)
   end
 
+  @doc """
+  Whether the repository has any record at all: the Upload History section
+  is omitted entirely when it has none, but stays for a filter with no
+  matches.
+  """
+  def any_for_repository?(repository_id) do
+    Repo.exists?(from r in Record, where: r.repository_id == ^repository_id)
+  end
+
   @doc "The repository's `in_flight` count, served by the partial index."
   def in_flight_count(repository_id) do
     Repo.aggregate(

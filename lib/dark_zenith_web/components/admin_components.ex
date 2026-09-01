@@ -1,7 +1,7 @@
 defmodule DarkZenithWeb.AdminComponents do
   @moduledoc """
   Shared frame for the admin surface (docs/DESIGN_UI.md — Page notes: Admin):
-  one Admin title block and a sub-nav tab row over each of the five views.
+  one Admin title block and a sub-nav tab row over each of the six views.
   """
 
   use Phoenix.Component
@@ -15,14 +15,15 @@ defmodule DarkZenithWeb.AdminComponents do
       {"jobs", "Jobs", ~p"/admin/jobs"},
       {"transitions", "Transitions", ~p"/admin/transitions"},
       {"audit", "Audit", ~p"/admin/audit"},
-      {"slugs", "Slugs", ~p"/admin/slugs"}
+      {"slugs", "Slugs", ~p"/admin/slugs"},
+      {"uploads", "Uploads", ~p"/admin/uploads"}
     ]
   end
 
   @doc """
   Renders the admin page frame: the Admin title, the one-line muted
   description of the active view, the Users / Jobs / Transitions / Audit /
-  Slugs tab row, and the view content.
+  Slugs / Uploads tab row, and the view content.
 
   ## Examples
 
@@ -30,7 +31,7 @@ defmodule DarkZenithWeb.AdminComponents do
         ...
       </AdminComponents.admin_page>
   """
-  attr :active, :string, required: true, values: ~w(users jobs transitions audit slugs)
+  attr :active, :string, required: true, values: ~w(users jobs transitions audit slugs uploads)
   attr :subtitle, :string, default: nil
   slot :inner_block, required: true
 
