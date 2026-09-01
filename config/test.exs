@@ -86,7 +86,7 @@ config :dark_zenith,
        :rate_limit_overrides,
        Map.new(
          ~w(general_auth general_unauth auth_attempt_ip auth_attempt_email download_unauth
-            download_auth upload_intent repo_create api_key_create gpg_key_mutation
-            collaborator_add email_change)a,
+            download_auth search_auth search_unauth upload_intent repo_create api_key_create
+            gpg_key_mutation collaborator_add email_change)a,
          fn kind -> {kind, {1_000_000, 60}} end
        )

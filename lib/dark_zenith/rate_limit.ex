@@ -24,6 +24,8 @@ defmodule DarkZenith.RateLimit do
     auth_attempt_email: {10, 60},
     download_unauth: {600, 60},
     download_auth: {1200, 60},
+    search_auth: {120, 60},
+    search_unauth: {30, 60},
     upload_intent: {60, 3600},
     repo_create: {30, 3600},
     api_key_create: {30, 3600},

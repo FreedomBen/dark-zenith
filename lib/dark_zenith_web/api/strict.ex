@@ -30,6 +30,43 @@ defmodule DarkZenithWeb.Api.Strict do
     end
   end
 
+  @filter_max 256
+
+  @doc """
+  Parses a filter-string query parameter under the shared rules (DESIGN.md:
+  API Contract Details): trimmed and capped at #{@filter_max} characters.
+  The `:blank` option decides how an empty-after-trim value is handled —
+  `:absent` treats it (and a missing parameter) as `{:ok, nil}`, `:reject`
+  rejects blank values, and `:require` additionally rejects a missing
+  parameter.
+  """
+  def parse_filter(params, key, blank: blank_rule) do
+    case Map.fetch(params, key) do
+      :error when blank_rule == :require ->
+        {:error, :validation_failed, %{key => ["can't be blank"]}}
+
+      :error ->
+        {:ok, nil}
+
+      {:ok, raw} ->
+        value = String.trim(raw)
+
+        cond do
+          String.length(value) > @filter_max ->
+            {:error, :validation_failed, %{key => ["is too long"]}}
+
+          value == "" and blank_rule == :absent ->
+            {:ok, nil}
+
+          value == "" ->
+            {:error, :validation_failed, %{key => ["must not be blank"]}}
+
+          true ->
+            {:ok, value}
+        end
+    end
+  end
+
   @doc """
   Requires a JSON request body: `Content-Type: application/json` and an
   object whose keys are a subset of `allowed`. `required` keys must be

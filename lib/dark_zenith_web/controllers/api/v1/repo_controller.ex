@@ -15,13 +15,14 @@ defmodule DarkZenithWeb.Api.V1.RepoController do
   @update_fields ~w(name description is_public gpg_key_fingerprint sign_rpms existing_package_strategy)
 
   def index(conn, _params) do
-    with {:ok, params} <- Strict.validate_query(conn, ["page", "per_page"]),
-         {:ok, page, per_page} <- Pagination.parse(params) do
-      user = private_read_user(conn.assigns.api_principal)
+    with {:ok, params} <- Strict.validate_query(conn, ["page", "per_page", "q"]),
+         {:ok, page, per_page} <- Pagination.parse(params),
+         {:ok, q} <- Strict.parse_filter(params, "q", blank: :absent) do
+      user = RepoAccess.private_read_user(conn.assigns.api_principal)
 
       {repositories, total} =
         user
-        |> Repositories.visible_repositories_query()
+        |> Repositories.visible_repositories_query(q: q)
         |> Pagination.paginate(page, per_page)
 
       json(
@@ -93,22 +94,6 @@ defmodule DarkZenithWeb.Api.V1.RepoController do
   end
 
   ## Principal helpers
-
-  # Only credentials granting private read access surface private
-  # repositories in listings: session tokens/cookies always, API keys only
-  # with repo:read.
-  defp private_read_user(principal) do
-    case principal do
-      {:authenticated, user, {:api_key, key}} ->
-        if "repo:read" in key.scopes, do: user, else: nil
-
-      {:authenticated, user, _} ->
-        user
-
-      _ ->
-        nil
-    end
-  end
 
   defp require_authenticated(conn) do
     case conn.assigns.api_principal do

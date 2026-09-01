@@ -96,6 +96,43 @@ defmodule DarkZenithWeb.Api.V1.RepoControllerTest do
       assert pagination["page"] == 99
       assert pagination["total"] == "1"
     end
+
+    test "q filters on slug, name, and description", %{conn: conn, owner: owner} do
+      by_slug = repository_fixture(owner, %{slug: "list-q-slug", name: "N1", is_public: true})
+
+      by_description =
+        repository_fixture(owner, %{
+          slug: "l2",
+          name: "N2",
+          description: "matches LIST-Q here",
+          is_public: true
+        })
+
+      miss = repository_fixture(owner, %{slug: "l3", name: "N3", is_public: true})
+
+      conn = get(conn, ~p"/api/v1/repos?q=list-q")
+
+      assert %{"data" => data, "pagination" => pagination} = json_response(conn, 200)
+      ids = Enum.map(data, & &1["id"])
+      assert Enum.sort(ids) == Enum.sort([by_slug.id, by_description.id])
+      refute miss.id in ids
+      assert pagination["total"] == "2"
+    end
+
+    test "a blank q is treated as absent and an over-long q is rejected", %{
+      conn: conn,
+      owner: owner
+    } do
+      repository = repository_fixture(owner, %{is_public: true})
+
+      assert %{"data" => data} = conn |> get("/api/v1/repos?q=%20%20") |> json_response(200)
+      assert Enum.any?(data, &(&1["id"] == repository.id))
+
+      long = String.duplicate("a", 257)
+
+      assert %{"error" => %{"code" => "validation_failed", "details" => %{"q" => [_]}}} =
+               build_conn() |> get(~p"/api/v1/repos?#{[q: long]}") |> json_response(422)
+    end
   end
 
   describe "POST /api/v1/repos" do

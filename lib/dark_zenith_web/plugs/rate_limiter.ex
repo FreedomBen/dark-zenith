@@ -59,7 +59,7 @@ defmodule DarkZenithWeb.Plugs.RateLimiter do
 
       path ->
         general = general_bucket(user, ip_identity)
-        general ++ specialized_api(conn.method, path, user)
+        general ++ specialized_api(conn.method, path, user, ip_identity)
     end
   end
 
@@ -68,8 +68,24 @@ defmodule DarkZenithWeb.Plugs.RateLimiter do
       {"POST", ["users", "log-in"]} ->
         auth_attempt_buckets(ip_identity, get_in(conn.body_params, ["user", "email"]))
 
+      {"GET", ["search"]} ->
+        general_bucket(user, ip_identity) ++ web_search_buckets(conn, user, ip_identity)
+
       _other ->
         general_bucket(user, ip_identity)
+    end
+  end
+
+  # A `GET /search` request executes a query — and consumes the search
+  # bucket — only when it carries a non-blank `q` (DESIGN.md: Web
+  # Interface — Search; Rate Limiting).
+  defp web_search_buckets(conn, user, ip_identity) do
+    q = fetch_query_params(conn).query_params["q"]
+
+    cond do
+      not is_binary(q) or String.trim(q) == "" -> []
+      user -> [{:search_auth, user.id}]
+      true -> [{:search_unauth, ip_identity}]
     end
   end
 
@@ -94,20 +110,30 @@ defmodule DarkZenithWeb.Plugs.RateLimiter do
 
   defp email_bucket(_email), do: []
 
-  defp specialized_api("POST", ["api", "v1", "repos"], %{id: id}), do: [{:repo_create, id}]
-  defp specialized_api("POST", ["api", "v1", "api_keys"], %{id: id}), do: [{:api_key_create, id}]
+  defp specialized_api("POST", ["api", "v1", "repos"], %{id: id}, _ip), do: [{:repo_create, id}]
 
-  defp specialized_api(method, ["api", "v1", "gpg_key" | rest], %{id: id})
+  defp specialized_api("POST", ["api", "v1", "api_keys"], %{id: id}, _ip),
+    do: [{:api_key_create, id}]
+
+  defp specialized_api(method, ["api", "v1", "gpg_key" | rest], %{id: id}, _ip)
        when method in ["PUT", "DELETE", "POST"] and rest in [[], ["revocation"], ["generation"]],
        do: [{:gpg_key_mutation, id}]
 
-  defp specialized_api("POST", ["api", "v1", "repos", _slug, "collaborators"], %{id: id}),
+  defp specialized_api("POST", ["api", "v1", "repos", _slug, "collaborators"], %{id: id}, _ip),
     do: [{:collaborator_add, id}]
 
-  defp specialized_api("POST", ["api", "v1", "repos", _slug, "package-uploads"], %{id: id}),
+  defp specialized_api("POST", ["api", "v1", "repos", _slug, "package-uploads"], %{id: id}, _ip),
     do: [{:upload_intent, id}]
 
-  defp specialized_api(_method, _path, _user), do: []
+  # Search scans every visible package row, so both identity kinds carry a
+  # dedicated bucket alongside the general one (DESIGN.md: Rate Limiting).
+  defp specialized_api("GET", ["api", "v1", "search", "packages"], %{id: id}, _ip),
+    do: [{:search_auth, id}]
+
+  defp specialized_api("GET", ["api", "v1", "search", "packages"], nil, ip_identity),
+    do: [{:search_unauth, ip_identity}]
+
+  defp specialized_api(_method, _path, _user, _ip), do: []
 
   ## Identity
 

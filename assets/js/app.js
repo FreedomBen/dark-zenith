@@ -123,6 +123,29 @@ window.addEventListener("dz:copy", event => {
   }
 })
 
+// Global search focus shortcuts (docs/DESIGN_UI.md — App shell): "/" and
+// Ctrl/Cmd+K focus the nav search field, ignored while typing in another
+// field. Below md the field sits in a collapsed <details>, which must open
+// before its input can take focus.
+window.addEventListener("keydown", e => {
+  const slash = e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey
+  const combo = e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey) && !e.altKey
+  if (!slash && !combo) return
+  const t = e.target
+  if (t instanceof HTMLElement &&
+      (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return
+  const inputs = [...document.querySelectorAll("[data-global-search]")]
+  let input = inputs.find(el => el.offsetParent !== null)
+  if (!input) {
+    const collapsed = inputs.find(el => el.closest("details"))
+    if (!collapsed) return
+    collapsed.closest("details").open = true
+    input = collapsed
+  }
+  input.focus()
+  e.preventDefault()
+})
+
 // Show progress bar on live navigation and form submits
 // Zenith Gold (docs/DESIGN_UI.md — Color)
 topbar.config({barColors: {0: "#E3B341"}, shadowColor: "rgba(0, 0, 0, .3)"})

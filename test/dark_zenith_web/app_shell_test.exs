@@ -49,9 +49,11 @@ defmodule DarkZenithWeb.AppShellTest do
       %{conn: conn, user: user} = register_and_log_in_user(%{conn: conn})
       header = header(conn, ~p"/")
 
-      [summary] = Regex.run(~r|<summary.*?</summary>|s, header)
-      assert summary =~ user.email
-      assert summary =~ "truncate"
+      summaries = Regex.scan(~r|<summary.*?</summary>|s, header)
+
+      assert Enum.any?(summaries, fn [summary] ->
+               summary =~ user.email and summary =~ "truncate"
+             end)
     end
 
     test "admins see the Admin item", %{conn: conn} do
@@ -66,6 +68,17 @@ defmodule DarkZenithWeb.AppShellTest do
       assert menu =~ ~s(href="/repos")
       assert menu =~ "Log in"
       assert menu =~ "data-phx-theme"
+    end
+
+    test "renders the global package search field submitting to /search", %{conn: conn} do
+      header = header(conn, ~p"/")
+
+      assert header =~ ~s(action="/search")
+      assert header =~ ~s(placeholder="Search packages…")
+      assert header =~ "data-global-search"
+      # Compact input on md+ plus the collapsed icon button below md.
+      assert header =~ "w-64"
+      assert header =~ ~s(aria-label="Search packages")
     end
   end
 

@@ -125,6 +125,7 @@ defmodule DarkZenithWeb.Router do
       live "/repos/:slug", RepositoryLive.Show, :show
       live "/repos/:slug/packages/:name", PackageLive.Show, :show
       live "/repos/:slug/package-versions/:id", PackageLive.Version, :show
+      live "/search", SearchLive.Index, :index
     end
   end
 
@@ -153,6 +154,8 @@ defmodule DarkZenithWeb.Router do
     get "/repos/:slug/packages/:id", PackageController, :show
     get "/repos/:slug/packages/:id/:collection", PackageController, :subresource
     delete "/repos/:slug/packages/:id", PackageController, :delete
+
+    get "/search/packages", SearchController, :packages
 
     post "/repos/:slug/package-uploads", PackageUploadController, :create
     get "/repos/:slug/package-uploads/:id", PackageUploadController, :show

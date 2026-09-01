@@ -10,9 +10,11 @@ defmodule DarkZenith.Packages do
   alias DarkZenith.Accounts.User
   alias DarkZenith.Audit
   alias DarkZenith.Authorization
+  alias DarkZenith.LikePattern
   alias DarkZenith.Packages.Package
   alias DarkZenith.Repo
   alias DarkZenith.Repodata
+  alias DarkZenith.Repositories
   alias DarkZenith.Repositories.Repository
   alias DarkZenith.Rpm.Metadata
 
@@ -42,23 +44,44 @@ defmodule DarkZenith.Packages do
     |> sort(opts[:sort])
   end
 
+  @doc """
+  The instance-wide package search query (DESIGN.md: Web Interface — Search;
+  API Contract Details — `GET /api/v1/search/packages`): packages in
+  repositories visible to `user` whose name or summary contains `opts[:q]`,
+  optionally restricted to an exact `opts[:arch]`. Rows are
+  `%{package: package, repository: repository}` maps ordered by `name`,
+  `arch`, RPM EVR descending, repository `slug`, then `id`.
+  """
+  def search_query(user, opts) do
+    visible = user |> Repositories.visible_repositories_query() |> exclude(:order_by)
+
+    base =
+      from p in Package,
+        join: r in subquery(visible),
+        on: p.repository_id == r.id,
+        order_by: [
+          asc: p.name,
+          asc: p.arch,
+          desc: fragment("ROW(?, ?, ?)::dark_zenith_rpm_evr", p.epoch, p.version, p.release),
+          asc: r.slug,
+          asc: p.id
+        ],
+        select: %{package: p, repository: r}
+
+    base
+    |> filter_q(opts[:q])
+    |> filter_eq(:arch, opts[:arch])
+  end
+
   defp filter_q(query, nil), do: query
 
   defp filter_q(query, q) do
-    pattern = "%" <> escape_like(q) <> "%"
+    pattern = LikePattern.contains(q)
 
     from p in query,
       where:
         fragment("? ILIKE ? ESCAPE '\\'", p.name, ^pattern) or
           fragment("? ILIKE ? ESCAPE '\\'", p.summary, ^pattern)
-  end
-
-  # %, _, and the escape character are literal in user input.
-  defp escape_like(value) do
-    value
-    |> String.replace("\\", "\\\\")
-    |> String.replace("%", "\\%")
-    |> String.replace("_", "\\_")
   end
 
   defp filter_eq(query, _field, nil), do: query

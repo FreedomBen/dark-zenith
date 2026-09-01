@@ -157,4 +157,48 @@ defmodule DarkZenithWeb.Plugs.RateLimiterTest do
     assert rejected.status == 429
     assert response(rejected, 429) =~ "Sign in for higher rate limits"
   end
+
+  test "unauthenticated API search consumes the per-IP search bucket", ctx do
+    override!(ctx.previous, %{general_unauth: {100, 60}, search_unauth: {1, 60}})
+
+    assert get(build_conn(), ~p"/api/v1/search/packages?q=x").status == 200
+    assert get(build_conn(), ~p"/api/v1/search/packages?q=x").status == 429
+
+    # General requests still flow: the search bucket composed, not replaced.
+    assert get(build_conn(), ~p"/api/v1/repos").status == 200
+  end
+
+  test "authenticated API search consumes the per-user search bucket", ctx do
+    override!(ctx.previous, %{general_auth: {100, 60}, search_auth: {1, 60}})
+
+    user = user_fixture()
+    {token, _} = Accounts.create_session_token(user)
+
+    assert build_conn()
+           |> bearer(token)
+           |> get(~p"/api/v1/search/packages?q=x")
+           |> Map.fetch!(:status) == 200
+
+    assert build_conn()
+           |> bearer(token)
+           |> get(~p"/api/v1/search/packages?q=x")
+           |> Map.fetch!(:status) == 429
+
+    # An unauthenticated requester has its own bucket.
+    assert get(build_conn(), ~p"/api/v1/search/packages?q=x").status == 200
+  end
+
+  test "GET /search consumes the search bucket only when it executes a query", ctx do
+    override!(ctx.previous, %{general_unauth: {100, 60}, search_unauth: {1, 60}})
+
+    # Blank or absent q does not execute a search, so only the general
+    # bucket is consumed (DESIGN.md: Web Interface — Search).
+    assert get(build_conn(), ~p"/search").status == 200
+    assert get(build_conn(), "/search?q=%20").status == 200
+
+    assert get(build_conn(), ~p"/search?q=zzz").status == 200
+    rejected = get(build_conn(), ~p"/search?q=zzz")
+    assert rejected.status == 429
+    assert response(rejected, 429) =~ "Sign in for higher rate limits"
+  end
 end

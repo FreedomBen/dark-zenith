@@ -115,13 +115,31 @@ defmodule DarkZenithWeb.LiveRateLimit do
             {:ip, ip} -> [{:general_unauth, ip}]
           end
 
-        specialized =
-          case {identity, get_in(@specialized, [view, event])} do
-            {{:user, id}, kind} when not is_nil(kind) -> [{kind, id}]
-            _ -> []
-          end
+        general ++ specialized_buckets(view, event, params, identity)
+    end
+  end
 
-        general ++ specialized
+  # The search page's query submit executes a search for either identity
+  # kind — per-user or per-IP — but only when `q` is non-blank; a blank
+  # submit just returns to the prompt (DESIGN.md: Rate Limiting — Search
+  # queries).
+  defp specialized_buckets(DarkZenithWeb.SearchLive.Index, "search", params, identity) do
+    q = params["q"]
+
+    if is_binary(q) and String.trim(q) != "" do
+      case identity do
+        {:user, id} -> [{:search_auth, id}]
+        {:ip, ip} -> [{:search_unauth, ip}]
+      end
+    else
+      []
+    end
+  end
+
+  defp specialized_buckets(view, event, _params, identity) do
+    case {identity, get_in(@specialized, [view, event])} do
+      {{:user, id}, kind} when not is_nil(kind) -> [{kind, id}]
+      _ -> []
     end
   end
 

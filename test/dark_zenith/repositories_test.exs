@@ -509,4 +509,74 @@ defmodule DarkZenith.RepositoriesTest do
       assert slugs == Enum.sort(slugs)
     end
   end
+
+  describe "visible_repositories_query/2 q filter" do
+    defp query_ids(user, opts) do
+      user
+      |> Repositories.visible_repositories_query(opts)
+      |> DarkZenith.Repo.all()
+      |> Enum.map(& &1.id)
+    end
+
+    test "matches slug, name, and description case-insensitively" do
+      owner = user_fixture()
+
+      by_slug = repository_fixture(owner, %{slug: "orbit-zone", name: "N1", is_public: true})
+
+      by_name =
+        repository_fixture(owner, %{slug: "s2", name: "The Orbit Collection", is_public: true})
+
+      by_description =
+        repository_fixture(owner, %{
+          slug: "s3",
+          name: "N3",
+          description: "packages in ORBIT",
+          is_public: true
+        })
+
+      miss = repository_fixture(owner, %{slug: "s4", name: "N4", is_public: true})
+
+      ids = query_ids(nil, q: "orbit")
+      assert Enum.sort(ids) == Enum.sort([by_slug.id, by_name.id, by_description.id])
+      refute miss.id in ids
+    end
+
+    test "a nil q leaves the listing unfiltered" do
+      owner = user_fixture()
+      repository = repository_fixture(owner, %{is_public: true})
+
+      assert repository.id in query_ids(nil, [])
+      assert repository.id in query_ids(nil, q: nil)
+    end
+
+    test "treats %, _, and the escape character as literals" do
+      owner = user_fixture()
+
+      underscore =
+        repository_fixture(owner, %{slug: "u1", name: "a_b", is_public: true})
+
+      _lookalike = repository_fixture(owner, %{slug: "u2", name: "axb", is_public: true})
+
+      percent =
+        repository_fixture(owner, %{
+          slug: "u3",
+          name: "N",
+          description: "100% builds",
+          is_public: true
+        })
+
+      assert query_ids(nil, q: "a_b") == [underscore.id]
+      assert query_ids(nil, q: "100%") == [percent.id]
+      assert query_ids(nil, q: "100_") == []
+    end
+
+    test "the filter composes with the visibility matrix" do
+      owner = user_fixture()
+      private = repository_fixture(owner, %{slug: "vis-priv-match", is_public: false})
+      _public = repository_fixture(owner, %{slug: "vis-pub-other", is_public: true})
+
+      refute private.id in query_ids(nil, q: "vis-priv")
+      assert private.id in query_ids(owner, q: "vis-priv")
+    end
+  end
 end

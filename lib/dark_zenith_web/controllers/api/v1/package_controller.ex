@@ -14,7 +14,6 @@ defmodule DarkZenithWeb.Api.V1.PackageController do
   alias DarkZenithWeb.Api.V1.PackageJSON
 
   @subresources ~w(requires provides conflicts obsoletes recommends suggests supplements enhances files changelogs)
-  @filter_max 256
 
   def index(conn, %{"slug" => slug}) do
     with {:ok, params} <-
@@ -98,35 +97,11 @@ defmodule DarkZenithWeb.Api.V1.PackageController do
   end
 
   defp parse_filters(params) do
-    with {:ok, q} <- parse_filter(params, "q", blank: :absent),
-         {:ok, name} <- parse_filter(params, "name", blank: :reject),
-         {:ok, arch} <- parse_filter(params, "arch", blank: :reject),
+    with {:ok, q} <- Strict.parse_filter(params, "q", blank: :absent),
+         {:ok, name} <- Strict.parse_filter(params, "name", blank: :reject),
+         {:ok, arch} <- Strict.parse_filter(params, "arch", blank: :reject),
          {:ok, sort} <- parse_sort(params["sort"]) do
       {:ok, [q: q, name: name, arch: arch, sort: sort]}
-    end
-  end
-
-  defp parse_filter(params, key, blank: blank_rule) do
-    case Map.fetch(params, key) do
-      :error ->
-        {:ok, nil}
-
-      {:ok, raw} ->
-        value = String.trim(raw)
-
-        cond do
-          String.length(value) > @filter_max ->
-            {:error, :validation_failed, %{key => ["is too long"]}}
-
-          value == "" and blank_rule == :absent ->
-            {:ok, nil}
-
-          value == "" ->
-            {:error, :validation_failed, %{key => ["must not be blank"]}}
-
-          true ->
-            {:ok, value}
-        end
     end
   end
 

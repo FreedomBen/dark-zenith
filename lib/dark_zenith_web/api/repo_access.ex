@@ -29,6 +29,25 @@ defmodule DarkZenithWeb.Api.RepoAccess do
     end
   end
 
+  @doc """
+  The user whose private repositories a listing or search may include:
+  session tokens and cookies always; API keys only with `repo:read`; nil for
+  everything else (DESIGN.md: API Contract Details — `GET /api/v1/repos` and
+  `GET /api/v1/search/packages` visibility).
+  """
+  def private_read_user(principal) do
+    case principal do
+      {:authenticated, user, {:api_key, key}} ->
+        if "repo:read" in key.scopes, do: user, else: nil
+
+      {:authenticated, user, _} ->
+        user
+
+      _ ->
+        nil
+    end
+  end
+
   @doc "Whether the principal can read the private repository."
   def readable_private?({:authenticated, user, kind}, repository) do
     scope_ok? =

@@ -31,7 +31,7 @@
     </script>
   </head>
   <body class="flex min-h-svh flex-col">
-    <header class="flex h-14 items-center justify-between gap-4 border-b border-base-content/10 px-4 sm:px-6 lg:px-8">
+    <header class="relative flex h-14 items-center justify-between gap-4 border-b border-base-content/10 px-4 sm:px-6 lg:px-8">
       <div class="flex items-center gap-6 self-stretch">
         <a href={~p"/"} class="flex items-center gap-2.5">
           <.zenith_mark class="size-6" />
@@ -50,67 +50,109 @@
         </nav>
       </div>
 
-      <div class="hidden items-center gap-3 sm:flex">
-        <.theme_toggle />
-        <%= if @current_scope do %>
-          <details class="dropdown dropdown-end">
-            <summary class="btn btn-ghost btn-sm list-none font-normal [&::-webkit-details-marker]:hidden">
-              <span class="max-w-[16rem] truncate">{@current_scope.user.email}</span>
-              <.icon name="hero-chevron-down-micro" class="size-4 opacity-70" />
-            </summary>
-            <ul class="dropdown-content menu z-20 mt-1 w-52 rounded-box border border-base-content/10 bg-base-200 p-2 shadow-lg">
+      <div class="flex items-center gap-2">
+        <%!-- Global package search (docs/DESIGN_UI.md — App shell): compact
+              input on md+, a disclosure icon expanding to a full-width row
+              below md. Plain GET form — submits are full page loads. --%>
+        <details class="md:hidden">
+          <summary
+            class="btn btn-ghost btn-square btn-sm list-none [&::-webkit-details-marker]:hidden"
+            aria-label="Search packages"
+          >
+            <.icon name="hero-magnifying-glass" class="size-5" />
+          </summary>
+          <div class="absolute inset-x-0 top-full z-20 border-b border-base-content/10 bg-base-100 p-3">
+            <form action={~p"/search"} method="get">
+              <label class="sr-only" for="global-search-small">Search packages</label>
+              <input
+                type="search"
+                id="global-search-small"
+                name="q"
+                placeholder="Search packages…"
+                maxlength="256"
+                autocomplete="off"
+                data-global-search
+                class="input input-sm input-bordered w-full"
+              />
+            </form>
+          </div>
+        </details>
+
+        <div class="hidden items-center gap-3 sm:flex">
+          <form action={~p"/search"} method="get" class="hidden md:block">
+            <label class="sr-only" for="global-search">Search packages</label>
+            <input
+              type="search"
+              id="global-search"
+              name="q"
+              placeholder="Search packages…"
+              maxlength="256"
+              autocomplete="off"
+              data-global-search
+              class="input input-sm input-bordered w-64"
+            />
+          </form>
+          <.theme_toggle />
+          <%= if @current_scope do %>
+            <details class="dropdown dropdown-end">
+              <summary class="btn btn-ghost btn-sm list-none font-normal [&::-webkit-details-marker]:hidden">
+                <span class="max-w-[16rem] truncate">{@current_scope.user.email}</span>
+                <.icon name="hero-chevron-down-micro" class="size-4 opacity-70" />
+              </summary>
+              <ul class="dropdown-content menu z-20 mt-1 w-52 rounded-box border border-base-content/10 bg-base-200 p-2 shadow-lg">
+                <li><.link href={~p"/users/settings"}>Settings</.link></li>
+                <li :if={@current_scope.user.is_admin}>
+                  <.link href={~p"/admin"}>Admin</.link>
+                </li>
+                <li class="mt-1 border-t border-base-content/10 pt-1">
+                  <.link href={~p"/users/log-out"} method="delete">Log out</.link>
+                </li>
+              </ul>
+            </details>
+          <% else %>
+            <.link
+              :if={DarkZenith.Accounts.registration_enabled?()}
+              href={~p"/users/register"}
+              class="text-sm text-base-content/70 hover:text-base-content"
+            >
+              Register
+            </.link>
+            <.link
+              href={~p"/users/log-in"}
+              class="text-sm text-base-content/70 hover:text-base-content"
+            >
+              Log in
+            </.link>
+          <% end %>
+        </div>
+
+        <details class="dropdown dropdown-end sm:hidden">
+          <summary
+            class="btn btn-ghost btn-square btn-sm list-none [&::-webkit-details-marker]:hidden"
+            aria-label="Menu"
+          >
+            <.icon name="hero-bars-3" class="size-5" />
+          </summary>
+          <ul class="dropdown-content menu z-20 mt-1 w-56 rounded-box border border-base-content/10 bg-base-200 p-2 shadow-lg">
+            <li><.link navigate={~p"/repos"}>Repositories</.link></li>
+            <%= if @current_scope do %>
               <li><.link href={~p"/users/settings"}>Settings</.link></li>
               <li :if={@current_scope.user.is_admin}>
                 <.link href={~p"/admin"}>Admin</.link>
               </li>
-              <li class="mt-1 border-t border-base-content/10 pt-1">
-                <.link href={~p"/users/log-out"} method="delete">Log out</.link>
+              <li><.link href={~p"/users/log-out"} method="delete">Log out</.link></li>
+            <% else %>
+              <li :if={DarkZenith.Accounts.registration_enabled?()}>
+                <.link href={~p"/users/register"}>Register</.link>
               </li>
-            </ul>
-          </details>
-        <% else %>
-          <.link
-            :if={DarkZenith.Accounts.registration_enabled?()}
-            href={~p"/users/register"}
-            class="text-sm text-base-content/70 hover:text-base-content"
-          >
-            Register
-          </.link>
-          <.link
-            href={~p"/users/log-in"}
-            class="text-sm text-base-content/70 hover:text-base-content"
-          >
-            Log in
-          </.link>
-        <% end %>
+              <li><.link href={~p"/users/log-in"}>Log in</.link></li>
+            <% end %>
+            <li class="mt-1 border-t border-base-content/10 pt-1">
+              <.theme_toggle />
+            </li>
+          </ul>
+        </details>
       </div>
-
-      <details class="dropdown dropdown-end sm:hidden">
-        <summary
-          class="btn btn-ghost btn-square btn-sm list-none [&::-webkit-details-marker]:hidden"
-          aria-label="Menu"
-        >
-          <.icon name="hero-bars-3" class="size-5" />
-        </summary>
-        <ul class="dropdown-content menu z-20 mt-1 w-56 rounded-box border border-base-content/10 bg-base-200 p-2 shadow-lg">
-          <li><.link navigate={~p"/repos"}>Repositories</.link></li>
-          <%= if @current_scope do %>
-            <li><.link href={~p"/users/settings"}>Settings</.link></li>
-            <li :if={@current_scope.user.is_admin}>
-              <.link href={~p"/admin"}>Admin</.link>
-            </li>
-            <li><.link href={~p"/users/log-out"} method="delete">Log out</.link></li>
-          <% else %>
-            <li :if={DarkZenith.Accounts.registration_enabled?()}>
-              <.link href={~p"/users/register"}>Register</.link>
-            </li>
-            <li><.link href={~p"/users/log-in"}>Log in</.link></li>
-          <% end %>
-          <li class="mt-1 border-t border-base-content/10 pt-1">
-            <.theme_toggle />
-          </li>
-        </ul>
-      </details>
     </header>
     <div class="flex-1">
       {@inner_content}

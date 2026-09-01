@@ -9,6 +9,7 @@ defmodule DarkZenith.Repositories do
 
   alias DarkZenith.Accounts.User
   alias DarkZenith.Audit
+  alias DarkZenith.LikePattern
   alias DarkZenith.Repo
   alias DarkZenith.Repodata
   alias DarkZenith.Repositories.{MetadataCache, Repository, SlugReservation}
@@ -33,9 +34,19 @@ defmodule DarkZenith.Repositories do
     Repo.all(visible_repositories_query(user))
   end
 
-  @doc "The query behind `list_visible_repositories/1`, for pagination."
-  def visible_repositories_query(user) do
-    base = from r in Repository, as: :repository, order_by: [asc: r.slug, asc: r.id]
+  @doc """
+  The query behind `list_visible_repositories/1`, for pagination. `opts[:q]`
+  filters to repositories whose slug, name, or description contains the
+  case-insensitive substring, under the shared filter-string escaping rules
+  (DESIGN.md: API Contract Details).
+  """
+  def visible_repositories_query(user, opts \\ []) do
+    base =
+      from r in Repository,
+        as: :repository,
+        order_by: [asc: r.slug, asc: r.id]
+
+    base = filter_q(base, opts[:q])
 
     case user do
       nil ->
@@ -52,6 +63,18 @@ defmodule DarkZenith.Repositories do
         from r in base,
           where: r.is_public or r.user_id == ^user_id or exists(collaborated)
     end
+  end
+
+  defp filter_q(query, nil), do: query
+
+  defp filter_q(query, q) do
+    pattern = LikePattern.contains(q)
+
+    from r in query,
+      where:
+        fragment("? ILIKE ? ESCAPE '\\'", r.slug, ^pattern) or
+          fragment("? ILIKE ? ESCAPE '\\'", r.name, ^pattern) or
+          fragment("? ILIKE ? ESCAPE '\\'", r.description, ^pattern)
   end
 
   ## Creation

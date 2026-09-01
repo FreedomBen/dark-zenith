@@ -87,6 +87,41 @@ defmodule DarkZenithWeb.LiveRateLimitTest do
     refute DarkZenith.Repo.get!(DarkZenith.Accounts.User, user.id).gpg_key_transition_id
   end
 
+  test "search query-submits consume the per-IP search bucket on anonymous sockets", ctx do
+    Application.put_env(
+      :dark_zenith,
+      :rate_limit_overrides,
+      Map.merge(ctx.previous, %{search_unauth: {1, 60}})
+    )
+
+    {:ok, lv, _html} = live(build_conn(), ~p"/search")
+
+    submit = fn q -> lv |> form("#search-form", %{"q" => q}) |> render_submit() end
+
+    # Blank submits execute no query and consume no search slot.
+    refute submit.("") =~ "Too many requests"
+    refute submit.("   ") =~ "Too many requests"
+
+    refute submit.("first") =~ "Too many requests"
+    assert submit.("second") =~ "Too many requests"
+  end
+
+  test "search query-submits consume the per-user search bucket when authenticated", ctx do
+    Application.put_env(
+      :dark_zenith,
+      :rate_limit_overrides,
+      Map.merge(ctx.previous, %{search_auth: {1, 60}})
+    )
+
+    user = user_fixture()
+    {:ok, lv, _html} = build_conn() |> log_in_user(user) |> live(~p"/search")
+
+    submit = fn q -> lv |> form("#search-form", %{"q" => q}) |> render_submit() end
+
+    refute submit.("first") =~ "Too many requests"
+    assert submit.("second") =~ "Too many requests"
+  end
+
   test "registration submits use the auth-attempt email bucket", ctx do
     Application.put_env(
       :dark_zenith,
