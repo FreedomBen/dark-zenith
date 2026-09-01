@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Phases 1-17 of `docs/IMPLEMENTATION_PLAN.md` are checked off: that `docs/DESIGN.md` feature
 set is implemented and covered by the test suite (dnf5-validated metadata, uploads, signing
 including user-wide key transitions, rate limiting, admin surface, deployment artifacts).
-Phase 18 (repository upload status listing) is specified in `docs/DESIGN.md` but not yet
+Phase 18 (durable upload history) is specified in `docs/DESIGN.md` but not yet
 implemented. Other remaining work is maintenance, review findings, and running
 `deploy/release_gate.sh` against a staging deployment before a release. Spec changes still precede code changes
 when behavior is being (re)defined.
@@ -64,6 +64,7 @@ These come up repeatedly in docs/DESIGN.md and tend to constrain new changes:
 - **B2 storage keys** are deterministic and sanitized; `name`/`version`/`release`/`arch` must match `^[A-Za-z0-9._+~-]+$` and `epoch` must be an integer in the unsigned 32-bit range.
 - **Error format differs by surface**: repo-serving endpoints consumed by dnf (`/repos/:slug/repodata/...`, `.rpm` downloads, `RPM-GPG-KEY`, `dark-zenith.repo`) return bare plain-text error-code bodies (e.g. `metadata_not_ready`); `/api/v1/...` uses the JSON `{"error": {...}}` envelope; web UI routes render HTML.
 - **GPG private keys** are stored AEAD-encrypted under a key derived from `SECRET_KEY_BASE`; rotating it requires setting `PREVIOUS_SECRET_KEY_BASE` (an Oban job re-encrypts rows) or existing keys are stranded and fail closed. Key replacement and enabling `sign_rpms` on a non-empty repo trigger per-package re-sign jobs guarded by a `transition_id`.
+- **Records that outlive their subject**: audit events, signing transitions, and package upload records reference repositories by UUID snapshot rather than by foreign key, so a repository or user hard delete does not remove them. Upload records keep a filename, size, and initiator email indefinitely by design — check `docs/DESIGN.md` "Package Upload Records" before adding fields to one.
 - **Repository deletion** is a hard delete in one DB transaction; B2 object cleanup is a separate idempotent Oban job with up to 20 attempts. Same retry/visibility policy applies to metadata regen and email delivery.
 - **Bootstrap admin** via `ADMIN_EMAIL` / `ADMIN_PASSWORD` env vars on first boot only (since `REGISTRATION_ENABLED` defaults to `false`).
 

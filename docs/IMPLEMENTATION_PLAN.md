@@ -250,28 +250,47 @@ Events, Email Delivery, and Security Considerations.
       generation responses, envelope-encrypted at rest, absent from resources/audit
       metadata, full validation pipeline applied to generated pairs
 
-## Phase 18 — Repository upload status listing (post-M4 feature)
+## Phase 18 — Durable upload history (post-M4 feature)
 
-Spec: DESIGN.md "Recent Uploads" (Repository Detail), the repository-scoped listing
-exception in the REST API preamble, the `GET /api/v1/repos/:slug/package-uploads` bullet
-under API Contract Details, and the list-endpoint ordering and Rate Limiting additions.
+Spec: DESIGN.md "Package Upload Records" (Data Model), "Upload History" (Repository
+Detail), the repository-scoped listing exception in the REST API preamble, the
+`GET /api/v1/repos/:slug/package-uploads` bullet under API Contract Details, and the
+Audit Events, Rate Limiting, repository-deletion, and user-deletion additions.
 
-- [ ] `Uploads.list_repository_intents/2`: repository-scoped query over retained intents,
-      `inserted_at` descending then `id` ascending, optional status-subset filter, initiator
-      email preloaded; returns no capability, staging, lease, or preview fields
+- [ ] `package_upload_records` migration: UUID snapshot `repository_id` (no FK),
+      `user_id` nilify-on-delete with `user_email` snapshot, unique `(intent_id)`,
+      index on `(repository_id, started_at DESC, id)`, `(user_id)`, `(package_id)`,
+      outcome check constraint
+- [ ] Record created in the intent-creation transaction as `in_flight`; finalized by a
+      compare-and-swap on `outcome = 'in_flight'` inside `Uploads.terminalize!/4` and
+      inside the success path's final package transaction (`final_size`, `nevra`)
+- [ ] Repository deletion and user deletion finalize `in_flight` records as `canceled`
+      in their existing transactions and retain the record rows; hourly terminal-intent
+      cleanup finalizes any record whose intent row is gone, as the safety net
+- [ ] `Uploads.list_repository_records/2`: repository-scoped, `started_at` descending
+      then `id` ascending, optional outcome-subset filter, left join to the live intent
+      for `live_status`, initiator email from the record snapshot
 - [ ] `GET /api/v1/repos/:slug/package-uploads`: owner/admin repository-scoped read,
-      `package:upload` for API keys, standard paginated envelope, `status` filter validation,
-      decimal-string `declared_size`, 404 masking on an inaccessible repository
-- [ ] Repository detail LiveView: Recent Uploads section for managers only, 10 most recent
-      rows plus total, status badges, succeeded/preview links, sanitized failure code and
-      reason, initiator-only cancel action, section omitted when no rows exist
-- [ ] Five-second refresh timer active only while a listed intent is non-terminal, stopping
-      when all rows are terminal; internal message consumes no rate-limit bucket
+      `package:upload` for API keys, standard paginated envelope, `outcome` filter
+      validation, decimal-string `declared_size`/`final_size`, 404 masking on an
+      inaccessible repository
+- [ ] Repository detail LiveView: Upload History section for managers only, 25 per page
+      with the page in the URL, status badges, succeeded NEVRA and package link,
+      sanitized failure code and reason, initiator-only cancel action, section omitted
+      when the repository has no records
+- [ ] Five-second refresh timer active only while a row on the current page is in
+      flight; internal message consumes no rate-limit bucket
+- [ ] Audit: add `repository_id`, `repository_slug`, `intent_id`, `upload_record_id`,
+      and `original_filename` to every `package.upload*` event so terminal events are
+      self-sufficient
 - [ ] Authorization tests across anonymous, unrelated user, collaborator, non-initiating
       owner, non-initiating admin, and initiating user on both surfaces
-- [ ] Tests asserting no `upload`, `staging_path`, `staging_version_id`, `lease_token`, or
-      `preview_metadata` field appears in any listing row, and that refresh/complete/cancel
-      remain initiator-only 404-masked
+- [ ] Durability tests: record survives intent cleanup, package deletion, repository
+      deletion, and initiator account deletion; never left `in_flight` after its intent
+      is gone; exactly one terminal write under a replayed or racing worker
+- [ ] Tests asserting no `upload`, `staging_path`, `staging_version_id`, `lease_token`,
+      or `preview_metadata` field appears in any listing row, and that refresh/complete/
+      cancel remain initiator-only 404-masked
 
 ## Cross-cutting requirements to keep in every phase
 

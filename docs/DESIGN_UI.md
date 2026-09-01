@@ -254,9 +254,10 @@ muted, current segment unlinked.
   (secondary outline) / `Private` (neutral, lock icon); `Metadata signed` (accent);
   `Auto-sign` (primary outline); signing transition `signing` (warning) / `failed`
   (error); invitation notification `queued` (neutral) / `sent` (success) / `failed`
-  (error) / `suppressed` (warning); upload intent `awaiting_upload` and `queued`
-  (neutral) / `processing` (warning) / `preview_ready` (accent) / `succeeded` (success)
-  / `failed` (error) / `expired` and `canceled` (neutral, muted).
+  (error) / `suppressed` (warning); upload live status `awaiting_upload` and
+  `queued` (neutral) / `processing` (warning) / `preview_ready` (accent), and recorded
+  upload outcome `succeeded` (success) / `failed` (error) / `expired` and `canceled`
+  (neutral, muted).
 - **Empty states** — ghosted reticle (~40 px, 30% opacity), one plain sentence, one
   action. "No packages yet. Upload the first RPM." Never a bare empty table.
 - **Loading** — the reticle as spinner: ring and ticks rotate, star stays fixed.
@@ -285,12 +286,12 @@ muted, current segment unlinked.
   **setup instructions** (tabbed command blocks: DNF 5 / DNF 4 / `.repo` file, plus GPG
   import when applicable, per `DESIGN.md` public/private rules) and the **package
   table** (search field, sortable, mono NEVRA columns). Owner/admin actions (`Upload
-  RPM`, settings link, collaborators section) follow, then the manager-only **Recent
-  Uploads** list per `DESIGN.md` — a dense table of filename, initiator, mode, size,
-  status badge, and time, with the failure code and reason as muted secondary text
-  under a `failed` row. It sits below the package table so it never competes with the
-  setup instructions, and it is absent entirely when the repository has no retained
-  intents.
+  RPM`, settings link, collaborators section) follow, then the manager-only **Upload
+  History** list per `DESIGN.md` — a dense paginated table of filename, initiator,
+  mode, size, status badge, and start/finish times, with the failure code and reason as
+  muted secondary text under a failed row and the NEVRA link under a succeeded one. It
+  sits below the package table so it never competes with the setup instructions, and it
+  is absent entirely when the repository has no upload records.
 - **Package detail / version detail** — title block with mono NEVRA; version detail
   renders counts as tabs with lazy-loaded paginated lists per `DESIGN.md`; install
   instructions as command blocks.
@@ -355,9 +356,9 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
 - [x] U7 — Global search (per the `DESIGN.md` Search spec): nav field + results page
 - [x] U8 — QA pass: AA contrast verification in both themes, keyboard walkthrough,
       reduced-motion check, responsive sweep, existing LiveView tests updated alongside
-- [ ] U9 — Recent Uploads section on repo detail (per the `DESIGN.md` Recent Uploads
-      spec): upload-intent badge states, dense row layout, failure code/reason
-      treatment, initiator-only cancel action
+- [ ] U9 — Upload History section on repo detail (per the `DESIGN.md` Upload History
+      spec): badge states for live status and recorded outcome, dense paginated row
+      layout, failure code/reason treatment, initiator-only cancel action
 
 Each phase lands with its tests updated (selectors/copy assertions in the existing
 LiveView suite) and a screenshot check in both themes.
