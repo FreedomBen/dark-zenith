@@ -314,10 +314,11 @@ muted, current segment unlinked.
 
 Per project convention, behavior changes are specified in `docs/DESIGN.md` before code:
 
-1. **Global package search** — new surface: results page + query semantics (visibility
-   filtering identical to repo browsing, pagination, rate limiting, whether the REST API
-   gains a matching endpoint). Blocking for the nav search field; the rest of this
-   document does not depend on it.
+1. **Global package search** — specified in `DESIGN.md` (Web Interface: Search; the
+   `GET /api/v1/search/packages` endpoint plus `q` on `GET /api/v1/repos`; the search
+   rate-limit bucket): submit-driven `GET /search` results page with a capped
+   repository group and a paginated package group, visibility identical to repo
+   browsing. Unblocks the nav search field (U7).
 2. **`SOURCE_URL` config** — specified in `DESIGN.md` (Web Interface footer paragraph
    plus a Configuration table row); default is the upstream project repository.
 
@@ -335,7 +336,7 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
 - [x] U5 — Pages: landing hero + star-field, repo list, repo detail setup-instructions
       tabs, package pages, upload states, settings, auth
 - [x] U6 — Admin: sub-nav tabs, dense table pass across the five admin views
-- [ ] U7 — Global search (blocked on `DESIGN.md` spec): nav field + results page
+- [ ] U7 — Global search (per the `DESIGN.md` Search spec): nav field + results page
 - [ ] U8 — QA pass: AA contrast verification in both themes, keyboard walkthrough,
       reduced-motion check, responsive sweep, existing LiveView tests updated alongside
 
