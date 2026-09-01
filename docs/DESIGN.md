@@ -354,14 +354,16 @@ Upload intents are operational state and are deleted 24 hours after they finish.
 | `error_code` | string | Sanitized terminal error code; null unless `outcome = "failed"` |
 | `error_detail` | string | Optional sanitized Upload Failure Reasons value refining `error_code`; null when the failure has no more specific classification |
 | `nevra` | string | Resulting `name-epoch:version-release.arch`; null unless `outcome = "succeeded"` |
-| `started_at` | timestamp | Intent creation time |
+| `started_at` | timestamp | The upload's start: a snapshot of the intent's creation time |
 | `finished_at` | timestamp | Terminal transition time; null while `in_flight` |
-| `inserted_at` | timestamp | Creation time |
+| `inserted_at` | timestamp | When this record row was written |
 | `updated_at` | timestamp | Last state change |
+
+`started_at` and `inserted_at` coincide for a record written in its intent's creation transaction; they are kept separate because `started_at` snapshots the upload's own start, so listings and the API order by it rather than by when the row happened to be written.
 
 **Unique constraints**: `(intent_id)`. The repository listing is served by an index on `(repository_id, started_at DESC, id)`; `(user_id)` and `(package_id)` are indexed for account-scoped and package-scoped lookups.
 
-A record is created in the same transaction as its upload intent with `outcome = "in_flight"`, copying the fields above from the intent and snapshotting the repository slug and the initiator's email. It is finalized in the same transaction that makes the intent terminal — `terminalize!` for the failed, expired, and canceled paths, and the final package transaction for `succeeded`, which also writes `final_size` and `nevra`. Finalization is a compare-and-swap on `outcome = "in_flight"`, so a record takes exactly one terminal write and a replayed or racing worker cannot rewrite a recorded outcome. Application code otherwise never updates a record and never deletes one; the only other mutation is the database clearing `user_id` through `ON DELETE SET NULL` when the initiator's account is deleted.
+A record is created in the same transaction as its upload intent with `outcome = "in_flight"`, copying the fields above from the intent and snapshotting the repository slug and the initiator's email. It is finalized in the same transaction that makes the intent terminal — the shared terminal transition for the failed, expired, and canceled paths, and the final package transaction for `succeeded`, which also writes `final_size` and `nevra`. Finalization is a compare-and-swap on `outcome = "in_flight"`, so a record takes exactly one terminal write and a replayed or racing worker cannot rewrite a recorded outcome. Application code otherwise never updates a record and never deletes one; the only other mutation is the database clearing `user_id` through `ON DELETE SET NULL` when the initiator's account is deleted.
 
 Records deliberately survive what they describe. Repository deletion and user deletion both delete upload intents, so each of those transactions finalizes any `in_flight` record for the intents it removes as `canceled` before committing, and neither deletes the records themselves. The hourly terminal-intent cleanup applies the same rule as a safety net: an `in_flight` record whose intent row no longer exists is finalized as `canceled`, so no record stays `in_flight` after its intent is gone. Because a record holds no capability, no staging key, no B2 version, and no parsed package metadata, retaining it indefinitely creates no cleanup obligation against B2 and no path back to object storage.
 
@@ -1070,7 +1072,7 @@ GET    /api/v1/repos/:slug/packages/:id/enhances            # List reverse-weak 
 GET    /api/v1/repos/:slug/packages/:id/files               # List files (paginated)
 GET    /api/v1/repos/:slug/packages/:id/changelogs          # List changelogs (paginated)
 DELETE /api/v1/repos/:slug/packages/:id                     # Delete a package (auth required)
-GET    /api/v1/repos/:slug/package-uploads                  # List the repository's retained upload intents (owner/admin, paginated)
+GET    /api/v1/repos/:slug/package-uploads                  # List the repository's package upload records (owner/admin only; API keys need `package:upload`)
 POST   /api/v1/repos/:slug/package-uploads                  # Create a direct-to-B2 upload intent (auth required)
 GET    /api/v1/repos/:slug/package-uploads/:id              # Read upload processing state/result (auth required)
 POST   /api/v1/repos/:slug/package-uploads/:id/refresh      # Replace an expired upload URL and staging key (auth required)
