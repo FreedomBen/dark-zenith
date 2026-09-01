@@ -289,9 +289,12 @@ muted, current segment unlinked.
   RPM`, settings link, collaborators section) follow, then the manager-only **Upload
   History** list per `DESIGN.md` — a dense paginated table of filename, initiator,
   mode, size, status badge, and start/finish times, with the failure code and reason as
-  muted secondary text under a failed row and the NEVRA link under a succeeded one. It
-  sits below the package table so it never competes with the setup instructions, and it
-  is absent entirely when the repository has no upload records.
+  muted secondary text under a failed row and the NEVRA link under a succeeded one. Its
+  header carries the repository's in-flight count as a status pill linking to the
+  `in_flight` filter, plus the outcome filter itself as a quiet segmented control; both
+  the filter and the page live in the URL. It sits below the package table so it never
+  competes with the setup instructions, and it is absent entirely when the repository
+  has no upload records.
 - **Package detail / version detail** — title block with mono NEVRA; version detail
   renders counts as tabs with lazy-loaded paginated lists per `DESIGN.md`; install
   instructions as command blocks.
@@ -358,7 +361,8 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
       reduced-motion check, responsive sweep, existing LiveView tests updated alongside
 - [ ] U9 — Upload History section on repo detail (per the `DESIGN.md` Upload History
       spec): badge states for live status and recorded outcome, dense paginated row
-      layout, failure code/reason treatment, initiator-only cancel action
+      layout, in-flight count pill and outcome filter in the header, failure
+      code/reason treatment, initiator-only cancel action
 
 Each phase lands with its tests updated (selectors/copy assertions in the existing
 LiveView suite) and a screenshot check in both themes.

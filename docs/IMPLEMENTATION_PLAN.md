@@ -260,7 +260,8 @@ Audit Events, Rate Limiting, repository-deletion, and user-deletion additions.
 - [ ] `package_upload_records` migration: UUID snapshot `repository_id` (no FK),
       `user_id` nilify-on-delete with `user_email` snapshot, unique `(intent_id)`,
       index on `(repository_id, started_at DESC, id)`, `(user_id)`, `(package_id)`,
-      outcome check constraint
+      partial index on `(repository_id)` where `outcome = 'in_flight'` for the
+      in-flight count, outcome check constraint
 - [ ] Record created in the intent-creation transaction as `in_flight`; finalized by a
       compare-and-swap on `outcome = 'in_flight'` inside `Uploads.terminalize!/4` and
       inside the success path's final package transaction (`final_size`, `nevra`)
@@ -271,20 +272,25 @@ Audit Events, Rate Limiting, repository-deletion, and user-deletion additions.
       then `id` ascending, optional outcome-subset filter, left join to the live intent
       for `live_status`, initiator email from the record snapshot
 - [ ] `GET /api/v1/repos/:slug/package-uploads`: owner/admin repository-scoped read,
-      `package:upload` for API keys, standard paginated envelope, `outcome` filter
-      validation, decimal-string `declared_size`/`final_size`, 404 masking on an
-      inaccessible repository
+      `repo:read` for API keys (the id-addressed endpoints keep `package:upload`),
+      standard paginated envelope, `outcome` filter validation, decimal-string
+      `declared_size`/`final_size`, `user_email` serialized but never `user_id`,
+      404 masking on an inaccessible repository
 - [ ] Repository detail LiveView: Upload History section for managers only, 25 per page
-      with the page in the URL, status badges, succeeded NEVRA and package link,
-      sanitized failure code and reason, initiator-only cancel action, section omitted
-      when the repository has no records
-- [ ] Five-second refresh timer active only while a row on the current page is in
-      flight; internal message consumes no rate-limit bucket
+      with the page and the `outcome` filter in the URL, header in-flight count pill
+      linking to the `in_flight` filter, status badges, succeeded NEVRA and package
+      link, sanitized failure code and reason, initiator-only cancel action, section
+      omitted when the repository has no records
+- [ ] Five-second refresh timer driven by the repository-wide in-flight count, not the
+      current page's rows, so a stuck upload past page one keeps refreshing; internal
+      message consumes no rate-limit bucket
 - [ ] Audit: add `repository_id`, `repository_slug`, `intent_id`, `upload_record_id`,
       and `original_filename` to every `package.upload*` event so terminal events are
       self-sufficient
 - [ ] Authorization tests across anonymous, unrelated user, collaborator, non-initiating
-      owner, non-initiating admin, and initiating user on both surfaces
+      owner, non-initiating admin, and initiating user on both surfaces, plus the scope
+      split: a `repo:read`-only key lists records, a `package:upload`-only key does not
+      but still reads its own intent by id
 - [ ] Durability tests: record survives intent cleanup, package deletion, repository
       deletion, and initiator account deletion; never left `in_flight` after its intent
       is gone; exactly one terminal write under a replayed or racing worker
