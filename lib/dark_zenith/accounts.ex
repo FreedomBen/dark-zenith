@@ -548,8 +548,18 @@ defmodule DarkZenith.Accounts do
           Repo.all(
             from i in DarkZenith.Uploads.Intent,
               where: i.user_id == ^target.id,
-              select: %{staging_path: i.staging_path, reservation_id: i.reservation_id}
+              select: %{
+                id: i.id,
+                staging_path: i.staging_path,
+                reservation_id: i.reservation_id
+              }
           )
+
+        # Package upload records the target initiated are retained with
+        # user_id nilified by the delete; those still in_flight for the
+        # intents removed here are finalized as canceled (DESIGN.md: User
+        # Lifecycle; Package Upload Records).
+        DarkZenith.Uploads.Records.cancel_in_flight!(Enum.map(intents, & &1.id))
 
         # Pending invitations addressed to the deleted email must not
         # silently re-attach on a later re-registration.

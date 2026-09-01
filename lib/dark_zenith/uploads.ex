@@ -16,7 +16,7 @@ defmodule DarkZenith.Uploads do
   alias DarkZenith.Repo
   alias DarkZenith.Repositories.Repository
   alias DarkZenith.Storage
-  alias DarkZenith.Uploads.Intent
+  alias DarkZenith.Uploads.{Intent, Record, Records}
   alias DarkZenith.Workers.{StagingCleanup, UploadProcessing}
 
   @waiting_seconds 2 * 3600
@@ -30,6 +30,50 @@ defmodule DarkZenith.Uploads do
       {:ok, uuid} -> Repo.get_by(Intent, id: uuid, repository_id: repository_id)
       :error -> nil
     end
+  end
+
+  @doc """
+  Fetches an intent by id scoped to a repository and to its initiator, or
+  nil. Every id-addressed intent surface treats another user's intent as
+  nonexistent (DESIGN.md: REST API — intent endpoints).
+  """
+  def get_intent_for(%User{id: user_id}, %Repository{} = repository, id) do
+    case get_intent(repository, id) do
+      %Intent{user_id: ^user_id} = intent -> intent
+      _ -> nil
+    end
+  end
+
+  @doc """
+  The repository's Package Upload Records, `started_at` descending then
+  `id` ascending, with `live_status` filled from any surviving intent.
+  Options: `:outcomes`, `:page`, `:per_page`. Returns `{records, total}`.
+  """
+  def list_repository_records(%Repository{id: repository_id}, opts \\ []) do
+    Records.list_repository_records(repository_id, opts)
+  end
+
+  @doc "The hourly anti-join finalizing `in_flight` records whose intent is gone."
+  def reconcile_orphaned_records, do: Records.reconcile_orphans()
+
+  @doc """
+  The self-sufficient metadata every `package.upload*` audit event carries
+  (DESIGN.md: Audit Events): repository id and slug, intent id, upload
+  record id, and original filename, so any upload event resolves to its
+  record and back.
+  """
+  def audit_metadata(%Intent{} = intent) do
+    audit_metadata(intent, Records.get_by_intent(intent.id))
+  end
+
+  def audit_metadata(%Intent{} = intent, %Record{} = record) do
+    %{
+      "repository_id" => record.repository_id,
+      "repository_slug" => record.repository_slug,
+      "intent_id" => intent.id,
+      "upload_record_id" => record.id,
+      "original_filename" => intent.original_filename
+    }
   end
 
   ## Creation
@@ -72,15 +116,16 @@ defmodule DarkZenith.Uploads do
                 expires_at: expires_at
               })
 
+            record = Records.create_for_intent!(intent, repository.slug, actor.email)
+
             Audit.record!("package.upload_intent_create",
               actor: actor,
               target: {:upload_intent, intent.id},
-              metadata: %{
-                "slug" => repository.slug,
-                "filename" => filename,
-                "declared_size" => Integer.to_string(size),
-                "mode" => mode
-              }
+              metadata:
+                Map.merge(audit_metadata(intent, record), %{
+                  "declared_size" => Integer.to_string(size),
+                  "mode" => mode
+                })
             )
 
             {:ok, intent}
@@ -137,7 +182,12 @@ defmodule DarkZenith.Uploads do
               Audit.record!("package.upload_intent_refresh",
                 actor: actor,
                 target: {:upload_intent, current.id},
-                metadata: %{"generation" => Integer.to_string(updated.upload_generation)}
+                metadata:
+                  Map.put(
+                    audit_metadata(current),
+                    "generation",
+                    Integer.to_string(updated.upload_generation)
+                  )
               )
 
               {:ok, {updated, ttl}}
@@ -160,15 +210,15 @@ defmodule DarkZenith.Uploads do
   def complete_intent(%User{} = actor, %Intent{} = intent, generation, version_id) do
     with :ok <- authorize_intent(actor, intent),
          :ok <- validate_version_id(version_id),
-         {:ok, current} <- classify_completion(intent.id, generation, version_id) do
+         {:ok, current} <- classify_completion(actor, intent.id, generation, version_id) do
       case current do
         {:already, accepted} -> {:ok, accepted}
-        {:verify, awaiting} -> verify_and_accept(awaiting, generation, version_id)
+        {:verify, awaiting} -> verify_and_accept(actor, awaiting, generation, version_id)
       end
     end
   end
 
-  defp classify_completion(intent_id, generation, version_id) do
+  defp classify_completion(actor, intent_id, generation, version_id) do
     {:ok, result} =
       Repo.transact(fn ->
         current = lock_intent!(intent_id)
@@ -190,7 +240,9 @@ defmodule DarkZenith.Uploads do
               end
 
             overdue?(current) ->
-              terminalize!(current, "expired")
+              # An overdue completion attempt expires the intent; the actor
+              # who tried is recorded, unlike the sweep's system event.
+              expire!(current, actor)
               {:error, :upload_state}
 
             current.upload_generation != generation ->
@@ -206,14 +258,14 @@ defmodule DarkZenith.Uploads do
     result
   end
 
-  defp verify_and_accept(intent, generation, version_id) do
+  defp verify_and_accept(actor, intent, generation, version_id) do
     config = B2.config!()
 
     case B2.head_object(config, intent.staging_path, version_id) do
       {:ok, head} ->
         case B2.verify_object_contract(head, intent.declared_size) do
           :ok ->
-            accept!(intent, generation, version_id)
+            accept!(actor, intent, generation, version_id)
 
           {:error, _violation} ->
             # The mismatched version is permanently deleted; the intent keeps
@@ -230,7 +282,7 @@ defmodule DarkZenith.Uploads do
     end
   end
 
-  defp accept!(intent, generation, version_id) do
+  defp accept!(actor, intent, generation, version_id) do
     now = DateTime.utc_now(:second)
 
     {count, _} =
@@ -258,7 +310,7 @@ defmodule DarkZenith.Uploads do
       0 ->
         # Lost a race with another completion/cancel; reclassify once.
         with {:ok, {:already, accepted}} <-
-               classify_completion(intent.id, generation, version_id) do
+               classify_completion(actor, intent.id, generation, version_id) do
           {:ok, accepted}
         end
     end
@@ -288,7 +340,7 @@ defmodule DarkZenith.Uploads do
               Audit.record!("package.upload_intent_cancel",
                 actor: actor,
                 target: {:upload_intent, current.id},
-                metadata: %{}
+                metadata: audit_metadata(current)
               )
 
               {:ok, {:ok, canceled}}
@@ -409,7 +461,8 @@ defmodule DarkZenith.Uploads do
 
           if current && current.status in ["awaiting_upload", "preview_ready"] &&
                overdue?(current) do
-            terminalize!(current, "expired")
+            # The sweep is a system actor: null actor fields and no client IP.
+            expire!(current, nil)
           end
 
           {:ok, :ok}
@@ -417,6 +470,21 @@ defmodule DarkZenith.Uploads do
     end)
 
     :ok
+  end
+
+  # Expires a waiting intent and records the terminal outcome (DESIGN.md:
+  # Audit Events — the expiry event targets the intent).
+  defp expire!(%Intent{} = intent, actor) do
+    expired = terminalize!(intent, "expired")
+
+    Audit.record!("package.upload",
+      actor: actor,
+      ip: if(actor, do: Audit.client_ip(), else: nil),
+      target: {:upload_intent, intent.id},
+      metadata: Map.put(audit_metadata(intent), "result", "expired")
+    )
+
+    expired
   end
 
   @doc """
@@ -525,6 +593,9 @@ defmodule DarkZenith.Uploads do
 
     {1, _} = Repo.update_all(from(i in Intent, where: i.id == ^intent.id), set: fields)
 
+    # The durable record takes its one terminal write in this transaction.
+    Records.finalize!(intent.id, status, error_code: error_code, error_detail: error_detail)
+
     if intent.reservation_id, do: Storage.release_reservation(intent.reservation_id)
     enqueue_staging_cleanup(intent.staging_path)
 
@@ -561,9 +632,14 @@ defmodule DarkZenith.Uploads do
     if Authorization.can_manage?(actor, repository), do: :ok, else: {:error, :forbidden}
   end
 
+  # Repository management access first, then the initiator-only rule: a
+  # second manager's intent is treated as nonexistent (DESIGN.md: REST API).
   defp authorize_intent(actor, %Intent{} = intent) do
     repository = Repo.get!(Repository, intent.repository_id)
-    authorize(actor, repository)
+
+    with :ok <- authorize(actor, repository) do
+      if actor.id == intent.user_id, do: :ok, else: {:error, :not_found}
+    end
   end
 
   defp owner_of(actor, repository) do

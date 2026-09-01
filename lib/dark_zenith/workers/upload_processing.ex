@@ -693,16 +693,24 @@ defmodule DarkZenith.Workers.UploadProcessing do
 
     Repo.delete!(reservation)
 
+    nevra =
+      "#{candidate.name}-#{candidate.epoch}:#{candidate.version}-#{candidate.release}." <>
+        candidate.arch
+
+    # The durable record's one terminal write, in the package transaction.
+    Uploads.Records.finalize!(intent.id, "succeeded",
+      final_size: candidate.size_package,
+      nevra: nevra
+    )
+
     Audit.record!("package.upload",
       actor: Repo.get(User, intent.user_id),
       target: {:package, candidate.id},
-      metadata: %{
-        "slug" => repo.slug,
-        "nevra" =>
-          "#{candidate.name}-#{candidate.epoch}:#{candidate.version}-#{candidate.release}." <>
-            candidate.arch,
-        "result" => "succeeded"
-      }
+      metadata:
+        Map.merge(Uploads.audit_metadata(intent), %{
+          "nevra" => nevra,
+          "result" => "succeeded"
+        })
     )
 
     Repodata.enqueue_regeneration(repo.id)
@@ -754,9 +762,13 @@ defmodule DarkZenith.Workers.UploadProcessing do
   ## Failure paths
 
   # The audit row carries the sanitized reason when there is one, so an
-  # operator sees the same classification the uploader does.
-  defp audit_result(code, nil), do: %{"result" => code}
-  defp audit_result(code, detail), do: %{"result" => code, "reason" => detail}
+  # operator sees the same classification the uploader does; every failure
+  # event is self-sufficient (DESIGN.md: Audit Events).
+  defp audit_result(intent, code, nil),
+    do: Map.put(Uploads.audit_metadata(intent), "result", code)
+
+  defp audit_result(intent, code, detail),
+    do: Map.merge(Uploads.audit_metadata(intent), %{"result" => code, "reason" => detail})
 
   defp deterministic_failure(intent, token, code, detail) do
     {:ok, _} =
@@ -769,7 +781,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
           Audit.record!("package.upload",
             actor: Repo.get(User, intent.user_id),
             target: {:upload_intent, intent.id},
-            metadata: audit_result(code, detail)
+            metadata: audit_result(current, code, detail)
           )
         end
 
@@ -796,7 +808,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
             Audit.record!("package.upload",
               actor: Repo.get(User, intent.user_id),
               target: {:upload_intent, intent.id},
-              metadata: %{"result" => code}
+              metadata: audit_result(current, code, nil)
             )
 
             {:ok, :noop}

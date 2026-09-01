@@ -277,8 +277,11 @@ defmodule DarkZenith.Workers.UploadProcessingTest do
     intent = queued_intent!(ctx, ctx.binary, "web_preview")
     assert :ok = perform_job(UploadProcessing, %{"intent_id" => intent.id})
 
+    # Another manager's intent is treated as nonexistent, not merely
+    # forbidden (DESIGN.md: REST API — intent endpoints are initiator-only).
     admin = admin_fixture()
-    assert {:error, :forbidden} = Uploads.confirm_preview(admin, reload(intent))
+    assert {:error, :not_found} = Uploads.confirm_preview(admin, reload(intent))
+    assert reload(intent).status == "preview_ready"
   end
 
   test "sign_rpms with no configured owner key rejects the upload", ctx do

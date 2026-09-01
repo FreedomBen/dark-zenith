@@ -412,7 +412,7 @@ defmodule DarkZenith.Repositories do
               where: i.repository_id == ^current.id,
               order_by: [asc: i.id],
               lock: "FOR UPDATE",
-              select: %{staging_path: i.staging_path}
+              select: %{id: i.id, staging_path: i.staging_path}
           )
 
         Repo.all(
@@ -453,6 +453,11 @@ defmodule DarkZenith.Repositories do
               updated_at: now
             ]
           )
+
+        # Package upload records outlive the repository; those still
+        # in_flight for the intents removed here are finalized as canceled
+        # (DESIGN.md: Package Upload Records).
+        DarkZenith.Uploads.Records.cancel_in_flight!(Enum.map(intents, & &1.id))
 
         # Dependent packages, collaborators, invitations, the metadata
         # cache, upload intents, and reservations delete through their
