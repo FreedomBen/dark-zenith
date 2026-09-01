@@ -250,6 +250,29 @@ Events, Email Delivery, and Security Considerations.
       generation responses, envelope-encrypted at rest, absent from resources/audit
       metadata, full validation pipeline applied to generated pairs
 
+## Phase 18 — Repository upload status listing (post-M4 feature)
+
+Spec: DESIGN.md "Recent Uploads" (Repository Detail), the repository-scoped listing
+exception in the REST API preamble, the `GET /api/v1/repos/:slug/package-uploads` bullet
+under API Contract Details, and the list-endpoint ordering and Rate Limiting additions.
+
+- [ ] `Uploads.list_repository_intents/2`: repository-scoped query over retained intents,
+      `inserted_at` descending then `id` ascending, optional status-subset filter, initiator
+      email preloaded; returns no capability, staging, lease, or preview fields
+- [ ] `GET /api/v1/repos/:slug/package-uploads`: owner/admin repository-scoped read,
+      `package:upload` for API keys, standard paginated envelope, `status` filter validation,
+      decimal-string `declared_size`, 404 masking on an inaccessible repository
+- [ ] Repository detail LiveView: Recent Uploads section for managers only, 10 most recent
+      rows plus total, status badges, succeeded/preview links, sanitized failure code and
+      reason, initiator-only cancel action, section omitted when no rows exist
+- [ ] Five-second refresh timer active only while a listed intent is non-terminal, stopping
+      when all rows are terminal; internal message consumes no rate-limit bucket
+- [ ] Authorization tests across anonymous, unrelated user, collaborator, non-initiating
+      owner, non-initiating admin, and initiating user on both surfaces
+- [ ] Tests asserting no `upload`, `staging_path`, `staging_version_id`, `lease_token`, or
+      `preview_metadata` field appears in any listing row, and that refresh/complete/cancel
+      remain initiator-only 404-masked
+
 ## Cross-cutting requirements to keep in every phase
 
 - Background Retry Policy for every durable job (Architecture)

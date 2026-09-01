@@ -9,11 +9,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository status: initial implementation complete
 
-Every item in `docs/IMPLEMENTATION_PLAN.md` is checked off: the `docs/DESIGN.md` feature set is
-implemented and covered by the test suite (dnf5-validated metadata, uploads, signing
+Phases 1-17 of `docs/IMPLEMENTATION_PLAN.md` are checked off: that `docs/DESIGN.md` feature
+set is implemented and covered by the test suite (dnf5-validated metadata, uploads, signing
 including user-wide key transitions, rate limiting, admin surface, deployment artifacts).
-Remaining work is maintenance, review findings, and running `deploy/release_gate.sh`
-against a staging deployment before a release. Spec changes still precede code changes
+Phase 18 (repository upload status listing) is specified in `docs/DESIGN.md` but not yet
+implemented. Other remaining work is maintenance, review findings, and running
+`deploy/release_gate.sh` against a staging deployment before a release. Spec changes still precede code changes
 when behavior is being (re)defined.
 Key files:
 
