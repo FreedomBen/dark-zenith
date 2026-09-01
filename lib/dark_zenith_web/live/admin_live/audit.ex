@@ -4,63 +4,59 @@ defmodule DarkZenithWeb.AdminLive.Audit do
   use DarkZenithWeb, :live_view
 
   alias DarkZenith.Audit
+  alias DarkZenithWeb.AdminComponents
 
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:data}>
-      <div class="space-y-6">
-        <.header>
-          Audit log
-          <:subtitle><DarkZenithWeb.AdminComponents.admin_nav active="audit" /></:subtitle>
-        </.header>
-
-        <form id="audit-filters" phx-change="filter" class="flex gap-2">
+      <AdminComponents.admin_page
+        active="audit"
+        subtitle="Read-only event log, newest first (most recent 200)."
+      >
+        <form id="audit-filters" phx-change="filter" class="flex flex-wrap gap-2">
+          <label class="sr-only" for="audit-filter-action">Action prefix</label>
           <input
             type="text"
+            id="audit-filter-action"
             name="action"
             value={@action}
             placeholder="Action prefix (e.g. auth.)"
             phx-debounce="300"
-            class="input input-bordered input-sm"
+            class="input input-sm w-56 font-mono"
           />
+          <label class="sr-only" for="audit-filter-actor">Actor email</label>
           <input
             type="text"
+            id="audit-filter-actor"
             name="actor_email"
             value={@actor_email}
             placeholder="Actor email"
             phx-debounce="300"
-            class="input input-bordered input-sm"
+            class="input input-sm w-56 font-mono"
           />
         </form>
 
-        <div class="overflow-x-auto">
-          <table class="table table-sm">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Actor</th>
-                <th>Action</th>
-                <th>Target</th>
-                <th>Metadata</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr :for={event <- @events} id={"event-#{event.id}"}>
-                <td class="whitespace-nowrap">
-                  {Calendar.strftime(event.inserted_at, "%Y-%m-%d %H:%M:%S")}
-                </td>
-                <td class="font-mono">{event.actor_email || "system"}</td>
-                <td>{event.action}</td>
-                <td>{event.target_type}</td>
-                <td class="max-w-md truncate font-mono text-xs">
-                  {Jason.encode!(event.metadata)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+        <Layouts.empty_state :if={@events == []}>
+          No events match the filters.
+        </Layouts.empty_state>
+
+        <.table :if={@events != []} id="admin-audit" rows={@events} row_id={&"event-#{&1.id}"}>
+          <:col :let={event} label="Time">
+            <span class="font-mono whitespace-nowrap text-base-content/70">
+              {Calendar.strftime(event.inserted_at, "%Y-%m-%d %H:%M:%S")}
+            </span>
+          </:col>
+          <:col :let={event} label="Actor" mono>{event.actor_email || "system"}</:col>
+          <:col :let={event} label="Action" mono>{event.action}</:col>
+          <:col :let={event} label="Target">{event.target_type}</:col>
+          <:col :let={event} label="Metadata">
+            <span class="block max-w-md truncate font-mono text-xs">
+              {Jason.encode!(event.metadata)}
+            </span>
+          </:col>
+        </.table>
+      </AdminComponents.admin_page>
     </Layouts.app>
     """
   end

@@ -22,26 +22,23 @@ defmodule DarkZenithWeb.AdminLive.Users do
   use DarkZenithWeb, :live_view
 
   alias DarkZenith.Accounts
+  alias DarkZenithWeb.AdminComponents
 
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:data}>
-      <div class="space-y-8">
-        <.header>
-          Users
-          <:subtitle>
-            <DarkZenithWeb.AdminComponents.admin_nav active="users" />
-          </:subtitle>
-        </.header>
-
-        <section class="border border-base-300 rounded-lg p-4">
-          <h2 class="font-semibold mb-2">Create user</h2>
-          <p class="text-sm text-base-content/70 mb-2">
+      <AdminComponents.admin_page
+        active="users"
+        subtitle="Accounts, usage against limits, and the admin flag."
+      >
+        <section class="rounded-box border border-base-content/10 p-6">
+          <h2 class="text-lg font-semibold">Create user</h2>
+          <p class="mb-2 text-sm text-base-content/70">
             Admin-created accounts are auto-confirmed; no confirmation email is sent.
           </p>
           <.form for={@create_form} id="admin_create_user_form" phx-submit="create_user">
-            <div class="flex gap-2 items-end">
+            <div class="flex flex-wrap items-end gap-2">
               <.input field={@create_form[:email]} type="email" label="Email" required />
               <.input field={@create_form[:password]} type="password" label="Password" required />
               <.button phx-disable-with="Creating..." class="btn btn-primary">Create</.button>
@@ -49,75 +46,78 @@ defmodule DarkZenithWeb.AdminLive.Users do
           </.form>
         </section>
 
-        <div class="overflow-x-auto">
-          <table class="table table-sm">
-            <thead>
-              <tr>
-                <th>Email</th>
-                <th>Storage</th>
-                <th>Repos</th>
-                <th>API keys</th>
-                <th>Flags</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr :for={row <- @users} id={"user-#{row.user.id}"}>
-                <td class="font-mono">{row.user.email}</td>
-                <td class={over_limit(row.user.storage_bytes, @max_storage) && "text-warning"}>
-                  {format_bytes(row.user.storage_bytes)} / {format_bytes(@max_storage)}
-                </td>
-                <td class={over_limit(row.repository_count, @max_repositories) && "text-warning"}>
-                  {row.repository_count} / {@max_repositories}
-                </td>
-                <td class={over_limit(row.api_key_count, @max_api_keys) && "text-warning"}>
-                  {row.api_key_count} / {@max_api_keys}
-                </td>
-                <td>
-                  <span :if={row.user.is_admin} class="badge badge-primary badge-sm">admin</span>
-                  <span :if={is_nil(row.user.confirmed_at)} class="badge badge-ghost badge-sm">
-                    unconfirmed
-                  </span>
-                </td>
-                <td class="text-right space-x-1">
-                  <button
-                    :if={row.user.id != @current_scope.user.id and not row.user.is_admin}
-                    id={"grant-admin-#{row.user.id}"}
-                    class="btn btn-ghost btn-xs"
-                    phx-click="set_admin"
-                    phx-value-id={row.user.id}
-                    phx-value-value="true"
-                    data-confirm="Grant admin to this user?"
-                  >
-                    Grant admin
-                  </button>
-                  <button
-                    :if={row.user.id != @current_scope.user.id and row.user.is_admin}
-                    id={"revoke-admin-#{row.user.id}"}
-                    class="btn btn-ghost btn-xs"
-                    phx-click="set_admin"
-                    phx-value-id={row.user.id}
-                    phx-value-value="false"
-                    data-confirm="Revoke admin from this user?"
-                  >
-                    Revoke admin
-                  </button>
-                  <button
-                    :if={row.user.id != @current_scope.user.id}
-                    id={"delete-user-#{row.user.id}"}
-                    class="btn btn-ghost btn-xs text-error"
-                    phx-click="delete_user"
-                    phx-value-id={row.user.id}
-                    data-confirm="Delete this account? Rejected while the user still owns repositories."
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+        <.table id="admin-users" rows={@users} row_id={&"user-#{&1.user.id}"}>
+          <:col :let={row} label="Email" mono>{row.user.email}</:col>
+          <:col :let={row} label="Storage" align={:right}>
+            <span class={[
+              "font-mono whitespace-nowrap",
+              over_limit(row.user.storage_bytes, @max_storage) && "text-warning"
+            ]}>
+              {format_bytes(row.user.storage_bytes)} / {format_bytes(@max_storage)}
+            </span>
+          </:col>
+          <:col :let={row} label="Repos" align={:right}>
+            <span class={[
+              "font-mono",
+              over_limit(row.repository_count, @max_repositories) && "text-warning"
+            ]}>
+              {row.repository_count} / {@max_repositories}
+            </span>
+          </:col>
+          <:col :let={row} label="API keys" align={:right}>
+            <span class={[
+              "font-mono",
+              over_limit(row.api_key_count, @max_api_keys) && "text-warning"
+            ]}>
+              {row.api_key_count} / {@max_api_keys}
+            </span>
+          </:col>
+          <:col :let={row} label="Flags">
+            <span :if={row.user.is_admin} class="badge badge-soft badge-primary badge-sm">
+              admin
+            </span>
+            <span :if={is_nil(row.user.confirmed_at)} class="badge badge-ghost badge-sm">
+              unconfirmed
+            </span>
+          </:col>
+          <:action :let={row}>
+            <span class="flex justify-end gap-1 whitespace-nowrap">
+              <button
+                :if={row.user.id != @current_scope.user.id and not row.user.is_admin}
+                id={"grant-admin-#{row.user.id}"}
+                class="btn btn-ghost btn-xs"
+                phx-click="set_admin"
+                phx-value-id={row.user.id}
+                phx-value-value="true"
+                data-confirm="Grant admin to this user?"
+              >
+                Grant admin
+              </button>
+              <button
+                :if={row.user.id != @current_scope.user.id and row.user.is_admin}
+                id={"revoke-admin-#{row.user.id}"}
+                class="btn btn-ghost btn-xs"
+                phx-click="set_admin"
+                phx-value-id={row.user.id}
+                phx-value-value="false"
+                data-confirm="Revoke admin from this user?"
+              >
+                Revoke admin
+              </button>
+              <button
+                :if={row.user.id != @current_scope.user.id}
+                id={"delete-user-#{row.user.id}"}
+                class="btn btn-ghost btn-xs text-error"
+                phx-click="delete_user"
+                phx-value-id={row.user.id}
+                data-confirm="Delete this account? Rejected while the user still owns repositories."
+              >
+                Delete
+              </button>
+            </span>
+          </:action>
+        </.table>
+      </AdminComponents.admin_page>
     </Layouts.app>
     """
   end

@@ -22,6 +22,69 @@ defmodule DarkZenithWeb.AdminLiveTest do
     end
   end
 
+  describe "admin shell" do
+    test "every view shares the Admin title and the sub-nav tab row", %{conn: conn} do
+      for {path, active} <- [
+            {~p"/admin/users", "Users"},
+            {~p"/admin/jobs", "Jobs"},
+            {~p"/admin/transitions", "Transitions"},
+            {~p"/admin/audit", "Audit"},
+            {~p"/admin/slugs", "Slugs"}
+          ] do
+        {:ok, lv, _html} = live(conn, path)
+
+        assert lv |> element("h1") |> render() =~ "Admin"
+
+        nav = lv |> element(~s{nav[aria-label="Admin sections"]}) |> render()
+        assert nav =~ ~r/Users.*Jobs.*Transitions.*Audit.*Slugs/s
+
+        active_tab = lv |> element(~s{nav a[aria-current="page"]}) |> render()
+        assert active_tab =~ active
+        assert active_tab =~ "tab-active"
+      end
+    end
+
+    test "/admin lands on the Users tab", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+      assert lv |> element(~s{nav a[aria-current="page"]}) |> render() =~ "Users"
+    end
+
+    test "tab links navigate between the views", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/admin/users")
+
+      {:ok, lv, _html} =
+        lv
+        |> element(~s{nav[aria-label="Admin sections"] a}, "Jobs")
+        |> render_click()
+        |> follow_redirect(conn, ~p"/admin/jobs")
+
+      assert lv |> element(~s{nav a[aria-current="page"]}) |> render() =~ "Jobs"
+    end
+
+    test "empty admin tables render the standard empty state", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/admin/jobs")
+      assert html =~ "No failed or exhausted jobs."
+
+      {:ok, _lv, html} = live(conn, ~p"/admin/slugs")
+      assert html =~ "No slug reservations."
+
+      {:ok, _lv, html} = live(conn, ~p"/admin/transitions")
+      assert html =~ "No signing transitions yet."
+
+      {:ok, lv, _html} = live(conn, ~p"/admin/audit")
+      html = render_change(lv, "filter", %{"action" => "no.such.prefix", "actor_email" => ""})
+      assert html =~ "No events match the filters."
+    end
+
+    test "users and audit render through the shared dense table", %{conn: conn, admin: admin} do
+      {:ok, lv, _html} = live(conn, ~p"/admin/users")
+      assert has_element?(lv, "#admin-users #user-#{admin.id}")
+
+      {:ok, lv, _html} = live(conn, ~p"/admin/audit")
+      assert has_element?(lv, "#admin-audit tr")
+    end
+  end
+
   describe "user management" do
     test "creates an auto-confirmed user without confirmation mail", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/admin/users")
@@ -148,6 +211,7 @@ defmodule DarkZenithWeb.AdminLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/admin/slugs")
       assert html =~ slug
+      assert has_element?(lv, "#admin-slugs #slug-#{slug}")
 
       lv |> element("#release-#{slug}") |> render_click()
 
@@ -169,6 +233,7 @@ defmodule DarkZenithWeb.AdminLiveTest do
       {:ok, lv, html} = live(conn, ~p"/admin/jobs")
       assert html =~ "Broken.Worker"
       assert html =~ "boom"
+      assert has_element?(lv, "#admin-jobs #job-#{job.id}")
 
       lv |> element("#retry-job-#{job.id}") |> render_click()
       assert DarkZenith.Repo.get!(Oban.Job, job.id).state in ["available", "scheduled"]
@@ -238,6 +303,7 @@ defmodule DarkZenithWeb.AdminTransitionsLiveTest do
     {:ok, lv, html} = live(ctx.conn, ~p"/admin/transitions")
     assert html =~ "replace_gpg_key"
     assert html =~ "database_unavailable"
+    assert has_element?(lv, "#admin-transitions #transition-#{transition.id}")
 
     lv |> element("#reset-phase-#{transition.id}") |> render_click()
 
@@ -310,6 +376,7 @@ defmodule DarkZenithWeb.AdminTransitionsLiveTest do
     html = lv |> element("#inspect-#{transition.id}") |> render_click()
     assert html =~ "1 failed"
     assert html =~ item.package_id
+    assert has_element?(lv, "#transition-items #item-#{item.id}")
 
     lv |> element("#reset-failed-items") |> render_click()
 

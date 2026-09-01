@@ -7,62 +7,58 @@ defmodule DarkZenithWeb.AdminLive.Slugs do
   use DarkZenithWeb, :live_view
 
   alias DarkZenith.Repositories
+  alias DarkZenithWeb.AdminComponents
 
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:data}>
-      <div class="space-y-6">
-        <.header>
-          Slug reservations
-          <:subtitle><DarkZenithWeb.AdminComponents.admin_nav active="slugs" /></:subtitle>
-        </.header>
+      <AdminComponents.admin_page
+        active="slugs"
+        subtitle="Live reservations shown for diagnosis; retired ones can be released for reuse."
+      >
+        <Layouts.empty_state :if={@reservations == []}>
+          No slug reservations.
+        </Layouts.empty_state>
 
-        <div class="overflow-x-auto">
-          <table class="table table-sm">
-            <thead>
-              <tr>
-                <th>Slug</th>
-                <th>Repository name</th>
-                <th>State</th>
-                <th>Retired</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr :for={reservation <- @reservations} id={"slug-#{reservation.slug}"}>
-                <td class="font-mono">{reservation.slug}</td>
-                <td>{reservation.repository_name}</td>
-                <td>
-                  <span :if={reservation.retired_at} class="badge badge-ghost badge-sm">
-                    retired
-                  </span>
-                  <span :if={is_nil(reservation.retired_at)} class="badge badge-success badge-sm">
-                    live
-                  </span>
-                </td>
-                <td>
-                  <span :if={reservation.retired_at}>
-                    {Calendar.strftime(reservation.retired_at, "%Y-%m-%d")}
-                  </span>
-                </td>
-                <td class="text-right">
-                  <button
-                    :if={reservation.retired_at}
-                    id={"release-#{reservation.slug}"}
-                    class="btn btn-ghost btn-xs text-error"
-                    phx-click="release"
-                    phx-value-slug={reservation.slug}
-                    data-confirm="Release this retired slug for anyone to claim?"
-                  >
-                    Release
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+        <.table
+          :if={@reservations != []}
+          id="admin-slugs"
+          rows={@reservations}
+          row_id={&"slug-#{&1.slug}"}
+        >
+          <:col :let={reservation} label="Slug" mono>{reservation.slug}</:col>
+          <:col :let={reservation} label="Repository name">{reservation.repository_name}</:col>
+          <:col :let={reservation} label="State">
+            <span :if={reservation.retired_at} class="badge badge-ghost badge-sm">
+              retired
+            </span>
+            <span
+              :if={is_nil(reservation.retired_at)}
+              class="badge badge-soft badge-success badge-sm"
+            >
+              live
+            </span>
+          </:col>
+          <:col :let={reservation} label="Retired">
+            <span :if={reservation.retired_at} class="whitespace-nowrap text-base-content/70">
+              {Calendar.strftime(reservation.retired_at, "%Y-%m-%d")}
+            </span>
+          </:col>
+          <:action :let={reservation}>
+            <button
+              :if={reservation.retired_at}
+              id={"release-#{reservation.slug}"}
+              class="btn btn-ghost btn-xs text-error"
+              phx-click="release"
+              phx-value-slug={reservation.slug}
+              data-confirm="Release this retired slug for anyone to claim?"
+            >
+              Release
+            </button>
+          </:action>
+        </.table>
+      </AdminComponents.admin_page>
     </Layouts.app>
     """
   end

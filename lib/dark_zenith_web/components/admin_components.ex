@@ -1,27 +1,63 @@
 defmodule DarkZenithWeb.AdminComponents do
-  @moduledoc "Shared pieces of the admin surface."
+  @moduledoc """
+  Shared frame for the admin surface (docs/DESIGN_UI.md — Page notes: Admin):
+  one Admin title block and a sub-nav tab row over each of the five views.
+  """
 
   use Phoenix.Component
   use DarkZenithWeb, :verified_routes
 
-  attr :active, :string, required: true
+  import DarkZenithWeb.CoreComponents
 
-  def admin_nav(assigns) do
-    ~H"""
-    <nav class="flex gap-3 text-sm">
-      <.link navigate={~p"/admin/users"} class={nav_class(@active, "users")}>Users</.link>
-      <.link navigate={~p"/admin/audit"} class={nav_class(@active, "audit")}>Audit log</.link>
-      <.link navigate={~p"/admin/slugs"} class={nav_class(@active, "slugs")}>
-        Slug reservations
-      </.link>
-      <.link navigate={~p"/admin/jobs"} class={nav_class(@active, "jobs")}>Background jobs</.link>
-      <.link navigate={~p"/admin/transitions"} class={nav_class(@active, "transitions")}>
-        Signing transitions
-      </.link>
-    </nav>
-    """
+  defp tabs do
+    [
+      {"users", "Users", ~p"/admin/users"},
+      {"jobs", "Jobs", ~p"/admin/jobs"},
+      {"transitions", "Transitions", ~p"/admin/transitions"},
+      {"audit", "Audit", ~p"/admin/audit"},
+      {"slugs", "Slugs", ~p"/admin/slugs"}
+    ]
   end
 
-  defp nav_class(active, tab) when active == tab, do: "font-semibold underline"
-  defp nav_class(_active, _tab), do: "link"
+  @doc """
+  Renders the admin page frame: the Admin title, the one-line muted
+  description of the active view, the Users / Jobs / Transitions / Audit /
+  Slugs tab row, and the view content.
+
+  ## Examples
+
+      <AdminComponents.admin_page active="users" subtitle="Accounts and limits.">
+        ...
+      </AdminComponents.admin_page>
+  """
+  attr :active, :string, required: true, values: ~w(users jobs transitions audit slugs)
+  attr :subtitle, :string, default: nil
+  slot :inner_block, required: true
+
+  def admin_page(assigns) do
+    assigns = assign(assigns, :tabs, tabs())
+
+    ~H"""
+    <div class="space-y-6">
+      <.header>
+        Admin
+        <:subtitle :if={@subtitle}>{@subtitle}</:subtitle>
+      </.header>
+
+      <%!-- links between pages, not in-page panels — nav + aria-current, no tablist roles --%>
+      <nav aria-label="Admin sections" class="tabs tabs-border">
+        <.link
+          :for={{key, label, path} <- @tabs}
+          navigate={path}
+          class={["tab", @active == key && "tab-active"]}
+          aria-current={@active == key && "page"}
+        >
+          {label}
+        </.link>
+      </nav>
+
+      {render_slot(@inner_block)}
+    </div>
+    """
+  end
 end

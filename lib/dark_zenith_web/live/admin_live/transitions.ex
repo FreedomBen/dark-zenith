@@ -8,87 +8,97 @@ defmodule DarkZenithWeb.AdminLive.Transitions do
   use DarkZenithWeb, :live_view
 
   alias DarkZenith.SigningTransitions
+  alias DarkZenithWeb.AdminComponents
 
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} width={:data}>
-      <div class="space-y-6">
-        <.header>
-          Signing transitions
-          <:subtitle><DarkZenithWeb.AdminComponents.admin_nav active="transitions" /></:subtitle>
-        </.header>
+      <AdminComponents.admin_page
+        active="transitions"
+        subtitle="Durable signing-transition state, independent of Oban retention, with phase reset and cancellation."
+      >
+        <Layouts.empty_state :if={@transitions == []}>
+          No signing transitions yet.
+        </Layouts.empty_state>
 
-        <div class="overflow-x-auto">
-          <table class="table table-sm">
-            <thead>
-              <tr>
-                <th>Kind</th>
-                <th>Status</th>
-                <th>Phase attempts</th>
-                <th>Next run</th>
-                <th>Target</th>
-                <th>Last error</th>
-                <th>Created</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr :for={transition <- @transitions} id={"transition-#{transition.id}"}>
-                <td>{transition.kind}</td>
-                <td>
-                  {transition.status}
-                  <span :if={transition.resume_status}>
-                    → {transition.resume_status}
-                  </span>
-                </td>
-                <td>{transition.phase_attempts}</td>
-                <td>
-                  <span :if={transition.phase_next_attempt_at}>
-                    {Calendar.strftime(transition.phase_next_attempt_at, "%H:%M:%S")}
-                  </span>
-                </td>
-                <td class="font-mono text-xs">{transition.target_fingerprint}</td>
-                <td class="font-mono text-xs">{transition.last_error_code}</td>
-                <td>{Calendar.strftime(transition.inserted_at, "%Y-%m-%d %H:%M")}</td>
-                <td class="text-right whitespace-nowrap">
-                  <button
-                    id={"inspect-#{transition.id}"}
-                    class="btn btn-ghost btn-xs"
-                    phx-click="inspect"
-                    phx-value-id={transition.id}
-                  >
-                    Inspect
-                  </button>
-                  <button
-                    :if={transition.status == "failed"}
-                    id={"reset-phase-#{transition.id}"}
-                    class="btn btn-ghost btn-xs"
-                    phx-click="reset_phase"
-                    phx-value-id={transition.id}
-                    data-confirm="Restore this transition to its recorded phase with a fresh attempt budget?"
-                  >
-                    Reset phase
-                  </button>
-                  <button
-                    :if={transition.status not in ["completed", "canceled"]}
-                    id={"cancel-#{transition.id}"}
-                    class="btn btn-ghost btn-xs text-error"
-                    phx-click="cancel"
-                    phx-value-id={transition.id}
-                    data-confirm="Cancel this transition?"
-                  >
-                    Cancel
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <.table
+          :if={@transitions != []}
+          id="admin-transitions"
+          rows={@transitions}
+          row_id={&"transition-#{&1.id}"}
+        >
+          <:col :let={transition} label="Kind" mono>{transition.kind}</:col>
+          <:col :let={transition} label="Status">
+            <span class={["badge badge-soft badge-sm", status_badge(transition.status)]}>
+              {transition.status}
+            </span>
+            <span :if={transition.resume_status} class="whitespace-nowrap text-base-content/60">
+              → {transition.resume_status}
+            </span>
+          </:col>
+          <:col :let={transition} label="Phase attempts" align={:right}>
+            <span class="font-mono">{transition.phase_attempts}</span>
+          </:col>
+          <:col :let={transition} label="Next run">
+            <span :if={transition.phase_next_attempt_at} class="font-mono whitespace-nowrap">
+              {Calendar.strftime(transition.phase_next_attempt_at, "%H:%M:%S")}
+            </span>
+          </:col>
+          <:col :let={transition} label="Target">
+            <span class="block max-w-40 truncate font-mono text-xs">
+              {transition.target_fingerprint}
+            </span>
+          </:col>
+          <:col :let={transition} label="Last error">
+            <span class="font-mono text-xs">{transition.last_error_code}</span>
+          </:col>
+          <:col :let={transition} label="Created">
+            <span class="whitespace-nowrap text-base-content/70">
+              {Calendar.strftime(transition.inserted_at, "%Y-%m-%d %H:%M")}
+            </span>
+          </:col>
+          <:action :let={transition}>
+            <span class="flex justify-end gap-1 whitespace-nowrap">
+              <button
+                id={"inspect-#{transition.id}"}
+                class="btn btn-ghost btn-xs"
+                phx-click="inspect"
+                phx-value-id={transition.id}
+              >
+                Inspect
+              </button>
+              <button
+                :if={transition.status == "failed"}
+                id={"reset-phase-#{transition.id}"}
+                class="btn btn-ghost btn-xs"
+                phx-click="reset_phase"
+                phx-value-id={transition.id}
+                data-confirm="Restore this transition to its recorded phase with a fresh attempt budget?"
+              >
+                Reset phase
+              </button>
+              <button
+                :if={transition.status not in ["completed", "canceled"]}
+                id={"cancel-#{transition.id}"}
+                class="btn btn-ghost btn-xs text-error"
+                phx-click="cancel"
+                phx-value-id={transition.id}
+                data-confirm="Cancel this transition?"
+              >
+                Cancel
+              </button>
+            </span>
+          </:action>
+        </.table>
 
-        <section :if={@inspected} class="space-y-3" id="transition-detail">
+        <section
+          :if={@inspected}
+          class="space-y-3 rounded-box border border-base-content/10 p-6"
+          id="transition-detail"
+        >
           <h2 class="text-lg font-semibold">
-            Transition {@inspected.id}
+            Transition <span class="font-mono">{@inspected.id}</span>
           </h2>
           <p class="text-sm">
             Repositories: {@repository_counts["applied"]} applied, {@repository_counts[
@@ -109,36 +119,32 @@ defmodule DarkZenithWeb.AdminLive.Transitions do
             Reset failed items
           </button>
 
-          <div class="overflow-x-auto">
-            <table class="table table-xs">
-              <thead>
-                <tr>
-                  <th>Package</th>
-                  <th>Repository</th>
-                  <th>Status</th>
-                  <th>Attempts</th>
-                  <th>Lease expires</th>
-                  <th>Last error</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr :for={item <- @items} id={"item-#{item.id}"}>
-                  <td class="font-mono text-xs">{item.package_id}</td>
-                  <td class="font-mono text-xs">{item.repository_id}</td>
-                  <td>{item.status}</td>
-                  <td>{item.attempts}</td>
-                  <td>
-                    <span :if={item.lease_expires_at}>
-                      {Calendar.strftime(item.lease_expires_at, "%H:%M:%S")}
-                    </span>
-                  </td>
-                  <td class="font-mono text-xs">{item.last_error_code}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <.table id="transition-items" rows={@items} row_id={&"item-#{&1.id}"}>
+            <:col :let={item} label="Package">
+              <span class="font-mono text-xs">{item.package_id}</span>
+            </:col>
+            <:col :let={item} label="Repository">
+              <span class="font-mono text-xs">{item.repository_id}</span>
+            </:col>
+            <:col :let={item} label="Status">
+              <span class={["badge badge-soft badge-sm", status_badge(item.status)]}>
+                {item.status}
+              </span>
+            </:col>
+            <:col :let={item} label="Attempts" align={:right}>
+              <span class="font-mono">{item.attempts}</span>
+            </:col>
+            <:col :let={item} label="Lease expires">
+              <span :if={item.lease_expires_at} class="font-mono whitespace-nowrap">
+                {Calendar.strftime(item.lease_expires_at, "%H:%M:%S")}
+              </span>
+            </:col>
+            <:col :let={item} label="Last error">
+              <span class="font-mono text-xs">{item.last_error_code}</span>
+            </:col>
+          </.table>
         </section>
-      </div>
+      </AdminComponents.admin_page>
     </Layouts.app>
     """
   end
@@ -212,6 +218,12 @@ defmodule DarkZenithWeb.AdminLive.Transitions do
   defp reload(socket) do
     assign(socket, :transitions, SigningTransitions.admin_list_transitions())
   end
+
+  # In-flight states are warning-toned, matching the spec's signing badge.
+  defp status_badge("failed"), do: "badge-error"
+  defp status_badge(status) when status in ["completed", "succeeded"], do: "badge-success"
+  defp status_badge("canceled"), do: "badge-neutral"
+  defp status_badge(_in_flight), do: "badge-warning"
 
   defp refresh_inspected(socket) do
     case socket.assigns.inspected do

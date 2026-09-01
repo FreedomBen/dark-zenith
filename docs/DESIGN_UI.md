@@ -334,7 +334,7 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
       reticle spinner, confirmation dialogs (type-to-confirm repo delete)
 - [x] U5 — Pages: landing hero + star-field, repo list, repo detail setup-instructions
       tabs, package pages, upload states, settings, auth
-- [ ] U6 — Admin: sub-nav tabs, dense table pass across the five admin views
+- [x] U6 — Admin: sub-nav tabs, dense table pass across the five admin views
 - [ ] U7 — Global search (blocked on `DESIGN.md` spec): nav field + results page
 - [ ] U8 — QA pass: AA contrast verification in both themes, keyboard walkthrough,
       reduced-motion check, responsive sweep, existing LiveView tests updated alongside
