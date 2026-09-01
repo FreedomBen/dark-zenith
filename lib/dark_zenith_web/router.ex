@@ -157,6 +157,7 @@ defmodule DarkZenithWeb.Router do
 
     get "/search/packages", SearchController, :packages
 
+    get "/repos/:slug/package-uploads", PackageUploadController, :index
     post "/repos/:slug/package-uploads", PackageUploadController, :create
     get "/repos/:slug/package-uploads/:id", PackageUploadController, :show
     post "/repos/:slug/package-uploads/:id/refresh", PackageUploadController, :refresh

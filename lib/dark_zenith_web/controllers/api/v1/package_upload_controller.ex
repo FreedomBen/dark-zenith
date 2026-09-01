@@ -1,8 +1,13 @@
 defmodule DarkZenithWeb.Api.V1.PackageUploadController do
   @moduledoc """
   `/api/v1/repos/:slug/package-uploads` (DESIGN.md: REST API — Packages;
-  Upload Intents). API mode is fixed; the ephemeral `upload` capability
-  object appears only in create and refresh responses.
+  Upload Intents; API Contract Details). API mode is fixed; the ephemeral
+  `upload` capability object appears only in create and refresh responses.
+
+  The collection `GET` lists the repository's durable Package Upload
+  Records for the owner or an admin (`repo:read` on API keys) regardless
+  of initiator; every id-addressed action acts on the live intent and is
+  initiator-only, answering another user's intent with the masked 404.
   """
 
   use DarkZenithWeb, :controller
@@ -10,8 +15,26 @@ defmodule DarkZenithWeb.Api.V1.PackageUploadController do
   action_fallback DarkZenithWeb.Api.FallbackController
 
   alias DarkZenith.Uploads
-  alias DarkZenithWeb.Api.{RepoAccess, Strict}
-  alias DarkZenithWeb.Api.V1.UploadIntentJSON
+  alias DarkZenith.Uploads.Records
+  alias DarkZenithWeb.Api.{Pagination, RepoAccess, Strict}
+  alias DarkZenithWeb.Api.V1.{UploadIntentJSON, UploadRecordJSON}
+
+  def index(conn, %{"slug" => slug}) do
+    with {:ok, params} <- Strict.validate_query(conn, ["page", "per_page", "outcome"]),
+         {:ok, page, per_page} <- Pagination.parse(params),
+         {:ok, outcomes} <- parse_outcome(params),
+         {:ok, _user, repository} <- RepoAccess.fetch_manageable(conn, slug, "repo:read") do
+      {records, total} =
+        Uploads.list_repository_records(repository,
+          outcomes: outcomes,
+          page: page,
+          per_page: per_page
+        )
+
+      data = Enum.map(records, &UploadRecordJSON.row/1)
+      json(conn, Pagination.envelope(data, page, per_page, total))
+    end
+  end
 
   def create(conn, %{"slug" => slug}) do
     with {:ok, _} <- Strict.validate_query(conn),
@@ -124,12 +147,21 @@ defmodule DarkZenithWeb.Api.V1.PackageUploadController do
 
   ## Helpers
 
+  # Another user's intent is nonexistent here, exactly like an id scoped to
+  # a different repository (DESIGN.md: REST API).
   defp fetch_intent(conn, slug, id) do
     with {:ok, user, repository} <- RepoAccess.fetch_manageable(conn, slug, "package:upload") do
-      case Uploads.get_intent(repository, id) do
+      case Uploads.get_intent_for(user, repository, id) do
         nil -> {:error, :not_found}
         intent -> {:ok, user, repository, intent}
       end
+    end
+  end
+
+  defp parse_outcome(params) do
+    case Records.parse_outcome_filter(params["outcome"]) do
+      {:ok, outcomes} -> {:ok, outcomes}
+      {:error, message} -> {:error, :validation_failed, %{"outcome" => [message]}}
     end
   end
 
