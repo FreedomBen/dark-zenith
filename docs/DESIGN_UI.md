@@ -103,12 +103,16 @@ text/UI); verify at implementation time.
 | `neutral`          | `#1D2740`              | `#33405C`              |
 | `neutral-content`  | `#D8E0EE`              | `#F2F5FA`              |
 | `info`             | `#7AB8E6`              | `#2F6FA8`              |
-| `success`          | `#58B77E`              | `#2E7D54`              |
+| `success`          | `#58B77E`              | `#2A744F`              |
 | `warning`          | `#E08A3C`              | `#9C5711`              |
 | `error`            | `#E4707B`              | `#B03A48`              |
 
 Semantic `*-content` values follow the same pattern: dark content on the light-ish dark
-semitones, pale content on the saturated day semitones.
+semitones, pale content on the saturated day semitones. The day `success` and `warning`
+values are deepened a step beyond what page text alone needs because soft badges render
+the semantic color as text over daisyUI's 8% tint of `base-100`, a slightly darker ground
+than the page; the theme contrast test computes every badge variant's text/ground pair
+from these tokens, so a palette edit that breaks a badge fails the suite.
 
 Shape tokens stay close to the current instrument-panel feel: `--radius-field: 0.25rem`,
 `--radius-box: 0.5rem`, `--border: 1.5px`, `--depth: 1`, `--noise: 0`.
@@ -118,6 +122,11 @@ Usage rules:
 - Zenith Gold is for the one primary action per view, the mark's star, and focus rings.
   It is never body text on Night (use Starlight) and never decorates passive elements.
 - Inline links use `accent` (Vega / chart blue), underlined on hover.
+- `neutral` is a surface tone, never a text color: on Night it is a navy barely
+  lighter than the page, so daisyUI styles that set text to the semantic color —
+  `badge-soft`, `badge-outline`, `btn-outline`, `text-neutral` — fail AA with it.
+  Neutral-toned elements use the ghost treatment instead (`base-200` ground,
+  `base-content` text); see Badges.
 - Borders are hairlines: `base-content` at ~8% alpha, or `base-300` on `base-100`.
 - Command blocks are always dark (Umbra ground, Starlight text) in **both** themes —
   terminals are dark even at noon.
@@ -259,6 +268,13 @@ muted, current segment unlinked.
   upload outcome `succeeded` (success) / `failed` (error) / `expired` and `canceled`
   (neutral, muted), and the awaiting-reconciliation row — `in_flight` with no live
   intent — as `Unknown` (neutral, muted, no spinner), since it is not progress.
+  Every "neutral" badge is the ghost style — `badge-ghost`: `base-200` ground,
+  `base-content` text, hairline in `base-200` — never `badge-soft` or `badge-outline`
+  with `badge-neutral`, because those set the text to the `neutral` token, which is a
+  surface tone that reads at about 1.2:1 on Night. "Neutral, muted" keeps the ghost
+  ground and drops the text to `base-content` at 70%, the app's muted-text floor. The
+  admin job and transition state badges follow the same mapping (`canceled` and other
+  resting states are ghost; in-flight is warning, failed is error, done is success).
 - **Empty states** — ghosted reticle (~40 px, 30% opacity), one plain sentence, one
   action. "No packages yet. Upload the first RPM." Never a bare empty table.
 - **Loading** — the reticle as spinner: ring and ticks rotate, star stays fixed.

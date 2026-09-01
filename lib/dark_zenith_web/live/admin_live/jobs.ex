@@ -31,7 +31,7 @@ defmodule DarkZenithWeb.AdminLive.Jobs do
           </:col>
           <:col :let={job} label="Queue" mono>{job.queue}</:col>
           <:col :let={job} label="State">
-            <span class={["badge badge-soft badge-sm", state_badge(job.state)]}>{job.state}</span>
+            <span class={["badge badge-sm", state_badge(job.state)]}>{job.state}</span>
           </:col>
           <:col :let={job} label="Attempt" align={:right}>
             <span class="font-mono">{job.attempt}/{job.max_attempts}</span>
@@ -99,7 +99,8 @@ defmodule DarkZenithWeb.AdminLive.Jobs do
   defp last_error(%{errors: [error | _]}) when is_map(error), do: inspect(error)
   defp last_error(_job), do: ""
 
-  defp state_badge("retryable"), do: "badge-warning"
-  defp state_badge("discarded"), do: "badge-error"
-  defp state_badge(_state), do: "badge-neutral"
+  # Resting states are ghost, never soft neutral (docs/DESIGN_UI.md — Badges).
+  defp state_badge("retryable"), do: "badge-soft badge-warning"
+  defp state_badge("discarded"), do: "badge-soft badge-error"
+  defp state_badge(_state), do: "badge-ghost"
 end

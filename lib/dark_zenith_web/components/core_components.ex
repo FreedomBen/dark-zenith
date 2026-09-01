@@ -540,26 +540,33 @@ defmodule DarkZenithWeb.CoreComponents do
     """
   end
 
+  # Neutral states are the ghost style (base-200 ground, base-content text),
+  # never soft/outline neutral: those set the text to the `neutral` token,
+  # a surface tone that fails AA on Night (docs/DESIGN_UI.md — Badges).
   @badge_variants %{
     public: {"badge-outline badge-secondary", "Public", nil},
-    private: {"badge-soft badge-neutral", "Private", "hero-lock-closed-micro"},
+    private: {"badge-ghost", "Private", "hero-lock-closed-micro"},
     metadata_signed: {"badge-soft badge-accent", "Metadata signed", nil},
     auto_sign: {"badge-outline badge-primary", "Auto-sign", nil},
     signing: {"badge-soft badge-warning", "signing", nil},
     failed: {"badge-soft badge-error", "failed", nil},
-    queued: {"badge-soft badge-neutral", "queued", nil},
+    queued: {"badge-ghost", "queued", nil},
     sent: {"badge-soft badge-success", "sent", nil},
     suppressed: {"badge-soft badge-warning", "suppressed", nil},
     processing: {"badge-soft badge-warning", "processing", nil},
     preview_ready: {"badge-soft badge-accent", "preview ready", nil},
     # Upload History (docs/DESIGN_UI.md — Badges): live status, recorded
     # outcome, and the awaiting-reconciliation row, which is not progress.
-    awaiting_upload: {"badge-soft badge-neutral", "awaiting upload", nil},
+    awaiting_upload: {"badge-ghost", "awaiting upload", nil},
     succeeded: {"badge-soft badge-success", "succeeded", nil},
     expired: {"badge-ghost text-base-content/70", "expired", nil},
     canceled: {"badge-ghost text-base-content/70", "canceled", nil},
     unknown: {"badge-ghost text-base-content/70", "Unknown", nil}
   }
+
+  @doc false
+  # The variant map, so the theme contrast test can verify every style.
+  def badge_variants, do: @badge_variants
 
   @doc """
   Renders a domain-state badge (docs/DESIGN_UI.md — Badges): each variant maps

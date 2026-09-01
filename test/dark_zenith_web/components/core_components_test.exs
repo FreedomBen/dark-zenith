@@ -60,25 +60,37 @@ defmodule DarkZenithWeb.CoreComponentsTest do
 
   describe "badge/1" do
     test "maps every semantic variant to its spec classes and default label" do
+      # Neutral states are ghost, never soft/outline neutral, because the
+      # night `neutral` token is a surface tone (docs/DESIGN_UI.md — Badges).
       expectations = [
         {:public, "badge-outline badge-secondary", "Public"},
-        {:private, "badge-soft badge-neutral", "Private"},
+        {:private, "badge-ghost", "Private"},
         {:metadata_signed, "badge-soft badge-accent", "Metadata signed"},
         {:auto_sign, "badge-outline badge-primary", "Auto-sign"},
         {:signing, "badge-soft badge-warning", "signing"},
         {:failed, "badge-soft badge-error", "failed"},
-        {:queued, "badge-soft badge-neutral", "queued"},
+        {:queued, "badge-ghost", "queued"},
         {:sent, "badge-soft badge-success", "sent"},
         {:suppressed, "badge-soft badge-warning", "suppressed"},
         {:processing, "badge-soft badge-warning", "processing"},
-        {:preview_ready, "badge-soft badge-accent", "preview ready"}
+        {:preview_ready, "badge-soft badge-accent", "preview ready"},
+        {:awaiting_upload, "badge-ghost", "awaiting upload"},
+        {:succeeded, "badge-soft badge-success", "succeeded"},
+        {:expired, "badge-ghost text-base-content/70", "expired"},
+        {:canceled, "badge-ghost text-base-content/70", "canceled"},
+        {:unknown, "badge-ghost text-base-content/70", "Unknown"}
       ]
 
       for {variant, classes, label} <- expectations do
         html = render_component(&CoreComponents.badge/1, %{variant: variant})
         assert html =~ classes, "#{variant} should carry #{classes}"
+        refute html =~ "badge-neutral", "#{variant} must not use the neutral token as text"
         assert html =~ label, "#{variant} should default to the label #{label}"
       end
+
+      # The expectations enumerate every variant the component defines.
+      assert Enum.sort(Enum.map(expectations, &elem(&1, 0))) ==
+               Enum.sort(Map.keys(CoreComponents.badge_variants()))
     end
 
     test "the private badge carries a lock icon" do

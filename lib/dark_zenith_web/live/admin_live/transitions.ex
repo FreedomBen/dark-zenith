@@ -30,7 +30,7 @@ defmodule DarkZenithWeb.AdminLive.Transitions do
         >
           <:col :let={transition} label="Kind" mono>{transition.kind}</:col>
           <:col :let={transition} label="Status">
-            <span class={["badge badge-soft badge-sm", status_badge(transition.status)]}>
+            <span class={["badge badge-sm", status_badge(transition.status)]}>
               {transition.status}
             </span>
             <span :if={transition.resume_status} class="whitespace-nowrap text-base-content/70">
@@ -127,7 +127,7 @@ defmodule DarkZenithWeb.AdminLive.Transitions do
               <span class="font-mono text-xs">{item.repository_id}</span>
             </:col>
             <:col :let={item} label="Status">
-              <span class={["badge badge-soft badge-sm", status_badge(item.status)]}>
+              <span class={["badge badge-sm", status_badge(item.status)]}>
                 {item.status}
               </span>
             </:col>
@@ -219,11 +219,15 @@ defmodule DarkZenithWeb.AdminLive.Transitions do
     assign(socket, :transitions, SigningTransitions.admin_list_transitions())
   end
 
-  # In-flight states are warning-toned, matching the spec's signing badge.
-  defp status_badge("failed"), do: "badge-error"
-  defp status_badge(status) when status in ["completed", "succeeded"], do: "badge-success"
-  defp status_badge("canceled"), do: "badge-neutral"
-  defp status_badge(_in_flight), do: "badge-warning"
+  # In-flight states are warning-toned, matching the spec's signing badge;
+  # canceled is ghost, never soft neutral (docs/DESIGN_UI.md — Badges).
+  defp status_badge("failed"), do: "badge-soft badge-error"
+
+  defp status_badge(status) when status in ["completed", "succeeded"],
+    do: "badge-soft badge-success"
+
+  defp status_badge("canceled"), do: "badge-ghost"
+  defp status_badge(_in_flight), do: "badge-soft badge-warning"
 
   defp refresh_inspected(socket) do
     case socket.assigns.inspected do

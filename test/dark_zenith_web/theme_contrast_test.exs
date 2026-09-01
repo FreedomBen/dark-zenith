@@ -140,6 +140,58 @@ defmodule DarkZenithWeb.ThemeContrastTest do
         assert_contrast(theme, "field border on #{ground}", border, c[ground], 3.0)
       end
     end
+
+    test "every badge variant meets 4.5:1 on its own ground in both themes", %{
+      themes: themes
+    } do
+      # docs/DESIGN_UI.md — Badges. Each variant's daisyUI style decides its
+      # text and ground (see badge_pairs/2), so a variant that uses a surface
+      # tone as text — the night `neutral` — fails here rather than in the
+      # browser.
+      for {theme, c} <- themes,
+          {variant, {classes, _label, _icon}} <- DarkZenithWeb.CoreComponents.badge_variants(),
+          {label, fg, bg} <- badge_pairs(classes, c) do
+        assert_contrast(theme, "badge #{variant} #{label}", fg, bg, 4.5)
+      end
+    end
+  end
+
+  # The text/ground pairs a badge class list renders, per daisyUI 5:
+  # `badge-soft` sets the text to the semantic color over
+  # `color-mix(in oklab, <color> 8%, base-100)`; `badge-outline` sets the
+  # text to the semantic color on a transparent ground (page or hover row);
+  # `badge-ghost` is base-content on base-200, muted to 70% by
+  # `text-base-content/70`.
+  defp badge_pairs(classes, c) do
+    tokens = String.split(classes)
+
+    semantic =
+      Enum.find_value(tokens, fn
+        "badge-" <> token
+        when token in ~w(primary secondary accent neutral info success warning error) ->
+          c[token]
+
+        _other ->
+          nil
+      end)
+
+    cond do
+      "badge-ghost" in tokens ->
+        alpha = if "text-base-content/70" in tokens, do: @muted_alpha, else: 1.0
+        [{"(ghost)", composite(c["base-content"], alpha, c["base-200"]), c["base-200"]}]
+
+      "badge-soft" in tokens and is_binary(semantic) ->
+        [{"(soft)", semantic, mix_oklab(semantic, 0.08, c["base-100"])}]
+
+      "badge-outline" in tokens and is_binary(semantic) ->
+        [
+          {"(outline on base-100)", semantic, c["base-100"]},
+          {"(outline on base-200)", semantic, c["base-200"]}
+        ]
+
+      true ->
+        flunk("unmodeled badge style: #{inspect(classes)}")
+    end
   end
 
   describe "usage conventions" do
@@ -165,6 +217,30 @@ defmodule DarkZenithWeb.ThemeContrastTest do
 
       assert offenders == [],
              "muted text below base-content/70 fails AA on the day theme: #{inspect(offenders)}"
+    end
+
+    test "no template uses the neutral token as badge text" do
+      # docs/DESIGN_UI.md — Badges: neutral badges are `badge-ghost`. Every
+      # `badge-neutral` style except the solid one sets the text to `neutral`,
+      # a surface tone that reads at about 1.2:1 on Night, and the solid one
+      # is not part of the badge mapping.
+      web_root = Path.expand("../../lib/dark_zenith_web", __DIR__)
+
+      offenders =
+        web_root
+        |> Path.join("**/*.{ex,heex}")
+        |> Path.wildcard()
+        |> Enum.flat_map(fn file ->
+          file
+          |> File.read!()
+          |> String.split("\n")
+          |> Enum.with_index(1)
+          |> Enum.filter(fn {line, _index} -> line =~ "badge-neutral" end)
+          |> Enum.map(fn {_line, index} -> "#{Path.relative_to(file, web_root)}:#{index}" end)
+        end)
+
+      assert offenders == [],
+             "neutral badges must be badge-ghost (docs/DESIGN_UI.md — Badges): #{inspect(offenders)}"
     end
   end
 
@@ -230,6 +306,53 @@ defmodule DarkZenithWeb.ThemeContrastTest do
     {round(fr * alpha + br * (1 - alpha)), round(fg_ * alpha + bg_ * (1 - alpha)),
      round(fb * alpha + bb * (1 - alpha))}
   end
+
+  # CSS `color-mix(in oklab, fg <weight>, bg)`: the mix daisyUI uses for
+  # soft badge grounds, interpolated in Oklab (Ottosson's matrices) and
+  # converted back to sRGB.
+  defp mix_oklab(fg, weight, bg) do
+    {l1, a1, b1} = oklab(fg)
+    {l2, a2, b2} = oklab(bg)
+
+    srgb_from_oklab(
+      {l1 * weight + l2 * (1 - weight), a1 * weight + a2 * (1 - weight),
+       b1 * weight + b2 * (1 - weight)}
+    )
+  end
+
+  defp oklab(color) do
+    [r, g, b] = color |> rgb() |> Tuple.to_list() |> Enum.map(&linear(&1 / 255))
+
+    l = :math.pow(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b, 1 / 3)
+    m = :math.pow(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b, 1 / 3)
+    s = :math.pow(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b, 1 / 3)
+
+    {0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+     1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+     0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s}
+  end
+
+  defp srgb_from_oklab({lab_l, lab_a, lab_b}) do
+    l = :math.pow(lab_l + 0.3963377774 * lab_a + 0.2158037573 * lab_b, 3)
+    m = :math.pow(lab_l - 0.1055613458 * lab_a - 0.0638541728 * lab_b, 3)
+    s = :math.pow(lab_l - 0.0894841775 * lab_a - 1.2914855480 * lab_b, 3)
+
+    [
+      4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+      -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+    ]
+    |> Enum.map(fn linear -> linear |> gamma() |> Kernel.*(255) |> round() |> clamp() end)
+    |> List.to_tuple()
+  end
+
+  defp linear(c) when c <= 0.04045, do: c / 12.92
+  defp linear(c), do: :math.pow((c + 0.055) / 1.055, 2.4)
+
+  defp gamma(c) when c <= 0.0031308, do: max(c, 0.0) * 12.92
+  defp gamma(c), do: 1.055 * :math.pow(c, 1 / 2.4) - 0.055
+
+  defp clamp(c), do: c |> max(0) |> min(255)
 
   defp rgb({_r, _g, _b} = parsed), do: parsed
 
