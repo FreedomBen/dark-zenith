@@ -255,9 +255,10 @@ muted, current segment unlinked.
   `Auto-sign` (primary outline); signing transition `signing` (warning) / `failed`
   (error); invitation notification `queued` (neutral) / `sent` (success) / `failed`
   (error) / `suppressed` (warning); upload live status `awaiting_upload` and
-  `queued` (neutral) / `processing` (warning) / `preview_ready` (accent), and recorded
+  `queued` (neutral) / `processing` (warning) / `preview_ready` (accent), recorded
   upload outcome `succeeded` (success) / `failed` (error) / `expired` and `canceled`
-  (neutral, muted).
+  (neutral, muted), and the awaiting-reconciliation row — `in_flight` with no live
+  intent — as `Unknown` (neutral, muted, no spinner), since it is not progress.
 - **Empty states** — ghosted reticle (~40 px, 30% opacity), one plain sentence, one
   action. "No packages yet. Upload the first RPM." Never a bare empty table.
 - **Loading** — the reticle as spinner: ring and ticks rotate, star stays fixed.
@@ -360,9 +361,10 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
 - [x] U8 — QA pass: AA contrast verification in both themes, keyboard walkthrough,
       reduced-motion check, responsive sweep, existing LiveView tests updated alongside
 - [ ] U9 — Upload History section on repo detail (per the `DESIGN.md` Upload History
-      spec): badge states for live status and recorded outcome, dense paginated row
-      layout, in-flight count pill and outcome filter in the header, failure
-      code/reason treatment, initiator-only cancel action
+      spec): badge states for live status, recorded outcome, and the
+      awaiting-reconciliation `Unknown` row, dense paginated row layout, in-flight
+      count pill and outcome filter in the header, failure code/reason treatment,
+      initiator-only cancel action
 
 Each phase lands with its tests updated (selectors/copy assertions in the existing
 LiveView suite) and a screenshot check in both themes.

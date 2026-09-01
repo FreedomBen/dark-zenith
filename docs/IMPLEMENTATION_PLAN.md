@@ -267,10 +267,13 @@ Audit Events, Rate Limiting, repository-deletion, and user-deletion additions.
       inside the success path's final package transaction (`final_size`, `nevra`)
 - [ ] Repository deletion and user deletion finalize `in_flight` records as `canceled`
       in their existing transactions and retain the record rows; hourly terminal-intent
-      cleanup finalizes any record whose intent row is gone, as the safety net
+      cleanup runs a second anti-join query finalizing any `in_flight` record whose
+      intent row is gone, writing the sweep timestamp to `finished_at`, as the safety net
 - [ ] `Uploads.list_repository_records/2`: repository-scoped, `started_at` descending
       then `id` ascending, optional outcome-subset filter, left join to the live intent
-      for `live_status`, initiator email from the record snapshot
+      for `live_status`, initiator email from the record snapshot. `live_status` is
+      non-null only for an `in_flight` record with a surviving intent, so a terminal
+      record reads `null` even inside its intent's 24-hour retention window
 - [ ] `GET /api/v1/repos/:slug/package-uploads`: owner/admin repository-scoped read,
       `repo:read` for API keys (the id-addressed endpoints keep `package:upload`),
       standard paginated envelope, `outcome` filter validation, decimal-string
@@ -293,7 +296,10 @@ Audit Events, Rate Limiting, repository-deletion, and user-deletion additions.
       but still reads its own intent by id
 - [ ] Durability tests: record survives intent cleanup, package deletion, repository
       deletion, and initiator account deletion; never left `in_flight` after its intent
-      is gone; exactly one terminal write under a replayed or racing worker
+      is gone; exactly one terminal write under a replayed or racing worker; a terminal
+      record reports `live_status` null while its intent is still retained; an
+      orphaned `in_flight` record renders as `Unknown` with no cancel action and
+      reconciles to `canceled` on the next sweep
 - [ ] Tests asserting no `upload`, `staging_path`, `staging_version_id`, `lease_token`,
       or `preview_metadata` field appears in any listing row, and that refresh/complete/
       cancel remain initiator-only 404-masked
