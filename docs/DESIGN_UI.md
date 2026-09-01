@@ -292,24 +292,33 @@ muted, current segment unlinked.
   mode, size, status badge, and start/finish times, with the failure code and reason as
   muted secondary text under a failed row and the NEVRA link under a succeeded one. Its
   header carries the repository's in-flight count as a status pill linking to the
-  `in_flight` filter, plus the outcome filter itself as a quiet segmented control; both
-  the filter and the page live in the URL. It sits below the package table so it never
-  competes with the setup instructions, and it is absent entirely when the repository
-  has no upload records.
+  `in_flight` filter, plus the outcome filter itself as a quiet segmented control
+  offering All and one outcome per segment; both the filter and the page live in the
+  URL, and a URL carrying the REST listing's comma-separated outcome subset (which
+  `DESIGN.md` also accepts here) still filters but selects no segment. It sits below the
+  package table so it never competes with the setup instructions, and it is absent
+  entirely when the repository has no upload records.
 - **Package detail / version detail** — title block with mono NEVRA; version detail
   renders counts as tabs with lazy-loaded paginated lists per `DESIGN.md`; install
   instructions as command blocks.
 - **Upload (`/repos/:slug/upload`)** — drag-and-drop drop zone (dashed hairline border,
   reticle watermark); preview/confirm flow surfaces intent states (`queued`,
   `processing`, `preview_ready` with countdown, terminal errors) using the badge colors.
+  A page reattached through `?intent=` (per `DESIGN.md` Reattaching) opens directly in
+  that state; a reattached `awaiting_upload` intent shows as an unfinished transfer with
+  a muted explanation, a `Cancel` (error) action, and the drop zone for a fresh upload.
 - **Settings pages (repo + user)** — `:prose`; sections as cards with hairline borders;
   danger zone last, separated, error-toned. GPG key management shows fingerprints in
   mono and the one-time private key display inside a command block with the
   never-shown-again warning.
 - **Auth pages** — `:narrow`, centered card, mark above the form. Quiet: no star-field.
 - **Admin** — same shell, `:data` width, a sub-nav tab row (Users / Jobs / Transitions /
-  Audit / Slugs) under the title. Densest tables in the product; admin pages prefer
-  function over flourish.
+  Audit / Slugs / Uploads) under the title. Densest tables in the product; admin pages
+  prefer function over flourish. The Uploads tab is the instance-wide upload-record
+  table per `DESIGN.md` (Admin: Upload records): the U9 row layout and badges plus a
+  mono `repository_slug` column (linked only while that repository UUID is live),
+  `repository` / `initiator` text filters and the outcome segmented control in a filter
+  bar above the table, all held in the URL; no in-flight pill and no auto-refresh.
 - **Search results** — `:data` table of matching packages (mono name/EVR/arch, repo
   slug, summary) and matching repositories, grouped; empty state uses the standard
   component.
@@ -364,7 +373,11 @@ Per project convention, behavior changes are specified in `docs/DESIGN.md` befor
       spec): badge states for live status, recorded outcome, and the
       awaiting-reconciliation `Unknown` row, dense paginated row layout, in-flight
       count pill and outcome filter in the header, failure code/reason treatment,
-      initiator-only cancel action
+      initiator-only cancel action, the upload page's `?intent=` reattached states
+- [ ] U10 — Admin Uploads tab (per the `DESIGN.md` Admin upload-record view): sixth
+      sub-nav tab, dense instance-wide table reusing the U9 row layout and badges,
+      `repository` / `initiator` / outcome filter bar held in the URL, slug link only
+      for a live repository UUID, no auto-refresh
 
 Each phase lands with its tests updated (selectors/copy assertions in the existing
 LiveView suite) and a screenshot check in both themes.
