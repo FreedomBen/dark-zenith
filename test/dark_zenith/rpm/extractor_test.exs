@@ -530,6 +530,42 @@ defmodule DarkZenith.Rpm.ExtractorTest do
                })
     end
 
+    test "accepts a single-locale HEADERI18NTABLE stored as a plain STRING" do
+      # rpm-rs (cargo-generate-rpm) writes tag 100 with the STRING type
+      # rather than STRING_ARRAY; rpm itself falls back to the first value.
+      {:ok, m} =
+        synthetic(%{
+          Tags.i18n_table() => {:string, "C"},
+          Tags.summary() => {:i18n_string, ["Hello"]},
+          Tags.description() => {:i18n_string, ["En"]}
+        })
+
+      assert m.summary == "Hello"
+      assert m.description == "En"
+
+      # A non-C single locale still falls back to the sole entry.
+      {:ok, m} =
+        synthetic(%{
+          Tags.i18n_table() => {:string, "de"},
+          Tags.summary() => {:i18n_string, ["Hallo"]}
+        })
+
+      assert m.summary == "Hallo"
+    end
+
+    test "a STRING HEADERI18NTABLE still enforces locale/value cardinality" do
+      assert {:error, :malformed_i18n} =
+               synthetic(%{
+                 Tags.i18n_table() => {:string, "C"},
+                 Tags.summary() => {:i18n_string, ["one", "two"]}
+               })
+    end
+
+    test "rejects a HEADERI18NTABLE that is neither a string nor a string array" do
+      assert {:error, :malformed_header_value} =
+               synthetic(%{Tags.i18n_table() => {:int32, [1]}})
+    end
+
     test "validates string content rules" do
       # Control character in a single-line field.
       assert {:error, :invalid_string} =

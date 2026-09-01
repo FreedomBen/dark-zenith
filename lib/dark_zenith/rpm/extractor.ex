@@ -166,6 +166,12 @@ defmodule DarkZenith.Rpm.Extractor do
       {:string_array, locales} ->
         {:ok, {Enum.find_index(locales, &(&1 == "C")) || 0, length(locales)}}
 
+      # Some builders (rpm-rs, via cargo-generate-rpm) write a single-locale
+      # table with the STRING type instead of STRING_ARRAY. It is a one-entry
+      # table, and index 0 is both the C match and the first-entry fallback.
+      {:string, _locale} ->
+        {:ok, {0, 1}}
+
       _other ->
         {:error, :malformed_header_value}
     end
