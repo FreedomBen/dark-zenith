@@ -44,8 +44,10 @@ Some tests self-enable by host capability and are otherwise excluded (the
 - `:container` — `test/end_to_end/container_install_test.exs` serves the app and
   the in-memory bucket over real HTTP, then runs a fresh Fedora 44 container in
   which dnf5 adds the repository from its `dark-zenith.repo` link, installs the
-  uploaded package with every other repository disabled, and runs it. Needs
-  podman and the pulled image:
+  uploaded package with every other repository disabled, and runs it — for the
+  public, private (Basic credentials in a hand-saved `.repo` file), and signed
+  (`repo_gpgcheck` and `gpgcheck` against the served key; needs `:rpmsign` too)
+  flows. Needs podman and the pulled image:
 
   ```sh
   podman pull registry.fedoraproject.org/fedora:44
