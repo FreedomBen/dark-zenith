@@ -9,16 +9,15 @@ defmodule DarkZenith.EndToEnd.ContainerInstallTest do
   signed (`repo_gpgcheck` and `gpgcheck` against the served key) flows each
   get a container.
 
-  Everything the client touches is served over real HTTP. A listener started
-  here serves the endpoint on the port `DarkZenithWeb.Endpoint.url/0` names,
-  so the baseurl in the served `.repo` file resolves inside the container,
-  and a second listener serves the in-memory bucket the download redirect
-  points at. The upload itself takes the same API and presigned-transfer
-  path as the other end-to-end tests.
+  Everything the client touches is served over real HTTP by
+  `DarkZenith.LiveListeners`: the endpoint on the port its configured URL
+  names, so the baseurl in the served `.repo` file resolves inside the
+  container, and the in-memory bucket the download redirect points at. The
+  upload itself takes the same API and presigned-transfer path as the other
+  end-to-end tests.
   """
 
-  # Not async: the endpoint listener has a fixed port, and the listener
-  # processes serve requests from this test's sandbox connection.
+  # Not async: see `DarkZenith.LiveListeners`.
   use DarkZenithWeb.ConnCase, async: false
 
   import DarkZenith.AccountsFixtures
@@ -26,7 +25,7 @@ defmodule DarkZenith.EndToEnd.ContainerInstallTest do
 
   alias DarkZenith.Accounts
   alias DarkZenith.DnfClientContainer
-  alias DarkZenith.FakeBucket
+  alias DarkZenith.LiveListeners
 
   @moduletag :container
   @moduletag timeout: :timer.minutes(3)
@@ -46,9 +45,7 @@ defmodule DarkZenith.EndToEnd.ContainerInstallTest do
   """
 
   setup do
-    bucket = FakeBucket.start!()
-    serve_bucket!(bucket)
-    serve_endpoint!()
+    LiveListeners.start!()
 
     owner = user_fixture()
 
@@ -58,7 +55,7 @@ defmodule DarkZenith.EndToEnd.ContainerInstallTest do
         scopes: ~w(repo:create repo:read package:upload)
       })
 
-    %{bucket: bucket, owner: owner, api_key: api_key, binary: paladin_binary()}
+    %{owner: owner, api_key: api_key, binary: paladin_binary()}
   end
 
   test "a fresh Fedora 44 dnf5 installs the package from the repository page's link", ctx do
@@ -161,34 +158,6 @@ defmodule DarkZenith.EndToEnd.ContainerInstallTest do
     assert output =~ "+ rpm -q paladin\npaladin-0.1.0-1.x86_64\n"
     assert output =~ "installed from: dark-zenith-#{@slug}\n"
     assert output =~ "paladin 0.1.0\nroundtrip ok\ndnf_client_check: ok\n"
-  end
-
-  ## Listeners
-
-  # The endpoint runs without its own listener in test; serve it on the port
-  # its configured URL names, which is the baseurl the .repo file carries.
-  defp serve_endpoint! do
-    %URI{host: "localhost", port: port} = URI.parse(DarkZenithWeb.Endpoint.url())
-
-    start_supervised!(
-      {Bandit, plug: DarkZenithWeb.Endpoint, ip: {127, 0, 0, 1}, port: port, startup_log: false}
-    )
-  end
-
-  # Serves the in-memory bucket over HTTP on a free port and points presigned
-  # URLs at it. The pipeline's own object-storage calls keep going through
-  # the Req.Test stub in this process (see `FakeBucket.start!/0`).
-  defp serve_bucket!(bucket) do
-    listener =
-      start_supervised!(
-        {Bandit, plug: {FakeBucket, bucket}, ip: {127, 0, 0, 1}, port: 0, startup_log: false}
-      )
-
-    {:ok, {_ip, port}} = ThousandIsland.listener_info(listener)
-
-    b2 = Application.fetch_env!(:dark_zenith, :b2)
-    on_exit(fn -> Application.put_env(:dark_zenith, :b2, b2) end)
-    Application.put_env(:dark_zenith, :b2, Keyword.put(b2, :endpoint, "http://127.0.0.1:#{port}"))
   end
 
   ## The upload

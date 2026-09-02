@@ -22,9 +22,12 @@ defmodule DarkZenith.DnfClientContainer do
   @doc "The client image. `test/test_helper.exs` excludes `:container` until it is pulled."
   def image, do: @image
 
-  @doc "Whether podman and the pulled image are available on this host."
+  @doc """
+  Whether podman, jq (which `deploy/live_install_check.sh` needs), and the
+  pulled image are available on this host.
+  """
   def available? do
-    System.find_executable("podman") != nil and
+    Enum.all?(["podman", "jq"], &System.find_executable/1) and
       match?({_, 0}, System.cmd("podman", ["image", "exists", @image], stderr_to_stdout: true))
   end
 

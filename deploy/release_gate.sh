@@ -16,6 +16,10 @@
 #   DZ_GATE_INSTALL_PKG    package name to resolve (repoquery) after
 #                          makecache in every flow, proving primary.xml
 #                          parses end to end
+#
+# deploy/live_install_check.sh complements this gate: it provisions its own
+# repositories on the instance and installs from them with a real dnf5 in a
+# fresh Fedora container.
 set -euo pipefail
 
 BASE_URL="${1:?usage: release_gate.sh <base-url> [slug]}"

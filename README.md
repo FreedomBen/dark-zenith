@@ -41,22 +41,19 @@ Some tests self-enable by host capability and are otherwise excluded (the
 
 - `:rpmsign` — real RPM signing; needs the `rpm-sign` package.
 - `:fips` — the FIPS-mode profile; runs only when the kernel reports FIPS mode.
-- `:container` — `test/end_to_end/container_install_test.exs` serves the app and
-  the in-memory bucket over real HTTP, then runs a fresh Fedora 44 container in
-  which dnf5 adds the repository from its `dark-zenith.repo` link, installs the
-  uploaded package with every other repository disabled, and runs it — for the
-  public, private (Basic credentials in a hand-saved `.repo` file), and signed
-  (`repo_gpgcheck` and `gpgcheck` against the served key; needs `:rpmsign` too)
-  flows. Needs podman and the pulled image:
+- `:container` — the end-to-end tests that serve the app and the in-memory
+  bucket over real HTTP and run a real dnf5 in a fresh Fedora 44 container:
+  `test/end_to_end/container_install_test.exs` (dnf5 adds the repository from
+  its `dark-zenith.repo` link, installs the uploaded package with every other
+  repository disabled, and runs it — public, private, and signed flows; the
+  signed one needs `:rpmsign` too) and `test/end_to_end/live_install_check_test.exs`
+  (runs `deploy/live_install_check.sh`, below, against the same listeners).
+  Needs podman, jq, and the pulled image:
 
   ```sh
   podman pull registry.fedoraproject.org/fedora:44
   mix test --only container
   ```
-
-  The container side is `deploy/dnf_client_check.sh`, which also runs by hand
-  against any deployment (usage in its header), so the release gate can make
-  the same check against staging.
 
 ## Full offline stack (podman compose)
 
@@ -91,6 +88,19 @@ default on untrusted networks.
 This stack is independent of the `dark-zenith-pg` container above (its own
 database on 55433, its own volumes) so it can run alongside `mix phx.server`.
 `podman compose down` stops it; add `-v` to also discard its data.
+
+With the stack up, prove it serves installable repositories to a real dnf5:
+
+```sh
+deploy/live_install_check.sh http://localhost:4200   # or http://<PHX_HOST>:4200
+```
+
+It logs in as the bootstrap admin, creates a repository per flow (public,
+private, signed), uploads the fixture package through the real presigned MinIO
+PUT, waits for processing and metadata, runs `deploy/dnf_client_check.sh` in a
+fresh Fedora 44 container against each, and deletes what it created. The same
+command works against a staging URL with `DZ_CHECK_EMAIL`/`DZ_CHECK_PASSWORD`
+or `DZ_CHECK_TOKEN`; its header lists the options. Needs curl, jq, and podman.
 
 `podman compose` delegates to whichever compose provider is installed. With
 Docker Compose as the provider, `up --build` recreates the app container

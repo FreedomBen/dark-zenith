@@ -14,9 +14,10 @@ upload history): the `docs/DESIGN.md` feature set is implemented and covered by 
 suite (dnf5-validated metadata, uploads and their durable upload records, signing including
 user-wide key transitions, rate limiting, admin surface, deployment artifacts).
 Remaining work is maintenance, review findings, and running `deploy/release_gate.sh`
-against a staging deployment before a release (`deploy/dnf_client_check.sh` is the container-side
-dnf5 install check the `:container`-tagged end-to-end test runs; it needs podman and the
-Fedora 44 image, and also runs by hand against staging). Spec changes still precede code changes
+against a staging deployment before a release (`deploy/live_install_check.sh` provisions
+repositories on a live instance and installs from them with `deploy/dnf_client_check.sh`, a
+real dnf5 in a Fedora 44 container; the `:container`-tagged end-to-end tests run both against
+listeners they start and need podman, jq, and the image). Spec changes still precede code changes
 when behavior is being (re)defined.
 Key files:
 

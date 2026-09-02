@@ -228,6 +228,13 @@ wins. Checklist items reference spec sections rather than restating their rules.
       confirms it came from Dark Zenith, runs a verification command) run by the
       `:container`-tagged test/end_to_end/container_install_test.exs in a fresh Fedora 44
       container against listeners the test starts; reusable by hand against staging
+- [x] Live install check — `deploy/live_install_check.sh <base-url> [public|private|signed ...]`
+      logs in (or takes DZ_CHECK_TOKEN), creates a repository per flow, uploads the fixture
+      through the real presigned PUT, waits for processing and metadata, runs the container
+      client check against each (private via a repo:read API key it creates; signed with the
+      account's key, generated only when absent), and deletes what it created; covered by
+      test/end_to_end/live_install_check_test.exs against the test listeners with a queue
+      drainer, and verified against the compose stack
 
 ## Phase 17 — Server-side GPG key generation (post-M4 feature)
 

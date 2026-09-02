@@ -8,11 +8,12 @@
 #
 # It is meant to run as root inside a throwaway Fedora container and needs no
 # network beyond the Dark Zenith instance (and its object storage) itself.
-# test/end_to_end/container_install_test.exs feeds it to `podman run`; a
-# release-gate run can do the same against a staging deployment:
+# test/end_to_end/container_install_test.exs feeds it to `podman run`, and
+# deploy/live_install_check.sh does the same against a running instance after
+# provisioning a repository there. By hand, against any deployment:
 #
 #   podman run --rm --network=host registry.fedoraproject.org/fedora:44 \
-#     bash -c "$(cat deploy/dnf_client_check.sh)" -- \
+#     bash -c "$(cat deploy/dnf_client_check.sh)" dnf_client_check.sh \
 #     https://staging.example.com/repos/paladin/dark-zenith.repo paladin
 #
 # Usage:
