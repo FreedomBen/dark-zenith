@@ -652,25 +652,35 @@ defmodule DarkZenith.SigningTransitions do
         Repo.transact(fn ->
           item = Repo.one(from i in Item, where: i.id == ^id, lock: "FOR UPDATE")
 
-          if item && item.status == "executing" &&
-               DateTime.compare(item.lease_expires_at, now) != :gt do
-            next_at = DateTime.add(now, RetryPolicy.backoff(max(item.attempts, 1)), :second)
+          cond do
+            is_nil(item) or item.status != "executing" or
+                DateTime.compare(item.lease_expires_at, now) == :gt ->
+              :noop
 
-            {1, _} =
-              Repo.update_all(
-                from(i in Item, where: i.id == ^id),
-                set: [
-                  status: "pending",
-                  lease_token: nil,
-                  lease_expires_at: nil,
-                  next_attempt_at: next_at,
-                  updated_at: now
-                ]
-              )
+            item.attempts >= @max_item_attempts ->
+              # The expired claim was the last of the budget: terminal with
+              # no classified cause, failing the transition like any other
+              # exhausted item (DESIGN.md: Signing Transition Items).
+              item_deterministic_failure(item, item.lease_token, "internal_error")
 
-            %{item_id: id}
-            |> DarkZenith.Workers.SigningItem.new(scheduled_at: next_at)
-            |> Oban.insert!()
+            true ->
+              next_at = DateTime.add(now, RetryPolicy.backoff(max(item.attempts, 1)), :second)
+
+              {1, _} =
+                Repo.update_all(
+                  from(i in Item, where: i.id == ^id),
+                  set: [
+                    status: "pending",
+                    lease_token: nil,
+                    lease_expires_at: nil,
+                    next_attempt_at: next_at,
+                    updated_at: now
+                  ]
+                )
+
+              %{item_id: id}
+              |> DarkZenith.Workers.SigningItem.new(scheduled_at: next_at)
+              |> Oban.insert!()
           end
 
           {:ok, :ok}

@@ -43,7 +43,6 @@ defmodule DarkZenith.Workers.UploadProcessing do
   alias DarkZenith.Workers.RetryPolicy
 
   @lease_seconds 900
-  @max_attempts 20
   @max_final_key_bytes 1024
 
   @impl Oban.Worker
@@ -802,7 +801,7 @@ defmodule DarkZenith.Workers.UploadProcessing do
           is_nil(current) or current.status != "processing" or current.lease_token != token ->
             {:ok, :noop}
 
-          current.attempts >= @max_attempts ->
+          current.attempts >= RetryPolicy.max_attempts() ->
             Uploads.terminalize!(current, "failed", code)
 
             Audit.record!("package.upload",

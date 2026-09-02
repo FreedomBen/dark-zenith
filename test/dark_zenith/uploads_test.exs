@@ -7,7 +7,7 @@ defmodule DarkZenith.UploadsTest do
 
   alias DarkZenith.Storage.Reservation
   alias DarkZenith.Uploads
-  alias DarkZenith.Uploads.Intent
+  alias DarkZenith.Uploads.{Intent, Records}
   alias DarkZenith.Workers.{StagingCleanup, UploadProcessing}
 
   setup do
@@ -311,7 +311,8 @@ defmodule DarkZenith.UploadsTest do
       assert reload(fresh).status == "awaiting_upload"
     end
 
-    test "requeue_expired_leases returns a crashed processing claim to queued", ctx do
+    test "requeue_expired_leases returns a crashed processing claim to queued with backoff",
+         ctx do
       {intent, _} = create!(ctx)
       stub_head_object(intent, 1000)
       {:ok, _} = Uploads.complete_intent(ctx.owner, intent, 1, "4_zv")
@@ -325,20 +326,82 @@ defmodule DarkZenith.UploadsTest do
             status: "processing",
             lease_token: Ecto.UUID.generate(),
             lease_expires_at: past,
-            next_attempt_at: nil
+            next_attempt_at: nil,
+            attempts: 3
           ]
         )
+
+      # The crashed claim's own job has run its course (its Oban retry saw
+      # `processing` and completed), so the sweep's replacement is the only
+      # live job for the intent; the worker is unique on intent_id.
+      Repo.update_all(
+        from(j in Oban.Job, where: j.worker == "DarkZenith.Workers.UploadProcessing"),
+        set: [state: "completed"]
+      )
 
       Uploads.requeue_expired_leases()
 
       requeued = reload(intent)
       assert requeued.status == "queued"
       assert requeued.lease_token == nil
-      assert requeued.next_attempt_at
+      assert requeued.attempts == 3
+
+      # Background Retry Policy after failed attempt 3: 30 * 2^2 seconds.
+      assert_in_delta DateTime.diff(requeued.next_attempt_at, now), 120, 5
+
+      assert_enqueued(
+        worker: UploadProcessing,
+        args: %{intent_id: intent.id},
+        scheduled_at: {requeued.next_attempt_at, delta: 5}
+      )
 
       # The reservation lease was renewed ahead.
       reservation = Repo.get!(Reservation, requeued.reservation_id)
       assert DateTime.compare(reservation.expires_at, DateTime.add(now, 1, :hour)) == :gt
+    end
+
+    test "requeue_expired_leases fails an intent whose expired claim exhausted its budget",
+         ctx do
+      {intent, _} = create!(ctx)
+      stub_head_object(intent, 1000)
+      {:ok, _} = Uploads.complete_intent(ctx.owner, intent, 1, "4_zv")
+
+      past = DateTime.add(DateTime.utc_now(:second), -1, :minute)
+
+      {1, _} =
+        Repo.update_all(from(i in Intent, where: i.id == ^intent.id),
+          set: [
+            status: "processing",
+            lease_token: Ecto.UUID.generate(),
+            lease_expires_at: past,
+            next_attempt_at: nil,
+            attempts: 20
+          ]
+        )
+
+      Uploads.requeue_expired_leases()
+
+      failed = reload(intent)
+      assert failed.status == "failed"
+      assert failed.last_error_code == "internal_error"
+      assert failed.attempts == 20
+      assert failed.completed_at
+      assert failed.lease_token == nil
+      assert failed.reservation_id == nil
+      refute Repo.get(Reservation, intent.reservation_id)
+      assert_enqueued(worker: StagingCleanup, args: %{staging_path: intent.staging_path})
+
+      record = Records.get_by_intent(intent.id)
+      assert record.outcome == "failed"
+      assert record.error_code == "internal_error"
+
+      # The sweep is a system actor: the terminal event has no actor.
+      event =
+        Enum.find(DarkZenith.Audit.list_events(), &(&1.metadata["result"] == "internal_error"))
+
+      assert event.action == "package.upload"
+      assert event.actor_id == nil
+      assert event.metadata["intent_id"] == intent.id
     end
 
     test "delete_old_terminal removes day-old terminal rows", ctx do

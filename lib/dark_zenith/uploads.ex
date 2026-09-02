@@ -17,7 +17,7 @@ defmodule DarkZenith.Uploads do
   alias DarkZenith.Repositories.Repository
   alias DarkZenith.Storage
   alias DarkZenith.Uploads.{Intent, Record, Records}
-  alias DarkZenith.Workers.{StagingCleanup, UploadProcessing}
+  alias DarkZenith.Workers.{RetryPolicy, StagingCleanup, UploadProcessing}
 
   @waiting_seconds 2 * 3600
   @refresh_min_remaining 60
@@ -487,10 +487,28 @@ defmodule DarkZenith.Uploads do
     expired
   end
 
+  # Terminal failure from the sweep: the system actor records the same
+  # `package.upload` event a worker would (DESIGN.md: Audit Events).
+  defp exhaust!(%Intent{} = intent, code) do
+    failed = terminalize!(intent, "failed", code)
+
+    Audit.record!("package.upload",
+      actor: nil,
+      ip: nil,
+      target: {:upload_intent, intent.id},
+      metadata: Map.put(audit_metadata(intent), "result", code)
+    )
+
+    failed
+  end
+
   @doc """
   Requeues processing rows whose lease expired and renews the storage
   reservations of queued/processing intents two hours ahead (60-second
-  sweep).
+  sweep). An expired lease is a failed claim with no classified cause: the
+  intent returns to `queued` under Background Retry Policy, or fails
+  terminally as `internal_error` when the expired claim was the last of
+  its budget (DESIGN.md: Upload Intents).
   """
   def requeue_expired_leases do
     now = DateTime.utc_now(:second)
@@ -507,21 +525,31 @@ defmodule DarkZenith.Uploads do
         Repo.transact(fn ->
           current = lock_intent!(id)
 
-          if current && current.status == "processing" &&
-               DateTime.compare(current.lease_expires_at, now) != :gt do
-            {1, _} =
-              Repo.update_all(
-                from(i in Intent, where: i.id == ^id),
-                set: [
-                  status: "queued",
-                  lease_token: nil,
-                  lease_expires_at: nil,
-                  next_attempt_at: now,
-                  updated_at: now
-                ]
-              )
+          cond do
+            is_nil(current) or current.status != "processing" or
+                DateTime.compare(current.lease_expires_at, now) == :gt ->
+              :noop
 
-            enqueue_processing(id, now)
+            current.attempts >= RetryPolicy.max_attempts() ->
+              exhaust!(current, "internal_error")
+
+            true ->
+              next_at =
+                DateTime.add(now, RetryPolicy.backoff(max(current.attempts, 1)), :second)
+
+              {1, _} =
+                Repo.update_all(
+                  from(i in Intent, where: i.id == ^id),
+                  set: [
+                    status: "queued",
+                    lease_token: nil,
+                    lease_expires_at: nil,
+                    next_attempt_at: next_at,
+                    updated_at: now
+                  ]
+                )
+
+              enqueue_processing(id, next_at)
           end
 
           {:ok, :ok}

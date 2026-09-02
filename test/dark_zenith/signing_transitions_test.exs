@@ -236,6 +236,36 @@ defmodule DarkZenith.SigningTransitionsTest do
     assert requeued.next_attempt_at
   end
 
+  test "the sweep fails an item whose expired lease exhausted its budget", ctx do
+    repo = enable!(ctx)
+    [item | _] = SigningTransitions.list_items(repo.signing_transition_id)
+
+    past = DateTime.add(DateTime.utc_now(:second), -1, :minute)
+
+    {1, _} =
+      Repo.update_all(from(i in Item, where: i.id == ^item.id),
+        set: [
+          status: "executing",
+          lease_token: Ecto.UUID.generate(),
+          lease_expires_at: past,
+          next_attempt_at: nil,
+          attempts: 20
+        ]
+      )
+
+    assert :ok = SigningTransitions.sweep()
+
+    failed = Repo.get!(Item, item.id)
+    assert failed.status == "failed"
+    assert failed.last_error_code == "internal_error"
+    assert failed.lease_token == nil
+    assert failed.completed_at
+
+    transition = Repo.get!(Transition, repo.signing_transition_id)
+    assert transition.status == "failed"
+    assert transition.resume_status == "active"
+  end
+
   test "the sweep renews reservations linked by pending and executing items", ctx do
     repo = enable!(ctx)
     [pending_item, other_item] = SigningTransitions.list_items(repo.signing_transition_id)
