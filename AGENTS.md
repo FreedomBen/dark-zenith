@@ -54,6 +54,9 @@ Write tests for every code change. Place tests under `test/` with filenames endi
 `_test.exs`. Cover authorization, metadata generation, signed URL behavior, upload
 flows, and API error responses because these are core product contracts. `docs/DESIGN.md`
 frequently names required test cases explicitly — implement those alongside the feature.
+Whole-lifecycle tests live under `test/end_to_end/` and drive only public surfaces (the
+REST API, the presigned storage transfer, explicitly drained Oban queues, the dnf-facing
+endpoint) against the in-memory `DarkZenith.FakeBucket` from `test/support/`.
 
 ## Commit & Pull Request Guidelines
 

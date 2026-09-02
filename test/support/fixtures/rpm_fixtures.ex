@@ -15,6 +15,9 @@ defmodule DarkZenith.RpmFixtures do
   def v4_source_binary, do: rpm_binary("dz-fixture-v4.src.rpm")
   def minimal_binary, do: rpm_binary("dz-minimal-v4.rpm")
 
+  @doc "A real-world unsigned x86_64 package built outside rpmbuild (see the README)."
+  def paladin_binary, do: rpm_binary("paladin-0.1.0-1.x86_64.rpm")
+
   @doc "Replaces `byte_size(replacement)` bytes at `offset`."
   def patch(binary, offset, replacement) when is_binary(replacement) do
     <<prefix::binary-size(offset), _::binary-size(byte_size(replacement)), rest::binary>> =
