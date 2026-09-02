@@ -37,5 +37,5 @@ by byte-patching these valid files (see `DarkZenith.RpmFixtures`).
 
 `paladin-0.1.0-1.x86_64.rpm` is a vendored artifact rather than a built one:
 an unsigned x86_64 binary package with a gzip-compressed cpio payload and no
-`RPMVERSION` tag (so not produced by `rpmbuild`), exercised end to end by
-`test/end_to_end/paladin_upload_test.exs`. It is not regenerated.
+`RPMVERSION` tag (so not produced by `rpmbuild`), exercised by the
+end-to-end tests under `test/end_to_end/`. It is not regenerated.
