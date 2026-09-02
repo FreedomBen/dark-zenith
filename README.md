@@ -68,6 +68,15 @@ This stack is independent of the `dark-zenith-pg` container above (its own
 database on 55433, its own volumes) so it can run alongside `mix phx.server`.
 `podman compose down` stops it; add `-v` to also discard its data.
 
+`podman compose` delegates to whichever compose provider is installed. With
+Docker Compose as the provider, `up --build` recreates the app container
+whenever its image changed. The Python `podman-compose` only restarts the
+existing container, so add `--force-recreate` after a rebuild or the stack
+keeps running the old image (and never applies its new migrations). The tmpfs
+at `/tmp/dark-zenith` needs the explicit `mode=1777` set in `compose.yaml`:
+without it a restarted container remounts the directory root-owned, the boot
+checks fail, and every upload would stall in `processing`.
+
 ## License
 
 AGPL-3.0-or-later — see `LICENSE`.

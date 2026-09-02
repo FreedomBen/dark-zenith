@@ -29,7 +29,8 @@ FROM fedora:44 AS app
 
 # rpm/rpmkeys verify every upload; rpm-sign and gnupg2 back GPG key
 # validation and signing. These tools process attacker-supplied material:
-# run the container unprivileged with a tmpfs RPM_UPLOAD_TMPDIR.
+# run the container unprivileged with a tmpfs RPM_UPLOAD_TMPDIR mounted
+# with an explicit writable mode (see compose.yaml).
 RUN dnf install -y --setopt=install_weak_deps=False rpm rpm-sign gnupg2 ncurses-libs openssl-libs libstdc++ util-linux procps-ng && dnf clean all
 
 RUN useradd --system --home /app --shell /sbin/nologin darkzenith

@@ -81,9 +81,12 @@ services:
       - -c
       - bin/dark_zenith eval "DarkZenith.Release.migrate()" && exec bin/dark_zenith start
     # Uploads, signing working copies, and temporary RPM keyrings stay off
-    # persistent storage (Containerfile note).
+    # persistent storage (Containerfile note). The explicit mode is
+    # required: a bare tmpfs is world-writable only on the container's
+    # first start — a restart remounts it root-owned 0755 and the
+    # unprivileged app user can no longer create attempt directories.
     tmpfs:
-      - /tmp/dark-zenith
+      - /tmp/dark-zenith:mode=1777
     environment:
       PHX_SERVER: "true"
       PHX_HOST: ${PHX_HOST:-localhost}
