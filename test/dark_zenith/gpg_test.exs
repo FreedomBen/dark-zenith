@@ -151,9 +151,12 @@ defmodule DarkZenith.GpgTest do
       File.chmod!(home, 0o700)
 
       try do
+        key_path = Path.join(home, "private.asc")
+        File.write!(key_path, pair.private)
+
         {_, 0} =
-          System.cmd("gpg", ["--homedir", home, "--batch", "--import", "/dev/stdin"],
-            input: pair.private
+          System.cmd("gpg", ["--homedir", home, "--batch", "--import", key_path],
+            stderr_to_stdout: true
           )
 
         assert :ok = DarkZenith.Gpg.RpmCompat.check(home, pair.fingerprint)
