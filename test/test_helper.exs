@@ -12,5 +12,10 @@ fips_enabled? =
 
 exclude = if fips_enabled?, do: exclude, else: [:fips | exclude]
 
+# The :container-tagged end-to-end tests run a real dnf client in a Fedora
+# container (README: Testing) and need podman plus the pulled image.
+exclude =
+  if DarkZenith.DnfClientContainer.available?(), do: exclude, else: [:container | exclude]
+
 ExUnit.start(exclude: exclude)
 Ecto.Adapters.SQL.Sandbox.mode(DarkZenith.Repo, :manual)

@@ -52,6 +52,16 @@ defmodule DarkZenith.FakeBucket do
 
   ## Request handling
 
+  # Plug entry points, for the end-to-end tests that serve the bucket over
+  # HTTP from a Bandit listener: the plug option is the bucket handle.
+  @behaviour Plug
+
+  @impl Plug
+  def init(bucket), do: bucket
+
+  @impl Plug
+  def call(conn, bucket), do: handle(conn, bucket)
+
   @doc false
   def handle(conn, bucket) do
     # Plug's default cache-control would violate the object contract.

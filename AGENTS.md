@@ -56,7 +56,10 @@ flows, and API error responses because these are core product contracts. `docs/D
 frequently names required test cases explicitly — implement those alongside the feature.
 Whole-lifecycle tests live under `test/end_to_end/` and drive only public surfaces (the
 REST API, the presigned storage transfer, explicitly drained Oban queues, the dnf-facing
-endpoint) against the in-memory `DarkZenith.FakeBucket` from `test/support/`.
+endpoint) against the in-memory `DarkZenith.FakeBucket` from `test/support/`. The
+`:container`-tagged one additionally serves the app and the bucket over real HTTP and runs
+`deploy/dnf_client_check.sh` in a fresh Fedora 44 container through
+`DarkZenith.DnfClientContainer`; it is excluded unless podman and the image are present.
 
 ## Commit & Pull Request Guidelines
 

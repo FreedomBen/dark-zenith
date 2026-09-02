@@ -223,6 +223,11 @@ wins. Checklist items reference spec sections rather than restating their rules.
       deploy/release_gate.sh runs boot checks plus dnf5/dnf makecache/repoquery for the
       public flow and, via DZ_GATE_* env, the repo_gpgcheck-signed and Basic-auth private
       flows; run it against a staging deployment before release
+- [x] Container client check — `deploy/dnf_client_check.sh` (dnf5 adds the repository from
+      its `dark-zenith.repo` link, installs a package with every other repository disabled,
+      confirms it came from Dark Zenith, runs a verification command) run by the
+      `:container`-tagged test/end_to_end/container_install_test.exs in a fresh Fedora 44
+      container against listeners the test starts; reusable by hand against staging
 
 ## Phase 17 — Server-side GPG key generation (post-M4 feature)
 
