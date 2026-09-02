@@ -1,6 +1,8 @@
 defmodule DarkZenith.TempSpaceTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
   alias DarkZenith.TempSpace
 
   # 3 * source + 64 MiB
@@ -97,6 +99,43 @@ defmodule DarkZenith.TempSpaceTest do
     )
 
     refute File.exists?(leftover)
+  end
+
+  test "an attempt directory that cannot be created is a retryable refusal, not a crash" do
+    base =
+      Path.join(System.tmp_dir!(), "dz-temp-space-blocked-#{System.unique_integer([:positive])}")
+
+    name = :"temp_space_#{System.unique_integer([:positive])}"
+
+    pid =
+      start_supervised!(
+        {TempSpace,
+         name: name,
+         sampler: fn -> 10 * @overhead end,
+         base_dir: base,
+         reconcile_interval: :timer.hours(1)}
+      )
+
+    # A regular file where the base directory was: mkdir fails with ENOTDIR
+    # regardless of the test user's privileges.
+    File.rm_rf!(base)
+    File.write!(base, "")
+    on_exit(fn -> File.rm_rf(base) end)
+
+    log =
+      capture_log(fn ->
+        assert {:error, :upload_temp_space_unavailable} = TempSpace.acquire(name, "token", 1)
+      end)
+
+    assert log =~ "dz-attempt-token"
+    assert Process.alive?(pid)
+    assert TempSpace.reserved_bytes(name) == 0
+
+    # Once the directory is back, the same ledger serves the claim.
+    File.rm!(base)
+    File.mkdir_p!(base)
+    assert {:ok, dir} = TempSpace.acquire(name, "token", 1)
+    assert File.dir?(dir)
   end
 
   defp poll_until(fun, attempts \\ 50) do

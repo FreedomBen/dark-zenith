@@ -16,6 +16,8 @@ defmodule DarkZenith.TempSpace do
 
   use GenServer
 
+  require Logger
+
   @overhead 67_108_864
   @default_reconcile :timer.seconds(60)
 
@@ -96,11 +98,19 @@ defmodule DarkZenith.TempSpace do
 
         if available - active >= bytes do
           dir = Path.join(state.base_dir, "dz-attempt-#{token}")
-          File.mkdir_p!(dir)
-          File.chmod!(dir, 0o700)
 
-          lease = %{bytes: bytes, dir: dir, pid: pid, monitor: Process.monitor(pid)}
-          {:reply, {:ok, dir}, put_in(state.leases[token], lease)}
+          case create_attempt_dir(dir) do
+            :ok ->
+              lease = %{bytes: bytes, dir: dir, pid: pid, monitor: Process.monitor(pid)}
+              {:reply, {:ok, dir}, put_in(state.leases[token], lease)}
+
+            {:error, reason} ->
+              # A filesystem refusal is the caller's retryable infrastructure
+              # error; raising here would restart the ledger and drop every
+              # active lease.
+              Logger.warning("temp space: cannot create #{dir}: #{:file.format_error(reason)}")
+              {:reply, {:error, :upload_temp_space_unavailable}, state}
+          end
         else
           {:reply, {:error, :upload_temp_space_unavailable}, state}
         end
@@ -162,6 +172,20 @@ defmodule DarkZenith.TempSpace do
   end
 
   ## Internals
+
+  # A fresh mode-0700 attempt directory, or the filesystem's refusal.
+  defp create_attempt_dir(dir) do
+    with :ok <- File.mkdir_p(dir) do
+      case File.chmod(dir, 0o700) do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          File.rm_rf(dir)
+          {:error, reason}
+      end
+    end
+  end
 
   defp total_reserved(state) do
     state.leases |> Map.values() |> Enum.map(& &1.bytes) |> Enum.sum()
