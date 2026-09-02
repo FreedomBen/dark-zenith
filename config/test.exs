@@ -8,11 +8,13 @@ config :bcrypt_elixir, :log_rounds, 1
 # The MIX_TEST_PARTITION environment variable can be used
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
+# The connection defaults to the README's dev container; CI points the
+# standard libpq variables at its service container.
 config :dark_zenith, DarkZenith.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "127.0.0.1",
-  port: 55432,
+  username: System.get_env("PGUSER", "postgres"),
+  password: System.get_env("PGPASSWORD", "postgres"),
+  hostname: System.get_env("PGHOST", "127.0.0.1"),
+  port: String.to_integer(System.get_env("PGPORT", "55432")),
   database: "dark_zenith_test#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2

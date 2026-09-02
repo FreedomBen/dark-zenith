@@ -1,0 +1,105 @@
+# Continuous integration (README: Continuous integration).
+#
+# The test suite verifies uploads with rpmkeys from RPM 6, signs with
+# rpmsign, and drives gpg, none of which Ubuntu runners provide, so the
+# test job runs inside a Fedora 44 container with the same packages the
+# release image (Containerfile) installs: Fedora's Elixir and Erlang.
+# The :container-tagged tests need podman and are excluded here, as they
+# are on any host without it; they run locally (README: Optional test tags).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Compile, format, and test (Fedora 44)
+    runs-on: ubuntu-latest
+    container:
+      image: registry.fedoraproject.org/fedora:44
+    services:
+      postgres:
+        image: docker.io/library/postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      MIX_ENV: test
+      LANG: C.UTF-8
+      PGHOST: postgres
+      PGPORT: "5432"
+    steps:
+      - name: Install the release image's toolchain
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            elixir erlang-xmerl git gcc make \
+            rpm rpm-sign gnupg2 procps-ng util-linux
+          dnf clean all
+
+      - uses: actions/checkout@v5
+
+      - name: Record the Erlang and Elixir versions for the cache key
+        id: versions
+        run: |
+          {
+            echo "otp=$(erl -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().')"
+            echo "elixir=$(elixir -e 'IO.write(System.version())')"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Cache dependencies and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-fedora44-otp${{ steps.versions.outputs.otp }}-elixir${{ steps.versions.outputs.elixir }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-fedora44-otp${{ steps.versions.outputs.otp }}-elixir${{ steps.versions.outputs.elixir }}-
+
+      - name: Install Hex and rebar
+        run: mix local.hex --force && mix local.rebar --force
+
+      - name: Fetch dependencies
+        run: mix deps.get --check-locked
+
+      # The steps of `mix precommit`, with the checks that must not rewrite
+      # files in CI (deps.unlock, format) in their --check forms.
+      - name: Compile with warnings as errors
+        run: mix compile --warnings-as-errors
+
+      - name: Check for unused dependencies
+        run: mix deps.unlock --check-unused
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Run the test suite
+        run: mix test
+
+  shellcheck:
+    name: Shellcheck the deploy scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: shellcheck deploy/*.sh
+
+  image:
+    name: Build the release image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -f Containerfile -t dark-zenith:ci .

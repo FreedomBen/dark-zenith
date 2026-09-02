@@ -25,6 +25,9 @@ podman run -d --name dark-zenith-pg \
 
 On later boots just `podman start dark-zenith-pg`.
 
+The test configuration connects to that container by default; `PGHOST`,
+`PGPORT`, `PGUSER`, and `PGPASSWORD` point it elsewhere (CI does this).
+
 Then:
 
 ```sh
@@ -110,6 +113,21 @@ keeps running the old image (and never applies its new migrations). The tmpfs
 at `/tmp/dark-zenith` needs the explicit `mode=1777` set in `compose.yaml`:
 without it a restarted container remounts the directory root-owned, the boot
 checks fail, and every upload would stall in `processing`.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on pushes to `main` and on pull requests:
+
+- **test** — the steps of `mix precommit` (with `deps.unlock --check-unused` and
+  `format --check-formatted`, which never rewrite files) against a PostgreSQL 18
+  service. It runs inside a Fedora 44 container with the packages the release
+  image installs, because the suite verifies uploads with `rpmkeys` from RPM 6,
+  signs with `rpmsign`, and drives `gpg`, none of which Ubuntu runners provide.
+  That is Fedora's Elixir 1.19.5 on Erlang/OTP 26 — the release toolchain —
+  rather than the OTP 28 in `.tool-versions`. The `:container` tests need
+  podman and are excluded there, as on any host without it.
+- **shellcheck** — `deploy/*.sh`.
+- **image** — builds the `Containerfile`.
 
 ## License
 

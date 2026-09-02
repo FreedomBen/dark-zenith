@@ -235,6 +235,11 @@ wins. Checklist items reference spec sections rather than restating their rules.
       account's key, generated only when absent), and deletes what it created; covered by
       test/end_to_end/live_install_check_test.exs against the test listeners with a queue
       drainer, and verified against the compose stack
+- [x] GitHub Actions CI (`.github/workflows/ci.yml`): the precommit steps in a Fedora 44
+      container with a PostgreSQL 18 service (Fedora's Elixir/OTP and RPM 6 tools, as in the
+      Containerfile; `:container` tests excluded there), shellcheck of deploy/*.sh, and a
+      Containerfile build, on pushes to main and pull requests; the test database follows
+      PGHOST/PGPORT/PGUSER/PGPASSWORD
 
 ## Phase 17 — Server-side GPG key generation (post-M4 feature)
 

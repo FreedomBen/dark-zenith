@@ -26,6 +26,7 @@ Key files:
 - `docs/IMPLEMENTATION_PLAN.md` — phased checklist tracking implementation progress; check items off as they complete
 - `AGENTS.md` — conventions for coding agents plus generated Phoenix 1.8 guidance; keep it consistent with this file when conventions change
 - `README.md` — dev setup (podman database container on port 55432) and common commands
+- `.github/workflows/ci.yml` — GitHub Actions: the precommit steps in a Fedora 44 container (the release toolchain: Elixir 1.19.5 on OTP 26, RPM 6 tools) with a PostgreSQL service, shellcheck of `deploy/*.sh`, and a Containerfile build
 - `LICENSE` — AGPLv3 or later
 - `TODO.md` — human-only; do not read or modify
 - `.claude/` — includes a small checked-in project memory under `.claude/memory/`

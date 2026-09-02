@@ -36,6 +36,10 @@ Common commands:
 - `mix format` — format Elixir source and configuration files.
 - `mix precommit` — compile with warnings-as-errors, check unused deps, format, and test.
 
+CI (`.github/workflows/ci.yml`) runs those precommit steps in a Fedora 44 container with a
+PostgreSQL service, shellchecks `deploy/*.sh`, and builds the `Containerfile` on every push to
+`main` and pull request; a green `mix precommit` locally is the same set of checks.
+
 Update this section whenever commands are added, renamed, or removed.
 
 ## Coding Style & Naming Conventions
