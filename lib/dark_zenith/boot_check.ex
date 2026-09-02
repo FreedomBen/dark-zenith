@@ -83,34 +83,48 @@ defmodule DarkZenith.BootCheck do
     end
   end
 
-  @doc "Verifies the bundled strong-digest fixtures with an isolated database."
+  @doc """
+  Verifies the bundled strong-digest fixtures with an isolated database
+  under `RPM_UPLOAD_TMPDIR`, which also proves that directory is writable.
+  """
   def check_fixture_verification do
     rpmkeys = Application.get_env(:dark_zenith, :rpmkeys_path, "rpmkeys")
     base = Application.get_env(:dark_zenith, :rpm_upload_tmpdir) || System.tmp_dir!()
     dbpath = Path.join(base, "dz-bootcheck-#{System.unique_integer([:positive])}")
-    File.mkdir_p!(dbpath)
 
-    try do
-      fixture_dir = Application.app_dir(:dark_zenith, "priv/rpm_fixtures")
-
-      Enum.reduce_while(["dz-fixture-v4.rpm", "dz-fixture-v6.rpm"], :ok, fn fixture, :ok ->
-        path = Path.join(fixture_dir, fixture)
-
-        case run_cmd(rpmkeys, ["--dbpath", dbpath, "--checksig", "--verbose", path]) do
-          {:ok, output} ->
-            if output =~ "digest: OK" and not (output =~ " BAD") do
-              {:cont, :ok}
-            else
-              {:halt, {:error, "#{fixture} failed verification: #{String.trim(output)}"}}
-            end
-
-          {:error, reason} ->
-            {:halt, {:error, reason}}
+    case File.mkdir_p(dbpath) do
+      :ok ->
+        try do
+          verify_fixtures(rpmkeys, dbpath)
+        after
+          File.rm_rf(dbpath)
         end
-      end)
-    after
-      File.rm_rf(dbpath)
+
+      {:error, reason} ->
+        {:error,
+         "cannot create #{dbpath}: #{:file.format_error(reason)}; " <>
+           "RPM_UPLOAD_TMPDIR must be a directory writable by the application user"}
     end
+  end
+
+  defp verify_fixtures(rpmkeys, dbpath) do
+    fixture_dir = Application.app_dir(:dark_zenith, "priv/rpm_fixtures")
+
+    Enum.reduce_while(["dz-fixture-v4.rpm", "dz-fixture-v6.rpm"], :ok, fn fixture, :ok ->
+      path = Path.join(fixture_dir, fixture)
+
+      case run_cmd(rpmkeys, ["--dbpath", dbpath, "--checksig", "--verbose", path]) do
+        {:ok, output} ->
+          if output =~ "digest: OK" and not (output =~ " BAD") do
+            {:cont, :ok}
+          else
+            {:halt, {:error, "#{fixture} failed verification: #{String.trim(output)}"}}
+          end
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
   end
 
   @doc """
@@ -177,21 +191,35 @@ defmodule DarkZenith.BootCheck do
     :ok
   end
 
-  @doc "Boot child: runs the checks when `:boot_checks_on_boot` is set."
+  @doc """
+  Boot child: runs the checks when `:boot_checks_on_boot` is set. A failed
+  required check refuses boot — the child start fails, so the supervisor
+  and the release never come up half-configured — after logging each
+  failing check with its reason. Passing or disabled checks leave no
+  process behind.
+  """
   def child_spec(_opts) do
-    %{
-      id: __MODULE__,
-      restart: :temporary,
-      start:
-        {Task, :start_link,
-         [
-           fn ->
-             if Application.get_env(:dark_zenith, :boot_checks_on_boot, false) do
-               run!()
-             end
-           end
-         ]}
-    }
+    %{id: __MODULE__, start: {__MODULE__, :start_link, []}, restart: :temporary}
+  end
+
+  @doc false
+  def start_link(_opts \\ []) do
+    if Application.get_env(:dark_zenith, :boot_checks_on_boot, false) do
+      case run() do
+        :ok ->
+          Logger.info("boot checks passed")
+          :ignore
+
+        {:error, failures} ->
+          for {name, reason} <- failures do
+            Logger.error("boot check failed: #{name}: #{reason}")
+          end
+
+          {:error, {:boot_checks_failed, failures}}
+      end
+    else
+      :ignore
+    end
   end
 
   defp rpm_binary do
